@@ -4,7 +4,7 @@ Server Monitor 独立二开：Vue 3 看板、Node.js 24 单主控、SQLite WAL�
 
 入口 src/server.js，实时 src/realtime，存储 src/database，服务 src/services，界面 src/frontend。
 
-原生 Go Agent 源码位于 agent/，基线为上游 v1.0.16；独立版本见 agent/release.json。主控构建并通过 /agent 分发 16 种平台程序，数据卷 agent-releases 保留历史版本，不依赖 GitHub Release。保持采集和协议兼容。
+原生 Go Agent 源码位于 agent/，基线为上游 v1.0.16；独立版本见 agent/release.json。仅构建和分发 Linux、FreeBSD 各 amd64/arm64，共 4 种程序。数据卷 agent-releases 保留历史版本，不依赖 GitHub Release。保持采集和协议兼容。
 
 开发先运行 npm ci、npm run geoip:download、npm run build。遵守 testing.md，先搭环境再实际验证；运行 npm run test:all 和 npm run test:acceptance。部署改动需实测。结果写 TEST_REPORT.md，改动写 changelog.md。架构和代码地图见 architecture.md、code_map.md。不提交密钥或测试产物。
 

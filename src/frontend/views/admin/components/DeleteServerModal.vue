@@ -24,9 +24,8 @@
           <label class="form-label">{{ trans.targetOs }}</label>
           <select :value="deleteTargetOs" class="form-select" @change="$emit('update:delete-target-os', $event.target.value)">
             <option value="linux">Linux (systemd)</option>
-            <option value="unix">OpenWrt/Alpine/Synology DSM/FreeBSD</option>
-            <option value="mac">macOS</option>
-            <option value="windows">Windows</option>
+            <option value="unix">Linux (OpenWrt/Alpine/Synology DSM)</option>
+            <option value="freebsd">FreeBSD</option>
           </select>
         </div>
 
@@ -66,7 +65,7 @@
       </div>
 
       <div class="cmd-input-wrapper mb-3" :class="{ copied: uninstallCopied }">
-        <span class="cmd-prompt">{{ deleteTargetOs === 'windows' ? 'PS' : '$' }}</span>
+        <span class="cmd-prompt">$</span>
         <textarea
           v-if="deleteTargetOs === 'linux' && deleteVersion === 'go' && deleteInstallMode === 'cfsm-user'"
           readonly

@@ -11,10 +11,10 @@
           <label class="form-label">{{ trans.targetOs }}</label>
           <select :value="targetOs" class="form-select" @change="$emit('update:target-os', $event.target.value)">
             <option value="linux">Linux (systemd)</option>
-            <option value="unix">OpenWrt/Alpine/Synology DSM/FreeBSD</option>
-            <option value="mac">macOS</option>
-            <option value="windows">Windows</option>
+            <option value="unix">Linux (OpenWrt/Alpine/Synology DSM)</option>
+            <option value="freebsd">FreeBSD</option>
           </select>
+          <p class="text-secondary text-sm mt-2">{{ trans.agentSupportedPlatforms }}</p>
         </div>
 
         <div v-if="targetOs === 'linux'" class="form-group flex-1">
@@ -128,7 +128,7 @@
       <div class="form-group">
         <label class="form-label">{{ trans.installCommand }}</label>
         <div class="cmd-output-wrapper" :class="{ copied: copiedCmd }">
-          <span class="cmd-prompt">{{ targetOs === 'windows' ? 'PS' : '$' }}</span>
+          <span class="cmd-prompt">$</span>
           <pre class="cmd-output">{{ installCommand }}</pre>
         </div>
       </div>

@@ -1,4 +1,4 @@
-// Build the same platform set as upstream v1.0.16, without a release service.
+// Build the controller's supported Linux and FreeBSD 64-bit Agents.
 package main
 
 import (
@@ -16,14 +16,11 @@ import (
 	"time"
 )
 
-type target struct{ OS, Arch, Suffix, ARM string }
+type target struct{ OS, Arch string }
 
 var targets = []target{
-	{"linux", "amd64", "amd64", ""}, {"linux", "arm64", "arm64", ""}, {"linux", "386", "386", ""},
-	{"linux", "arm", "armv5", "5"}, {"linux", "arm", "armv6", "6"}, {"linux", "arm", "armv7", "7"}, {"linux", "loong64", "loong64", ""},
-	{"freebsd", "amd64", "amd64", ""}, {"freebsd", "arm64", "arm64", ""}, {"freebsd", "386", "386", ""}, {"freebsd", "arm", "arm", "7"},
-	{"darwin", "amd64", "amd64", ""}, {"darwin", "arm64", "arm64", ""},
-	{"windows", "amd64", "amd64", ""}, {"windows", "arm64", "arm64", ""}, {"windows", "386", "386", ""},
+	{"linux", "amd64"}, {"linux", "arm64"},
+	{"freebsd", "amd64"}, {"freebsd", "arm64"},
 }
 
 type asset struct {
@@ -47,7 +44,7 @@ func main() {
 }
 func build() error {
 	out := flag.String("out", "../agent-dist", "versioned output directory")
-	selection := flag.String("targets", "all", "comma-separated OS/architecture names, e.g. linux/amd64,darwin/arm64")
+	selection := flag.String("targets", "all", "comma-separated supported targets, e.g. linux/amd64,freebsd/arm64")
 	version := flag.String("version", "", "override release.json version (for independently versioned builds)")
 	flag.Parse()
 	raw, err := os.ReadFile("release.json")
@@ -75,7 +72,7 @@ func build() error {
 	}
 	chosen := []target{}
 	for _, t := range targets {
-		key := t.OS + "/" + t.Suffix
+		key := t.OS + "/" + t.Arch
 		if _, ok := requested[key]; *selection == "all" || ok {
 			chosen = append(chosen, t)
 			requested[key] = true
@@ -103,14 +100,11 @@ func build() error {
 	}
 	var checksums strings.Builder
 	for _, t := range chosen {
-		name := "cf-probe-" + t.OS + "-" + t.Suffix
-		if t.OS == "windows" {
-			name += ".exe"
-		}
-		fmt.Printf("Building Agent %s %s/%s\n", info.Version, t.OS, t.Suffix)
-		ldflags := "-s -w -X main.version=" + info.Version + " -X github.com/EnjuYeung/CF-Server-Monitor/agent/internal/cfprobe.buildARM=" + t.ARM
+		name := "cf-probe-" + t.OS + "-" + t.Arch
+		fmt.Printf("Building Agent %s %s/%s\n", info.Version, t.OS, t.Arch)
+		ldflags := "-s -w -X main.version=" + info.Version
 		cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-ldflags="+ldflags, "-o", filepath.Join(stage, name), "./cmd/cf-probe")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+t.OS, "GOARCH="+t.Arch, "GOARM="+t.ARM)
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+t.OS, "GOARCH="+t.Arch, "GOARM=")
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err = cmd.Run(); err != nil {
 			return err
@@ -150,7 +144,7 @@ func build() error {
 	if err = os.Rename(stage, final); err != nil {
 		return err
 	}
-	for _, name := range []string{"install.sh", "install.ps1"} {
+	for _, name := range []string{"install.sh"} {
 		data, err := os.ReadFile(name)
 		if err != nil {
 			return err
@@ -158,6 +152,9 @@ func build() error {
 		if err = os.WriteFile(filepath.Join(*out, name), data, 0644); err != nil {
 			return err
 		}
+	}
+	if err = os.Remove(filepath.Join(*out, "install.ps1")); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	fmt.Printf("Agent %s: %d verified artifacts in %s\n", info.Version, len(info.Assets), final)
 	return nil

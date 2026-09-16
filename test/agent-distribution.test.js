@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -63,4 +63,41 @@ test('Native Agent catalog, historical versions, safe downloads and fail-closed 
   const empty = new AgentDistribution(join(root,'missing'));
   assert.equal(await empty.latest(),null);
   assert.equal((await empty.handle(new Request('http://controller/agent/latest'))).status,404);
+});
+
+test('restricted platform downloads preserve immutable mixed-platform archives', async t => {
+  const root = await mkdtemp(join(tmpdir(),'agent-platform-archive-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const bundled = join(root,'bundled'), archive = join(root,'archive');
+  const binary = Buffer.from('archived Agent fixture');
+  const sha256 = createHash('sha256').update(binary).digest('hex');
+  const linux = 'cf-probe-linux-amd64';
+  const removed = ['cf-probe-linux-386','cf-probe-linux-armv7','cf-probe-freebsd-arm','cf-probe-darwin-amd64','cf-probe-windows-amd64.exe'];
+  async function release(version,names) {
+    await mkdir(join(bundled,version),{recursive:true});
+    const manifest = {schema_version:1,version,published_at:'2026-09-16T00:00:00Z',assets:names.map(name=>({name,size:binary.length,sha256}))};
+    await writeFile(join(bundled,version,'manifest.json'),JSON.stringify(manifest));
+    for (const name of names) await writeFile(join(bundled,version,name),binary);
+  }
+  await release('v1.1.0',[linux,...removed]);
+  await release('v1.1.1',[linux]);
+  await release('v9.0.0',['cf-probe-darwin-arm64']);
+  await writeFile(join(bundled,'install.ps1'),'legacy installer');
+  const registry = new AgentDistribution(bundled);
+  await registry.archiveTo(archive);
+  const original = await readFile(join(archive,'v1.1.0','manifest.json'));
+  await registry.archiveTo(archive);
+  assert.deepEqual(await readFile(join(archive,'v1.1.0','manifest.json')),original);
+  for (const name of removed) assert.deepEqual(await readFile(join(archive,'v1.1.0',name)),binary);
+  const restored = new AgentDistribution(join(root,'empty'),archive);
+  assert.equal((await restored.latest()).version,'v1.1.1');
+  const request = path => registry.handle(new Request('http://controller/agent/'+path));
+  const catalog = await (await request('releases.json')).json();
+  assert.equal(catalog.length,2);
+  for (const item of catalog) assert.deepEqual(item.assets.map(asset=>asset.name),[linux]);
+  for (const name of removed) assert.equal((await request('v1.1.0/'+name)).status,404);
+  assert.equal((await request('install.ps1')).status,404);
+  assert.equal((await request('v1.1.0/'+linux)).status,200);
+  assert.deepEqual((await (await request('v1.1.0/manifest.json')).json()).assets.map(asset=>asset.name),[linux]);
+  assert.equal(await (await request('v1.1.0/checksums.txt')).text(),`${sha256}  ${linux}\n`);
 });

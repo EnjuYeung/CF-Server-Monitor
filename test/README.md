@@ -31,8 +31,9 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 
 ## 同仓库原生 Agent
 
-先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 16 个 Agent 目标；`npm run build:frontend` 仅构建前端。
-`npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，使用当前宿主机对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。
+先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 4 个 Agent 目标（Linux/FreeBSD 各 amd64/arm64）；`npm run build:frontend` 仅构建前端。
+`test/agent-build-targets.test.js` 使用完整构建的产物，实际验证四个 ELF 程序的 OS/CPU、HTTP 下载、SHA-256 和归档；`test/agent-install-platforms.test.js` 使用明确标注的 shell 测试载荷验证平台选择、校验与不支持的平台在下载前失败，不将该测试视为 Linux/FreeBSD 程序运行验收。
+`npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，需要 Linux/FreeBSD amd64/arm64 主机，使用对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。macOS/Windows 上原生阶段会明确报错；可单独执行 `node test/acceptance.js` 验证主控，但不得将其当作完整原生验收通过。
 
 `npm run test:agent-deployment` 要求 Docker 和预先构建的 `server-monitor:agent-native` 镜像（`docker build -t server-monitor:agent-native .`）。它预建隔离环境，在 internal bridge 中验证 TLS 下载、原生安装、v1.0.99 测试版本实际自更新到当前版本、主控重建及卸载。v1.0.99 仅为验收编译的旧版本，不是对外发布版本。证据保存在 `output/test-results/agent-integration/`，默认清理自己的测试容器和网络。
 可通过 `TEST_DOCKER_CLI` 指定 Docker 包装命令，通过 `AGENT_TEST_IMAGE` 指定测试镜像。`AGENT_KEEP_TEST_ENV=1` 仅用于接续浏览器核验；使用后须按 browser-fixture.json 记录清理测试容器和网络。

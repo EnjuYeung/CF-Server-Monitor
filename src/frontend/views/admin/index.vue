@@ -1383,11 +1383,6 @@ const getUninstallCommand = () => {
   const isGo = deleteVersion.value === 'go'
   const downloadBase = deleteDownloadUrl.value.trim() || `${HOST}/agent`
   if (isGo) {
-    if (deleteTargetOs.value === 'windows') {
-      const scriptUrl = `${HOST}/agent/install.ps1`
-      const downloadParam = ` ${quotePowerShellArg(`--download-url=${downloadBase}`)}`
-      return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(scriptUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script uninstall${downloadParam}`
-    }
     const scriptUrl = `${HOST}/agent/install.sh`
     const downloadParam = ` ${quotePosixShellArg(`--download-url=${downloadBase}`)}`
     const uninstallCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- uninstall${downloadParam}`
@@ -1395,9 +1390,6 @@ const getUninstallCommand = () => {
       return buildUninstallAsCfsmCommand(uninstallCommand)
     }
     return uninstallCommand
-  }
-  if (deleteTargetOs.value === 'windows') {
-    return `$script = Join-Path (Get-Location) 'uninstall-cf-probe.ps1'; Invoke-WebRequest -Uri '${HOST}/uninstall.ps1' -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script`
   }
   return `curl -fsSL '${HOST}/uninstall.sh' | sh -s`
 }
@@ -1450,7 +1442,6 @@ const hasCorrectionValue = (value) => value !== null && value !== undefined && v
 
 const quotePosixShellArg = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`
 
-const quotePowerShellArg = (value) => `'${String(value).replaceAll("'", "''")}'`
 
 const quotePosixDoubleShellArg = (value) => `"${String(value)
   .replaceAll('\\', '\\\\')
@@ -1540,10 +1531,6 @@ const getCustomInstallCommand = () => {
   if (networkInterface.value) params.push(`-interface=${networkInterface.value}`)
   if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction=${rxCorrection.value}`)
   if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction=${txCorrection.value}`)
-  if (targetOs.value === 'windows') {
-    const scriptUrl = `${HOST}/agent/install.ps1`
-    return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(scriptUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script ${params.map(quotePowerShellArg).join(' ')}`
-  }
   const scriptUrl = `${HOST}/agent/install.sh`
   const installCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- ${params.map(quotePosixShellArg).join(' ')}`
   return isDedicatedUserInstall ? buildInstallAsCfsmCommand(installCommand, trans.value.nonRootInstallRunStep) : installCommand

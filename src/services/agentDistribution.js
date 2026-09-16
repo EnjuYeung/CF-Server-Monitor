@@ -5,7 +5,9 @@ import { resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 
 const VERSION = /^(?:v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?|Snapshot-\d+)$/;
-const ASSET = /^cf-probe-(?:linux-(?:amd64|arm64|386|armv[567]|loong64)|freebsd-(?:amd64|arm64|386|arm)|darwin-(?:amd64|arm64)|windows-(?:amd64|arm64|386)\.exe)$/;
+// Old archives remain immutable; only supported targets are exposed for download.
+const ARCHIVE_ASSET = /^cf-probe-(?:linux-(?:amd64|arm64|386|armv[567]|loong64)|freebsd-(?:amd64|arm64|386|arm)|darwin-(?:amd64|arm64)|windows-(?:amd64|arm64|386)\.exe)$/;
+const ASSET = /^cf-probe-(?:linux|freebsd)-(?:amd64|arm64)$/;
 const noCache = { 'Cache-Control':'no-store' };
 const notFound = () => new Response('Agent artifact not available', {status:404, headers:noCache});
 
@@ -16,7 +18,7 @@ function normalizeManifest(raw, directory) {
   const assets = [];
   for (const asset of raw.assets) {
     if (!asset || typeof asset !== 'object') return null;
-    if (!ASSET.test(asset.name) || seen.has(asset.name) || !Number.isSafeInteger(asset.size) || asset.size < 1 || !/^[a-f0-9]{64}$/.test(asset.sha256)) return null;
+    if (!ARCHIVE_ASSET.test(asset.name) || seen.has(asset.name) || !Number.isSafeInteger(asset.size) || asset.size < 1 || !/^[a-f0-9]{64}$/.test(asset.sha256)) return null;
     seen.add(asset.name);
     assets.push({name:asset.name,size:asset.size,sha256:asset.sha256});
   }
@@ -31,7 +33,7 @@ export class AgentDistribution {
     this.roots = [...new Set([this.bundledRoot, ...(archiveRoot ? [resolve(archiveRoot)] : [])])];
   }
 
-  async releases() {
+  async releases({ allPlatforms = false } = {}) {
     const found = new Map();
     for (const root of this.roots) {
       let entries;
@@ -43,7 +45,10 @@ export class AgentDistribution {
           const file = await this.safeFile(root, `${entry.name}/manifest.json`);
           if (!file || file.info.size > 65536) continue;
           const manifest = normalizeManifest(JSON.parse(await readFile(file.path,'utf8')),entry.name);
-          if (manifest) found.set(manifest.version,{manifest,root});
+          if (manifest) {
+            const published = allPlatforms ? manifest : {...manifest,assets:manifest.assets.filter(asset=>ASSET.test(asset.name))};
+            if (published.assets.length) found.set(manifest.version,{manifest:published,root});
+          }
         } catch (error) { if (!(error instanceof SyntaxError) && error.code !== 'ENOENT') throw error; }
       }
     }
@@ -66,7 +71,7 @@ export class AgentDistribution {
     const root = resolve(destination);
     await mkdir(root,{recursive:true});
     const canonical = manifest => JSON.stringify({...manifest,assets:[...manifest.assets].sort((a,b)=>a.name.localeCompare(b.name))});
-    for (const entry of await this.releases()) {
+    for (const entry of await this.releases({ allPlatforms: true })) {
       const target = resolve(root,entry.manifest.version);
       try {
         const existing = normalizeManifest(JSON.parse(await readFile(resolve(target,'manifest.json'),'utf8')),entry.manifest.version);
@@ -115,7 +120,7 @@ export class AgentDistribution {
       const latest = await this.latest();
       return latest ? new Response(head ? null : latest.version+'\n',{headers:{...noCache,'Content-Type':'text/plain'}}) : notFound();
     }
-    if (['install.sh','install.ps1'].includes(path)) {
+    if (path === 'install.sh') {
       return this.stream(request,await this.safeFile(this.bundledRoot,path),'text/plain; charset=utf-8');
     }
     const parts = path.split('/');

@@ -11,6 +11,7 @@ import { checkOfflineNodes, checkTrafficReports, checkResourceAlerts, checkExpir
 import { drainNotifications } from '../src/services/outbox.js';
 import { clearAllCaches } from '../src/utils/cache.js';
 import { cleanupHistory } from '../src/database/schema.js';
+import { updateLatencyWindow } from '../src/frontend/utils/latencyWindow.js';
 
 // Prepare all fixtures before executing acceptance cases. Never use an existing database.
 const root = await mkdtemp(join(tmpdir(), 'monitor-acceptance-'));
@@ -146,14 +147,24 @@ try {
     assert.equal(n,1); return {configuration:200, unchanged:204, duplicateRows:n};
   });
   await step('A05', 'WS 上报、面板推送与配置下发', '实际连接 Agent WS 与浏览器 WS，发送指标并修改配置', '收到落库确认、实时指标和配置推送', async () => {
+    const before = (await request('/api/servers')).body.servers.find(s => s.id === mainId);
     const viewer=await openSocket('/api/ws');viewer.ws.send(JSON.stringify({type:'subscribe',scope:'all',ids:[mainId]}));await viewer.find(m=>m.type==='subscribed');
-    const agent=await openSocket('/update', {'X-Agent-Version':'fixture-7'});agent.ws.send(JSON.stringify({id:mainId,secret:config.API_SECRET,metrics:{cpu:88,timestamp:Date.now()},config_schema:'7',config_md5:''}));
+    const agent=await openSocket('/update', {'X-Agent-Version':'fixture-7'});agent.ws.send(JSON.stringify({id:mainId,secret:config.API_SECRET,metrics:{cpu:88,ping_ct:306,loss_ct:0,timestamp:Date.now()},config_schema:'7',config_md5:''}));
     assert.ok(Number.isFinite(Date.parse(agent.handshakeDate)), 'Agent WS handshake must provide a Date header for clock calibration');
     const ack=await agent.find(m=>m.type==='ack');assert.equal(ack.persisted,true);
     assert.equal((await request(`/api/server?id=${mainId}`)).body.agent_version, 'fixture-7');
     const update=await viewer.find(m=>m.type==='batchUpdate');assert.equal(update.updates[0].serverId,mainId);
+    const persistedWindow = (await request('/api/servers')).body.servers.find(s => s.id === mainId);
+    assert.equal(persistedWindow.ping.at(-1).ct,306,'new history must invalidate the cached window');
+    await wait(20);
+    agent.ws.send(JSON.stringify({id:mainId,secret:config.API_SECRET,metrics:{cpu:88,ping_ct:65,loss_ct:10,timestamp:Date.now()}}));
+    const live = await viewer.find(m => m.type === 'batchUpdate' && m.updates.some(u => u.serverId === mainId && u.samples.some(s => s.payload?.ping_ct === 65)));
+    const sample = live.updates.find(u => u.serverId === mainId).samples.find(s => s.payload?.ping_ct === 65);
+    const liveWindow = updateLatencyWindow(before,sample.payload,sample.ts);
+    assert.equal(liveWindow.ping.at(-1).ct,65);
+    assert.equal(liveWindow.loss.at(-1).ct,10);
     await edit(mainId,{report_interval:120});await agent.find(m=>m.type==='config');
-    agent.ws.close();viewer.ws.close();return {persisted:ack.persisted,realtime:true,configPush:true,handshakeDate:true};
+    agent.ws.close();viewer.ws.close();return {persisted:ack.persisted,realtime:true,configPush:true,handshakeDate:true,latency:{persisted:306,live:65,loss:10,points:liveWindow.ping.length}};
   });
   await step('A06', '地区识别与手动覆盖', '同机回环上报后指定 JP 地区', '自动识别 US，手动值 JP 优先', async () => {
     await report(mainId,{cpu:44,timestamp:Date.now()});assert.equal((await request(`/api/server?id=${mainId}`)).body.region,'US');

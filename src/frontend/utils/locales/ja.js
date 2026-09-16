@@ -354,6 +354,7 @@ export default {
   installVersionPlaceholder: '空欄で最新版',
   agentDownloadSource: 'Agent ダウンロード元',
   agentDownloadTip: '任意：信頼できるミラーの /agent URL。空欄は現在の主控を使い、インストールと更新に適用されます。',
+  agentSupportedPlatforms: 'Linux・FreeBSD の amd64 / arm64 のみ対応。',
   installVersionTip: '空欄は主控が提供する最新安定版。指定バージョンはダウンロード元に存在する必要があります。',
   agentDownloadPlaceholder: '既定：現在の主控',
   pingNodes: 'Ping 対象',

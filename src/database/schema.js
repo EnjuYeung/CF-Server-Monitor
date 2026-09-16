@@ -123,6 +123,7 @@ function buildLatencyHistoryPoint(row, metricType, { includeEmpty = false } = {}
   if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
 
   const point = { ts: timestamp };
+  if (Number(row.sample_timestamp) > 0) point.sample_ts = Number(row.sample_timestamp);
   for (const field of LATENCY_NODE_FIELDS) {
     const column = `${metricType}_${field}`;
     if (!Object.prototype.hasOwnProperty.call(row, column)) continue;
@@ -181,13 +182,15 @@ function normalizeDashboardLatencyWindow(sampleRows, { queryStart, intervalMs, p
 
 export async function getDashboardLatencyHistory(db, servers, options = {}) {
   const now = Number(options.now || Date.now());
-  const start = now - DASHBOARD_LATENCY_WINDOW_HOURS * 3600000;
   const points = options.points || DASHBOARD_LATENCY_WINDOW_POINTS;
-  const intervalMs = Math.ceil((Math.floor(now / 1000) * 1000 + 1000 - start) / points);
+  const intervalMs = Math.ceil(DASHBOARD_LATENCY_WINDOW_HOURS * 3600000 / points);
+  // Include the current, unfinished bucket on a stable six-minute grid.
+  // A REST refresh must not move a live sample into a different time bucket.
+  const start = Math.floor(now / intervalMs) * intervalMs - (points - 1) * intervalMs;
   const result = new Map();
   for (const server of servers) {
     const cached = dashboardLatencyHistoryCache.get(server.id);
-    if (options.cache !== false && cached && now - cached.time < DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS) {
+    if (options.cache !== false && cached && cached.db === db && cached.points === points && cached.start === start && now >= cached.time && now - cached.time < DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS) {
       result.set(server.id, cached.data); continue;
     }
     const rows = db.prepare(`WITH ranked AS (
@@ -199,7 +202,7 @@ export async function getDashboardLatencyHistory(db, servers, options = {}) {
     for (const row of rows) if (row.bucket < points) samples[row.bucket] = { sample_json: JSON.stringify(row) };
     const window = normalizeDashboardLatencyWindow(samples, { queryStart: start, intervalMs, points });
     result.set(server.id, window);
-    if (options.cache !== false) dashboardLatencyHistoryCache.set(server.id, { time: now, data: window });
+    if (options.cache !== false) dashboardLatencyHistoryCache.set(server.id, { db, points, start, time: now, data: window });
   }
   for (const [id, item] of dashboardLatencyHistoryCache) if (now - item.time >= DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS) dashboardLatencyHistoryCache.delete(id);
   return result;
@@ -276,6 +279,7 @@ export async function saveMetricsHistory(db, serverId, metrics, regionCode = '',
       WHERE excluded.timestamp >= server_latest.timestamp`).bind(serverId, now, JSON.stringify(row))
   ]);
   clearLatestMetricsCache();
+  dashboardLatencyHistoryCache.delete(serverId);
 }
 
 export async function getLatestMetrics(db, serverId) {

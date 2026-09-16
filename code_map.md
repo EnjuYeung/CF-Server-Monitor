@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-09-16；版本：3.0.0。
+更新时间：2026-09-17；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -15,6 +15,7 @@
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、单选分组与地区交集；src/frontend/styles/main.css；G01–G08 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue、SettingsPanel.vue；test/frontend-i18n.test.js、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | src/utils/historyFields.js、metrics.js；A07、A14 |
+| 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期通知 | src/services/notification.js | src/services/outbox.js、scheduler.js；A09、A10 |
@@ -23,10 +24,10 @@
 | 后台系统、外观、主题配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | test/frontend-live-socket.test.js、frontend-api-base.test.js |
 | 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、theme.js、src/utils/csp.js | theme-develop.md |
-| Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh、agent/install.ps1；主控 /agent 与 data/agent-releases；NA01/NA06 |
+| Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |
-| Agent 多平台构建 | agent/tools/build/main.go、scripts/agent.js | 16 个上游 release 目标，Go 测试及 Docker 多阶段构建 |
+| Agent 多平台构建 | agent/tools/build/main.go、scripts/agent.js | Linux/FreeBSD 各 amd64/arm64 共 4 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |
 | 构建 | scripts/build.js、vite.config.js | npm run build、Dockerfile、.github/workflows/test.yml |
 
 ## 测试入口

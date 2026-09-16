@@ -39,6 +39,7 @@ const normalizeProbeMetricValue = (value) => {
 }
 
 const formatPercentValue = (value) => {
+  if (value === null || value === undefined || value === false || value === '') return '--'
   const number = Number(value)
   if (!Number.isFinite(number)) return '--'
   return `${Number.isInteger(number) ? number : number.toFixed(1)}%`
@@ -311,14 +312,13 @@ export function useServerCardData(props) {
     return timeText ? `${timeText} · ${summary}` : summary
   }
 
-  const formatPingBucketSummary = (hasPing, ping, offline) => {
-    if (offline) return trans.value.offline
+  const formatPingBucketSummary = (hasPing, ping, hasLoss) => {
     if (hasPing) return `${trimFixed(ping, 1)} ms`
+    if (hasLoss) return trans.value.timeout
     return noSampleText.value
   }
 
-  const formatLossBucketSummary = (hasLoss, loss, offline) => {
-    if (offline) return trans.value.offline
+  const formatLossBucketSummary = (hasLoss, loss) => {
     if (hasLoss) return `${trimFixed(loss, 1)}%`
     return noSampleText.value
   }
@@ -339,6 +339,7 @@ export function useServerCardData(props) {
   }
 
   const getLatestSeriesValue = (series, fallback) => {
+    if (fallback !== undefined) return normalizeProbeMetricValue(fallback)
     for (let index = series.length - 1; index >= 0; index -= 1) {
       if (series[index].value !== null && series[index].value !== false) return series[index].value
     }
@@ -374,6 +375,8 @@ export function useServerCardData(props) {
       const label = String(customName || trans.value[def.labelKey] || def.fallbackLabel)
       const pingSeries = getLatencySeries('ping', def.key)
       const lossSeries = getLatencySeries('loss', def.key)
+      const pingScale = Math.max(PING.CRITICAL_THRESHOLD * 2,
+        ...pingSeries.map(point => typeof point.value === 'number' ? point.value : 0))
       const pointCount = Math.max(pingSeries.length, lossSeries.length, getLatencyWindowPointCount())
       const points = Array.from({ length: pointCount }, (_, index) => {
         const pingPoint = pingSeries[index] ?? null
@@ -381,20 +384,20 @@ export function useServerCardData(props) {
         const ping = pingPoint?.value ?? null
         const loss = lossPoint?.value ?? null
         const timestamp = pingPoint?.ts ?? lossPoint?.ts ?? null
-        const hasPing = typeof ping === 'number' && Number.isFinite(ping) && ping >= 0
+        const hasPing = typeof ping === 'number' && Number.isFinite(ping) && ping > 0
         const hasLoss = typeof loss === 'number' && Number.isFinite(loss)
-        const offline = !hasPing && !hasLoss
-        const pingSummary = formatPingBucketSummary(hasPing, ping, offline)
-        const lossSummary = formatLossBucketSummary(hasLoss, loss, offline)
+        const missing = !hasPing && !hasLoss
+        const pingSummary = formatPingBucketSummary(hasPing, ping, hasLoss)
+        const lossSummary = formatLossBucketSummary(hasLoss, loss)
         return {
           ping,
           loss,
-          pingHeight: hasPing ? 84 : 25,
-          lossHeight: hasLoss ? 84 : 25,
-          pingColor: hasPing ? getPingColor(ping) : 'var(--accent-red)',
-          lossColor: offline ? 'var(--accent-red)' : getLossColor(loss),
+          pingHeight: hasPing ? 20 + Math.min(1, ping / pingScale) * 80 : 20,
+          lossHeight: hasLoss ? 20 + clampPercent(loss) * 0.8 : 20,
+          pingColor: hasPing ? getPingColor(ping) : (hasLoss ? 'var(--accent-red)' : 'var(--text-muted)'),
+          lossColor: missing ? 'var(--text-muted)' : getLossColor(loss),
           pingOpacity: hasPing ? 0.94 : 0.52,
-          lossOpacity: hasLoss ? 0.94 : (offline ? 0.52 : 0.42),
+          lossOpacity: hasLoss ? 0.94 : (missing ? 0.52 : 0.42),
           pingTooltip: formatBucketTooltip(timestamp, pingSummary),
           lossTooltip: formatBucketTooltip(timestamp, lossSummary)
         }
@@ -409,7 +412,7 @@ export function useServerCardData(props) {
         label,
         latestPing: getLatestSeriesValue(pingSeries, props.server[def.pingField]),
         averageLoss: getAverageSeriesValue(lossSeries, props.server[def.lossField]),
-        title: hasMeasuredPoint ? '' : `${label} ${trans.value.offline}`,
+        title: hasMeasuredPoint ? '' : `${label} ${noSampleText.value}`,
         points
       }
     })

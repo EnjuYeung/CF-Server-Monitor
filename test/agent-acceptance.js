@@ -11,13 +11,16 @@ import { WebSocket } from 'ws';
 import { createController } from '../src/server.js';
 
 // Isolated runtime prepared before testing. Never installs a service on the host.
+if (!['linux','freebsd'].includes(platform()) || !['x64','arm64'].includes(arch())) {
+  throw new Error('Native Agent acceptance requires Linux or FreeBSD on amd64/arm64. Run this suite on a supported host; macOS and Windows artifacts are no longer published.');
+}
 const root = await mkdtemp(join(tmpdir(),'native-agent-acceptance-'));
 const evidence = resolve('output/test-results/agent-integration');
 await mkdir(evidence,{recursive:true});
 const version = JSON.parse(await readFile('agent/release.json','utf8')).version;
-const osName = {win32:'windows',darwin:'darwin',linux:'linux',freebsd:'freebsd'}[platform()];
-const archName = {x64:'amd64',ia32:'386',arm64:'arm64',arm:'armv7'}[arch()];
-const asset = `cf-probe-${osName}-${archName}${platform()==='win32'?'.exe':''}`;
+const osName = platform();
+const archName = {x64:'amd64',arm64:'arm64'}[arch()];
+const asset = `cf-probe-${osName}-${archName}`;
 const binary = resolve('agent-dist',version,asset);
 await readFile(binary); // Fail before cases if the native build is missing.
 const config = {API_SECRET:'native-agent-acceptance-fixture-key',ADMIN_PATH:'native-Agent-Acceptance-92',DATA_DIR:join(root,'data'),PUBLIC_IP:'8.8.8.8',SCHEDULER_ENABLED:'false'};
@@ -74,7 +77,6 @@ try {
   await writeFile(join(root,'config.conf'),`SERVER_ID="${id}"\nSECRET="${config.API_SECRET}"\nWORKER_URL="${base}/update"\nREPORT_INTERVAL="30"\nCONNECTION_MODE="http"\nAUTO_UPDATE="1"\n`,{mode:0o600});
   const bootstrap=join(root,'install.sh');await writeFile(bootstrap,await (await fetch(base+'/agent/install.sh')).text());await chmod(bootstrap,0o700);
   await step('NA01','原生程序下载','从主控运行一键下载脚本的 version 命令，查询版本目录','下载并校验本机程序，版本和主控一致',async()=>{
-    if(platform()==='win32') throw new Error('Run this acceptance suite on Linux or macOS; Windows service checks use its CI platform job.');
     const result=await run('sh',[bootstrap,'version',`--download-url=${base}/agent`],{timeout:90000});
     assert.ok(result.stdout.includes(version));
     assert.equal((await api('/api/config')).last_agent_version,version);

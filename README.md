@@ -63,7 +63,7 @@ docker network inspect "$(docker inspect "$(docker compose ps -q monitor)" --for
 
 ## Agent 安装与同机运行
 
-登录后台添加服务器，复制该服务器的安装命令。安装脚本、程序、版本查询和自动更新均由当前主控 `/agent` 提供，无需 GitHub Release。Docker 构建时编译与上游一致的 16 种平台/架构程序；采集和连接模式仍由 Agent 自动协商。Agent 独立版本从 v1.1.0 开始，完整说明见 [agent/README.md](agent/README.md)。
+登录后台添加服务器，复制该服务器的安装命令。安装脚本、程序、版本查询和自动更新均由当前主控 `/agent` 提供，无需 GitHub Release。Docker 构建仅编译 4 种程序：Linux amd64/arm64、FreeBSD amd64/arm64；不提供 macOS、Windows、32 位 ARM/x86 或 LoongArch 版本。采集和连接模式仍由 Agent 自动协商。当前 Agent 独立版本为 v1.1.1，完整说明见 [agent/README.md](agent/README.md)。
 
 主控和 Agent 位于同一 VPS 时，Agent 使用原生进程/服务采集宿主机；可将上报地址设为 `http://127.0.0.1:8080/update`，并使用后台生成的 UUID 和 API_SECRET。新配置使用 `CONTROLLER_URL`，同时兼容旧 `WORKER_URL`。不要在 Agent 所在的独立容器内把 `127.0.0.1` 当成宿主机。
 

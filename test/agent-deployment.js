@@ -66,16 +66,17 @@ try{
   controllerArgs=['run','-d','--name',names.controller,'--network',network,'--network-alias','controller','-e',`API_SECRET=${key}`,'-e',`ADMIN_PATH=${adminPath}`,'-e',`TRUSTED_PROXIES=${proxyIp}/32`,'-e','PUBLIC_IP=8.8.8.8','-v',`${join(root,'data')}:/app/data`,image];
   await cli(controllerArgs);created.push(names.controller);
   await cli(['run','-d','--name',names.agent,'--network',network,'-v',`${join(root,'cert.pem')}:/fixture-ca.pem:ro`,'-e','CURL_CA_BUNDLE=/fixture-ca.pem','-e','SSL_CERT_FILE=/fixture-ca.pem',installImage]);created.push(names.agent);
-  await step('ND01','Docker 启动和归档','在隔离 bridge 中启动主控和独立 TLS 反代','健康检查、TLS 登录、16 个产物及持久归档可用',async()=>{
+  await step('ND01','Docker 启动和归档','在隔离 bridge 中启动主控和独立 TLS 反代','健康检查、TLS 登录、4 个产物及持久归档可用',async()=>{
     await until(async()=> (await request('/healthz')).status===200,'controller startup');
     const login=await admin({action:'login',username:'admin',password:key});assert.equal(login.status,200);token=login.body.token;
     assert.match(login.headers['set-cookie'][0],/Secure/);
     const versions=await request('/agent/releases.json');assert.equal(versions.status,200);
-    assert.equal(versions.body.find(v=>v.version===version).assets.length,16);
-    const archived=JSON.parse(await readFile(join(root,'data','agent-releases',version,'manifest.json'),'utf8'));assert.equal(archived.assets.length,16);
+    const expected = ['cf-probe-linux-amd64','cf-probe-linux-arm64','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64'].sort();
+    assert.deepEqual(versions.body.find(v=>v.version===version).assets.map(a=>a.name).sort(),expected);
+    const archived=JSON.parse(await readFile(join(root,'data','agent-releases',version,'manifest.json'),'utf8'));assert.deepEqual(archived.assets.map(a=>a.name).sort(),expected);
     id=(await admin({action:'add',name:'Native Linux TLS Agent'})).body.id;
     await writeFile(join(evidence,'browser-fixture.json'),JSON.stringify({base,adminPath,id,names,network,edgeNetwork,root,installImage},null,2));
-    return {tls:true,secureCookie:true,targets:16,archived:true,internalNetwork:true};
+    return {tls:true,secureCookie:true,targets:4,archived:true,internalNetwork:true};
   });
   await step('ND02','一键安装及 HTTPS/WSS 上报','在独立 Linux 环境从主控安装旧版测试程序并开启自动更新','原生服务启动，正确连接 TLS 主控，等待更新',async()=>{
     const installed=await cli(['exec',names.agent,'sh','-c','curl -fsSL https://proxy:8443/agent/install.sh -o /tmp/install.sh && sh /tmp/install.sh install --install-version='+oldVersion+' -id='+id+' -secret='+key+' -url=https://proxy:8443/update -auto_update=1 -debug=1']);

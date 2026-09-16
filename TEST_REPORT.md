@@ -1,5 +1,77 @@
 # 最近一次测试报告
 
+## Agent 四目标构建与分发验收（2026-09-17）
+
+当前 Agent **v1.1.1** 仅构建和分发 **Linux amd64/arm64、FreeBSD amd64/arm64**，共 4 个目标。使用新版本号避免与已有 v1.1.0 十六目标归档冲突；旧磁盘归档保持原样，公开接口只提供受支持的四类程序。
+
+**四目标完整构建、82/82 项 Node 回归、Agent 配置测试、Go vet/test、19/19 项主控验收通过。** 四个实际 ELF 文件均完成 HTTP 下载、系统/架构识别、SHA-256 和持久归档验证。**完整 `test:acceptance` 未通过：主控阶段通过后，原生阶段因本机是 macOS 而阻塞；Docker 镜像构建及部署验收也因没有 Docker 而阻塞。** 这些限制不计作通过。
+
+### 环境与执行
+
+- macOS 15.8 / amd64，Node.js v24.19.0、Go 1.26.8。开发前实际执行 `npm ci`、`npm run geoip:download`、`npm run build`，随后修改并再次完整构建。基线构建仍为 16 目标；修改后的 `build.log` 明确只有 4 个 v1.1.1 目标。
+- 完整构建使用 `npm run build`；专项初测使用 `node --test test/agent-distribution.test.js test/agent-install-platforms.test.js`，3/3 通过。随后新增实际产物测试并执行 `npm run test:all`，最终 Node 总数为 82/82。
+- 实际执行 `npm run test:acceptance`：主控 19 项通过；`test/agent-acceptance.js` 在创建临时环境之前检查运行平台，macOS 不受支持，明确报错并以退出码 1 结束。没有临时加入 macOS 发布产物来绕过限制。
+- 实际尝试 `docker build -t server-monitor:agent-native .`，退出码 127（`docker: command not found`）；随后执行 `npm run test:agent-deployment`，退出码 1（`spawn docker ENOENT`），未进入安装/更新测试案例。
+- 证据均在 Git 忽略的 `output/test-results/agent-targets/`：`npm-ci.log`、`geoip-download.log`、`baseline-build.log`、`build.log`、`targeted.log`、`regression.log`、`acceptance.log`、`controller-acceptance.json`、`docker-build.log`、`deployment.log`、`manifest.json`、`removed-targets.json`、`browser.json`、`install-options.png`。
+
+### 验收项
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| AT01 | 执行完整构建并检查发布目录 | 新版本只有四种程序，Windows 安装脚本不再打包 | `build.log`：v1.1.1 Linux amd64/arm64、FreeBSD amd64/arm64；manifest 恰好四个资产，`agent-dist/install.ps1` 不存在 | 通过 |
+| AT02 | 启动隔离主控，逐个下载四个实际程序 | 文件长度、SHA-256、ELF 位数、系统和 CPU 均正确 | `agent-build-targets.test.js` 实际 HTTP 200、SHA-256 比较、64 位 ELF、Linux/FreeBSD ABI、amd64/arm64 machine 检查；实际产物复制至临时持久归档后重复归档成功 | 通过 |
+| AT03 | 请求被移除的程序和安装器，包括旧归档 | 不再公开 macOS、Windows、32 位 ARM/x86、LoongArch | 当前版本 12 个旧目标及 `/agent/install.ps1` 全部 HTTP 404；旧混合平台归档的 releases/manifest/checksums 仅列保留平台，旧支持目标仍可下载 | 通过 |
+| AT04 | 启动安装脚本，模拟四种支持目标和九种不支持环境 | 正确选择、下载并校验四个文件；不支持的环境在下载前退出 | `agent-install-platforms.test.js` 实际执行 shell，四条正常路径各发起三次下载，九条异常路径请求数为零；测试载荷是明示的 shell fixture，不是 Linux/FreeBSD 原生程序运行证明 | 通过 |
+| AT05 | 用构建 CLI 显式请求全部 12 个已移除目标 | 不能绕过默认清单生成已移除平台的 Agent | `removed-targets.json`：12/12 次实际 `scripts/agent.js build -targets ...` 均报 `unsupported target` | 通过 |
+| AT06 | 将旧混合归档和新版本同时保留，再次归档 | 不修改旧清单与文件，不产生同版本冲突，最新公开版本正确 | `agent-distribution.test.js` 比较归档 manifest 原始字节和全部旧文件，重复归档成功；只有不支持平台的更高版本不会被选为最新版本 | 通过 |
+| AT07 | 浏览器登录后台，打开安装/卸载弹窗并选择 FreeBSD | 无 macOS/Windows 选项，支持范围可见，生成 POSIX 命令 | `browser.json`：Linux(systemd)、其他 Linux、FreeBSD 三种安装方式，提示仅 amd64/arm64，使用 `/agent/install.sh`，无 PowerShell 命令；已查看截图 | 通过 |
+| AT08 | 完整本地回归和主控验收 | 已有主控、协议、缓存和页面行为保持 | Node 82/82、Agent 配置、Go vet/test、主控 19/19；`git diff --check` 通过 | 通过 |
+| AT09 | 在受支持系统运行原生 Agent，并执行 Linux 安装/更新/卸载 | 原生六项及 Docker 部署五项应全部通过 | 本机 Darwin/amd64，发布目标为 ELF；没有 Docker/Colima，预检失败，未执行原生程序或容器案例 | 环境阻塞，未通过 |
+
+### 验证边界
+
+- 四个程序已经交叉编译并验证文件、下载和归档，但本轮没有在 Linux/FreeBSD 真机执行，不宣称服务安装、采集、自更新或 FreeBSD 运行验收通过。
+- 本轮没有构建出 Docker 镜像、部署生产主控或触发远端 CI。具备 Docker 的 Linux 环境仍需构建 `server-monitor:agent-native` 后运行部署套件；完整原生验收需受支持的 Linux/FreeBSD amd64/arm64 主机。
+- 保留上游其他平台源码和历史测试记录用于来源追踪、兼容性回归；它们不进入新版本的 Agent 构建清单。旧磁盘归档没有被自动删除。
+- 隔离浏览器及主控测试进程已关闭，专项临时数据库与归档目录由测试清理。日志、截图、测试下载载荷、构建产物均未纳入源码。此前延迟图修复仍保留在工作区。
+
+以下保留此前各次验收记录。
+
+## 看板延迟图实时更新验收（2026-09-17）
+
+修复前已在独立主控及实际浏览器中复现用户截图：HTTP 上报变为 306ms，卡片数字更新，但延迟图仍为首次加载的空缺，丢包图保留旧的 0%。原因是实时回放没有更新 `ping/loss` 历史数组、页面只在首次加载时取历史、历史缓存不随写入失效，并且所有有效柱子的高度固定。后续重连验证还发现移动的 REST 分桶边界会造成补取时跳格，最终改为统一的 6 分钟边界，包含当前未结束桶。
+
+**最终 Node 回归 79/79、延迟专项 12/12、Agent 配置测试、Go vet/test、主控验收 19/19、原生 Agent 验收 6/6 全部通过。** 浏览器实际验证 HTTP/WS 数值和柱图同步、超时、条形/环形视图与每分钟补取历史。没有访问或部署生产 VPS。
+
+### 环境与命令
+
+- macOS 15.8 / x64，Node.js v24.19.0、Go 1.26.8；使用现有独立工具链，没有更换系统 Node。
+- 开始先执行 `npm ci`、`npm run geoip:download`、`npm run build`，再创建独立临时 SQLite 数据目录、回环 HTTP/WS 主控和浏览器会话。安装审计 0 vulnerabilities，GeoIP 下载成功，完整构建生成 16 个 Agent 产物和前端。
+- 最终执行 `node --test test/dashboard-latency-window.test.js test/frontend-latency-window.test.js`、`npm run test:all`、`npm run test:acceptance`。完整构建之后，最后的时间分格调整再次执行 `npm run build:frontend`，后端由 Node 直接运行。
+- 命令与证据目录为 Git 忽略的 `output/test-results/latency-live/`：`npm-ci.log`、`geoip-download.log`、`baseline-build.log`、`build.log`、`frontend-build.log`、`targeted.log`、`regression.log`、`acceptance.log`、`controller-acceptance.json`、`native-acceptance.json`。
+- `browser-fixture.mjs` 用真实主控和临时数据库，通过 `/update` HTTP/WS 注入确定的探测值；浏览器运行构建后的 Vue 页面。浏览器证据为 `browser.json`、`backfill-api.json`、`before.png`、`after-live.png`、`bar.png`、`ring.png`、`timeout.png`、`backfill.png`。注入的历史样本用于可控验证，不代表实际公网线路测量。
+
+### 验收项
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| L01 | 新建主控并上报 306ms → 65ms，再由 Agent WS 上报 180ms | 无需刷新页面，数字、当前桶数值、颜色和柱高随上报变化 | 实际浏览器：306ms 柱高 71%，65ms 柱高约 30.83%，180ms 柱高 50%；HTTP 200、WS `persisted:true`；A05 另外验证历史尚未再次落库时 65ms/10% 已进入前端窗口 | 通过 |
+| L02 | 上报超时/100% 丢包；检查缺失值、禁用值及正常 0% | 不继续显示旧成功延迟，不将无样本伪造为 0% 或离线 | 浏览器显示“超时”，丢包柱高 100%；专项测试验证 null/false/0、秒时间戳、空值 `--` 和灰色“无样本” | 通过 |
+| L03 | 推进多个桶和超过两小时，重复刷新 REST，再跨 6 分钟边界 | 20 桶滚动、保留中间空缺、旧点过期；刷新不改变桶边界，跨桶立即失效缓存 | `targeted.log`：12/12；时间边界和长时间条件用确定时间参数验证，没有实际等待两小时 | 通过 |
+| L04 | 先缓存空历史再写入；改变点数、更换数据库、清空历史；重放较旧样本 | 首个点立即可取，缓存不会串实例或参数，旧回放不能覆盖新值，清空后不会恢复旧持久化桶 | SQLite + Vue/窗口函数实际执行；最新状态保留，前端只保留尚未持久化的新样本；没有用清缓存替代真实写入验证 | 通过 |
+| L05 | 页面保持打开，写入分布在历史桶中的 17 个有效探测样本，等待定期补取 | 无需手动刷新，历史补齐且保留两处无样本 | 浏览器 17 个有效延迟桶、18 个有丢包值的桶，与同一时段真实 `/api/servers` 结果一致；`backfill-api.json`、`browser.json`、`backfill.png` | 通过 |
+| L06 | 切换条形/环形卡片，关闭主控后以原临时目录重启并继续上报 | 两种卡片均显示实时图；历史保留，页面重连后继续更新 | 实际浏览器与主控重启；`bar.png`、`ring.png`、`browser.json`；主控 A15、原生 Agent NA05 同时覆盖持久化回归 | 通过 |
+| L07 | 执行最终回归、构建与真实主控/原生程序验收 | 既有功能保持，构建与验收成功 | Node 79/79、专项 12/12、Agent 配置、Go vet/test、16 平台构建、主控 19/19、原生 Agent 6/6；`git diff --check` 通过 | 通过 |
+
+### 验证边界与过程记录
+
+- 本轮未修改 Docker、反代、Agent 安装/更新/分发逻辑。本机没有 Docker/Colima 可执行程序，因此未执行容器部署测试或 `test:agent-deployment`；本地主控进程验收不能替代生产 Docker 验收。
+- 当前窗口是 20 个固定的 6 分钟桶，包含当前未结束桶；同一桶随新样本更新，满 6 分钟后整体向前移动。没有把每次上报都追加为新格子，7 天 SQLite 历史不受影响。
+- 第一次扩展 A05 时测试按 `sample.data` 查找 WS 消息，实际协议字段是 `sample.payload`；修正测试后完整重跑通过，初始失败日志保留为 `acceptance-initial.log`。后续浏览器发现时间分格跳动后修复，并再次运行全部回归和验收，以上仅报告最终结果。
+- 临时主控、Agent 进程和浏览器验证会话已清理；数据、日志、截图、构建产物均在临时目录或 Git 忽略目录，未纳入源码。
+
+以下保留此前各次验收记录。
+
 ## IP 地区库每日自动更新验收（2026-09-16）
 
 新增启动后台检查及每 24 小时检查、校验后原子保存并热切换、失败保留旧库、持久化与停机取消。**69/69 项 Node 回归（含 9 项新增更新测试）、Agent 配置测试、Go vet/test、19/19 项主控验收和 6/6 项原生 Agent 验收通过。** 直接连接 DB-IP 的真实下载、运行时自动更新及本地主控重启保留也通过。Docker 容器验收未执行，见下方边界。

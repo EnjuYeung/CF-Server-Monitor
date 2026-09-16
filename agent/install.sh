@@ -44,10 +44,8 @@ detect_os() {
     os="$(uname -s 2>/dev/null || printf unknown)"
     case "$os" in
         Linux) printf linux ;;
-        Darwin) printf darwin ;;
         FreeBSD) printf freebsd ;;
-        MINGW*|MSYS*|CYGWIN*) printf windows ;;
-        *) die "unsupported OS: $os" ;;
+        *) die "unsupported OS: $os (supported: Linux and FreeBSD)" ;;
     esac
 }
 
@@ -56,12 +54,7 @@ detect_arch() {
     case "$arch" in
         x86_64|amd64) printf amd64 ;;
         aarch64|arm64) printf arm64 ;;
-        i386|i686) printf 386 ;;
-        armv5*) if [ "${os_name:-}" = "freebsd" ]; then printf arm; else printf armv5; fi ;;
-        armv6*) if [ "${os_name:-}" = "freebsd" ]; then printf arm; else printf armv6; fi ;;
-        armv7*|armv8l) if [ "${os_name:-}" = "freebsd" ]; then printf arm; else printf armv7; fi ;;
-        loongarch64|loong64) printf loong64 ;;
-        *) die "unsupported architecture: $arch" ;;
+        *) die "unsupported architecture: $arch (supported: amd64 and arm64)" ;;
     esac
 }
 
@@ -150,9 +143,6 @@ esac
 os_name="$(detect_os)"
 arch_name="$(detect_arch)"
 asset="cf-probe-${os_name}-${arch_name}"
-if [ "$os_name" = "windows" ]; then
-    asset="${asset}.exe"
-fi
 
 tmp_dir="${TMPDIR:-/tmp}"
 work_dir="$(mktemp -d "${tmp_dir%/}/cf-probe-bootstrap.XXXXXXXX")" || die "cannot create temporary directory"
@@ -211,11 +201,7 @@ if [ -n "${HOME:-}" ]; then
         exit "$status"
     fi
 fi
-if [ "$os_name" = "darwin" ]; then
-    fallback_dirs="."
-else
-    fallback_dirs="/usr/local/bin /usr/bin /root ."
-fi
+fallback_dirs="/usr/local/bin /usr/bin /root ."
 for dir in $fallback_dirs; do
     if stage_and_run_payload "$dir" "$@"; then
         exit 0

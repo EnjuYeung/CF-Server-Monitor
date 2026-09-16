@@ -1698,7 +1698,7 @@ html[lang="ja"] .stat-key {
     display: flex;
     align-items: flex-end;
     gap: 2px;
-    height: 11px;
+    height: 18px;
     min-width: 0;
     overflow: visible;
 }
@@ -1724,6 +1724,7 @@ html[lang="ja"] .stat-key {
     border-radius: 2px;
     transform-origin: bottom center;
     transition:
+        height .28s cubic-bezier(.2, .8, .2, 1),
         opacity .28s cubic-bezier(.2, .8, .2, 1),
         transform .28s cubic-bezier(.2, .8, .2, 1),
         filter .28s cubic-bezier(.2, .8, .2, 1),

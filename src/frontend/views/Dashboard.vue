@@ -383,6 +383,7 @@ import { TIME, DEFAULT_SITE_TITLE, STORAGE, LATENCY_WINDOW } from '../utils/cons
 import { normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js'
 import { normalizeDashboardView, normalizeDisplayMode, resolveDisplayMode } from '../utils/displayMode.js'
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
+import { refreshLatencyWindow, updateLatencyWindow } from '../utils/latencyWindow.js'
 import { getMikusAssetUrl, isMikusThemeEnabled, normalizeThemeOptions, setMikusThemeClass } from '../utils/themeOptions.js'
 import {
   CURRENCY_SYMBOLS,
@@ -866,9 +867,14 @@ const applyServerSample = (serverId, data, sampleTs, displayTs, reportTs = null)
   }, displayTs, now.value)
 
   if (idx >= 0) {
-    servers.value[idx] = { ...servers.value[idx], ...merged }
+    servers.value[idx] = {
+      ...existing, ...merged,
+      ...updateLatencyWindow(existing, data, sampleTs, sysConfig.value.latency_window, Date.now())
+    }
   } else {
-    servers.value.push({ ...merged, name: serverId })
+    servers.value.push({ ...merged, name: serverId,
+      ...updateLatencyWindow({}, data, sampleTs, sysConfig.value.latency_window, Date.now())
+    })
   }
 }
 
@@ -903,7 +909,9 @@ const advanceServerClocks = () => {
     const currentDisplayTs = getServerDisplayTimestamp(server) || getServerSampleTimestamp(server) || reportTs
     const elapsedMs = getPlaybackElapsedMs(currentTs, server.current_timestamp, PLAYBACK_TICK_MS)
     const nextDisplayTs = isOnline && currentDisplayTs ? currentDisplayTs + elapsedMs : currentDisplayTs
-    return withDisplayTiming(server, nextDisplayTs, currentTs)
+    const latency = sysConfig.value.show_three_net_details
+      ? updateLatencyWindow(server, null, null, sysConfig.value.latency_window, currentTs) : {}
+    return withDisplayTiming({ ...server, ...latency }, nextDisplayTs, currentTs)
   })
   applyPlaybackSamples()
 }
@@ -1061,6 +1069,27 @@ const refreshData = async () => {
   }
 }
 
+let latencyRefreshPending = false
+let dashboardActive = true
+const refreshLatencyHistory = async () => {
+  if (latencyRefreshPending || document.hidden || !sysConfig.value.show_three_net_details || liveConnectionClosedByUser || showLiveTimeoutModal.value) return
+  latencyRefreshPending = true
+  try {
+    const data = await fetchServersAll()
+    if (!dashboardActive) return
+    const snapshots = new Map((data?.servers || []).map(server => [`${server.source || ''}:${server.id}`, server]))
+    servers.value = servers.value.map(server => {
+      const snapshot = snapshots.get(`${server.source || ''}:${server.id}`)
+      if (!snapshot) return server
+      return { ...server, ...refreshLatencyWindow(server, snapshot, sysConfig.value.latency_window, Date.now()) }
+    })
+  } catch (error) {
+    console.log('[INFO] Latency history refresh pending...', error)
+  } finally {
+    latencyRefreshPending = false
+  }
+}
+
 // -------------------------------------------------------------------------
 // 实时推送：
 //   - 订阅 "all"，收到任何服务器的更新都会合并对应 server 的指标
@@ -1068,6 +1097,7 @@ const refreshData = async () => {
 let liveSockets = []
 let liveConnectionClosedByUser = false
 let timeUpdateInterval = null
+let latencyUpdateInterval = null
 
 const stopLiveSockets = () => {
   if (liveSockets.length === 0) return
@@ -1109,6 +1139,7 @@ const startLiveSocket = () => {
       },
       onStatus: ({ connected }) => {
         liveConnected.value = !!connected
+        if (connected) refreshLatencyHistory()
       }
     }, 0, allIds)]
     return
@@ -1128,6 +1159,7 @@ const startLiveSocket = () => {
       onStatus: ({ connected }) => {
         const anyConnected = liveSockets.some(s => s && s.isConnected)
         liveConnected.value = anyConnected
+        if (connected) refreshLatencyHistory()
       }
     }, index, ids)
   }).filter(Boolean)
@@ -1204,15 +1236,18 @@ onMounted(async () => {
   // 每秒更新 now 变量，使相对时间实时刷新
   runDashboardTick()
   timeUpdateInterval = setInterval(runDashboardTick, 1000)
+  latencyUpdateInterval = setInterval(refreshLatencyHistory, TIME.POLL_INTERVAL_MS)
 })
 
 onUnmounted(() => {
+  dashboardActive = false
   document.removeEventListener('visibilitychange', handleVisibility)
   document.removeEventListener('click', closeFilterMoreOnOutsideClick)
   window.removeEventListener('resize', scheduleFilterMeasurement)
   if (filterMeasureTimer) clearTimeout(filterMeasureTimer)
   if (filterResizeObserver) filterResizeObserver.disconnect()
   if (timeUpdateInterval) clearInterval(timeUpdateInterval)
+  if (latencyUpdateInterval) clearInterval(latencyUpdateInterval)
   stopLiveSockets()
 })
 </script>
