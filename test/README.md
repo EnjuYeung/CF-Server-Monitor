@@ -26,6 +26,8 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 
 `test/admin-security.test.js` 覆盖安全路径、RFC TOTP 向量、二维码独立解码、绑定/验证/恢复码、防重放、会话撤销、限流、SQLite 重启与备份恢复。
 
+`test/geoip-update.test.js` 使用预建临时目录、本地 HTTP 下载服务、真实 MMDB 文件及真实主控，覆盖每天更新、热加载、跨月重试、坏下载与体积限制、并发合并、停机取消、超时、持久化和手动地区优先。调度边界通过 Node 模拟时钟推进 24 小时，HTTP、MMDB 解析和文件读写均实际执行；不访问生产数据库或等待一天。已纳入 `npm run test:all`。
+
 
 ## 同仓库原生 Agent
 

@@ -21,6 +21,7 @@ export function startScheduler(env) {
     run('retention', () => cleanupHistory(env.DB, now));
     run('agent-schedule', () => env.REALTIME_HUB.enforceSchedule());
     run('notification-delivery', () => drainNotifications(env.DB));
+    run('geoip-update', () => env.GEOLOCATION.updateIfDue(now));
   };
   const interval = setInterval(tick, 60000);
   interval.unref();

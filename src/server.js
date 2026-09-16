@@ -36,7 +36,9 @@ export async function createController(options = {}) {
   try {
     await initDatabase(env.DB);
     await loadSiteSettings(env.DB, { forceRefresh: true });
-    env.GEOLOCATION = await createGeolocation(resolve(config.GEOIP_PATH || 'geoip/dbip-country-lite.mmdb'), config.PUBLIC_IP);
+    env.GEOLOCATION = await createGeolocation(resolve(config.GEOIP_PATH || 'geoip/dbip-country-lite.mmdb'), config.PUBLIC_IP, {
+      updatePath: resolve(config.DATA_DIR || 'data', 'geoip/dbip-country-lite.mmdb')
+    });
   } catch (error) { env.DB.close(); throw error; }
   env.REALTIME_HUB = new RealtimeHub(env);
   const adapt = createRequestAdapter(config.TRUSTED_PROXIES || '');
@@ -154,6 +156,7 @@ export async function createController(options = {}) {
     async close() {
       stopping = true; clearInterval(heartbeat);
       const closed = new Promise(resolve => server.close(resolve));
+      await env.GEOLOCATION.close();
       await scheduler?.stop();
       await env.REALTIME_HUB.close();
       await Promise.allSettled([...pending]);

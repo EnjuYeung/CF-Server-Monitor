@@ -16,7 +16,7 @@
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue、SettingsPanel.vue；test/frontend-i18n.test.js、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | src/utils/historyFields.js、metrics.js；A07、A14 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
-| 自动地区识别、手动地区 | src/services/geolocation.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md；A06 |
+| 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期通知 | src/services/notification.js | src/services/outbox.js、scheduler.js；A09、A10 |
 | 流量周期和报告计算 | src/services/notification.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |

@@ -21,7 +21,7 @@ curl -f http://127.0.0.1:8080/healthz
 
 直接访问域名或 `/` 展示探针首页，匿名用户看不到设置齿轮。后台入口是 `http://127.0.0.1:8080/<ADMIN_PATH>`（将占位符替换为 `.env` 的实际值），旧 `/admin` 返回 404。通过安全入口登录后，首页右上角显示设置齿轮，点击进入后台。初始用户名为 `admin`，密码为 `.env` 中的 `API_SECRET`。后台可修改登录用户名和密码；Agent 仍使用环境变量中的 `API_SECRET`。公网访问请使用自己的 HTTPS 反向代理域名。
 
-镜像构建时会下载 npm 依赖及当月 DB-IP Country Lite 地区数据库，首次构建需要网络。GeoIP 文件内置于镜像，不需在运行时下载。镜像支持 Node 官方 Linux amd64/arm64 基础镜像；本次实际覆盖的平台见 TEST_REPORT.md。
+镜像构建时会下载 npm 依赖及当月 DB-IP Country Lite 地区数据库，首次构建需要网络。镜像内置初始 GeoIP 库，主控可离线启动；运行后会在后台每天检查更新。镜像支持 Node 官方 Linux amd64/arm64 基础镜像；本次实际覆盖的平台见 TEST_REPORT.md。
 
 ### 配置
 
@@ -32,7 +32,7 @@ curl -f http://127.0.0.1:8080/healthz
 | ADMIN_PATH | 必填，独立生成的 8–128 位随机字母、数字、`_` 或 `-`；可带开头 `/`，不能含多级路径。缺失或无效时拒绝启动 |
 | HOST_PORT | 宿主机映射端口，默认 8080 |
 | BIND_ADDRESS | 默认 127.0.0.1，供本机反代和同机 Agent 使用 |
-| DATA_PATH | 默认 ./data，映射到 /app/data；包含 monitor.sqlite 和 WAL 文件 |
+| DATA_PATH | 默认 ./data，映射到 /app/data；包含 SQLite、更新后的 GeoIP 库和 Agent 版本归档 |
 | TRUSTED_PROXIES | 可信反代 IP/CIDR，逗号分隔；为空时忽略转发来源和 HTTPS 头 |
 | PUBLIC_IP | 可选，同机 Agent 无公网信息时用于自动地区识别的 VPS 公网 IP |
 | CORS_ALLOWED_ORIGINS | 仅独立前端跨域时填写精确 origin，逗号分隔 |
@@ -70,6 +70,10 @@ docker network inspect "$(docker inspect "$(docker compose ps -q monitor)" --for
 主控启动时将内置 Agent 版本归档到数据卷 `agent-releases/`，镜像升级后仍可指定已保留的版本安装。自动更新默认关闭，启用后仍每 6 小时检查，但来源改为当前主控或显式配置的下载镜像。Agent 更新需修改 `agent/release.json` 的版本号后重新构建；仅更新主控界面不会强制升级 Agent。后台 SQLite 备份不包含二进制归档，如需保留旧版本下载能力，应另行备份该目录。
 
 自动地区来自本地 GeoIP，支持 IPv4/IPv6。同机私网连接优先使用 Agent 提供的公网 IP，缺失时使用 `PUBLIC_IP` 或主控启动时发现的出口 IP。后台手动地区始终优先。识别粒度是国家/地区，库更新或出口 IP 变化可能影响结果。
+
+IP 库在主控启动后后台检查一次，此后每 24 小时检查一次，按 UTC 当前月份获取 DB-IP Country Lite。上游免费库按月发布；内容相同时不重复写盘，新库校验通过后保存到 `data/geoip/dbip-country-lite.mmdb` 并立即加载，节点下一次上报即使用新库，无需重启主控或 Agent。主控重启会从持久库和镜像内置库中选择较新的有效版本。
+
+下载超时、文件损坏、当月库尚未发布或写盘失败时继续使用当前库，次日再次尝试，不降级到旧版本。持久库损坏时可回退镜像内置库。日志事件为 `geoip_updated`、`geoip_unchanged`、`geoip_update_failed`；自动更新需要访问 `download.db-ip.com`，地区查询本身仍在本地进行。GeoIP 库可重新下载，不包含在后台 SQLite 备份中；保留数据目录可在容器重建后保留已更新的库。
 
 ## 手动备份与恢复
 

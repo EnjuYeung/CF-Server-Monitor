@@ -20,6 +20,8 @@ Download a consistent database snapshot in Admin → Database → Download datab
 
 Development requires Node.js 24.11+ (24.x) and Go 1.26.8: run `npm ci`, `npm run geoip:download`, `npm run build`, then `npm start`. Validate with `npm run test:all` and `npm run test:acceptance`.
 
+GeoIP updates run in the background at startup and every 24 hours, requesting the current UTC month's DB-IP Country Lite database. Verified downloads are stored in `data/geoip/dbip-country-lite.mmdb` and loaded immediately for subsequent Agent reports. Unchanged files are not rewritten; failed downloads or writes retain the current database and retry the next day. Restarts select the newer valid bundled or persisted database. The data directory preserves updates across container recreation; SQLite backups do not include the downloadable GeoIP database.
+
 See [Chinese deployment guide](README.md), [architecture](architecture.md), [code map](code_map.md), [latest test report](TEST_REPORT.md), [API](API.md), and [change log](changelog.md) for full details and known limits.
 
 Based on [CF-Server-Monitor](https://github.com/huilang-me/CF-Server-Monitor) and [cfsm-agent](https://github.com/huilang-me/cfsm-agent). IP Geolocation by [DB-IP](https://db-ip.com); see `geoip/NOTICE.md` for attribution.
