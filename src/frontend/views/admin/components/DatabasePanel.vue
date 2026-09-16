@@ -5,9 +5,10 @@
 
       <div class="settings-grid">
         <div class="form-group">
-          <label class="form-label">{{ trans.upgradeDatabase }}</label>
-          <p class="text-muted mb-2">{{ trans.upgradeDesc }}</p>
-          <button @click="$emit('open-db-modal', 'upgrade')" class="btn btn-primary btn-lg" :disabled="dbLoading">⬆️ {{ trans.upgradeDatabase }}</button>
+          <label class="form-label">{{ trans.manualBackup }}</label>
+          <p class="text-muted mb-2">{{ trans.manualBackupDesc }}</p>
+          <button @click="handleBackup" class="btn btn-primary btn-lg" :disabled="backingUp">{{ backingUp ? '⏳' : '💾' }} {{ trans.manualBackup }}</button>
+          <p v-if="backupError" role="alert" class="text-red">{{ backupError }}</p>
         </div>
 
         <div class="form-group">
@@ -68,7 +69,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { adminApi } from '../../../utils/api'
+import { adminApi, downloadBackup } from '../../../utils/api'
 
 const props = defineProps({
   trans: { type: Object, required: true },
@@ -79,6 +80,14 @@ const props = defineProps({
 
 defineEmits(['open-db-modal'])
 
+const backingUp = ref(false)
+const backupError = ref('')
+const handleBackup = async () => {
+  backingUp.value = true; backupError.value = '';
+  try { await downloadBackup(props.selectedApiIndex) }
+  catch (error) { backupError.value = error.message }
+  finally { backingUp.value = false }
+}
 const fileInput = ref(null)
 const exporting = ref(false)
 const importing = ref(false)

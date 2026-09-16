@@ -1,4 +1,5 @@
-import { http, isAdminLoggedIn } from './http'
+import { adminEndpoint, updateAdminAccess } from './adminAccess.js'
+import { http, isAdminLoggedIn, getAuthToken, setAuthToken, clearAuthToken } from './http'
 import { getApiBases, getWsBase, hasMultipleApiBases, getTitle } from './config'
 import { DEFAULT_SITE_TITLE, FRONTEND_WS_TIMEOUT_MINUTES_MAX, LATENCY_WINDOW } from './constants'
 import { ref } from 'vue'
@@ -9,7 +10,6 @@ import { resolveDisplayMode } from './displayMode.js'
 export { getApiBases, getWsBase }
 
 export const VERSION = ref('')
-export const LAST_WORKERS_VERSION = ref('')
 export const LAST_AGENT_VERSION = ref('')
 
 export const normalizeLiveSocketTimeoutMinutes = (value) => {
@@ -51,7 +51,7 @@ export const createLiveSocket = (subscribe, handlers = {}, apiIndex = 0, serverI
 
   const getJwtToken = () => {
     try {
-      return localStorage.getItem('jwt_token') || ''
+      return getAuthToken(getApiBases()[apiIndex])
     } catch (_) {
       return ''
     }
@@ -231,10 +231,9 @@ export const createLiveSocket = (subscribe, handlers = {}, apiIndex = 0, serverI
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       reconnectAttempts++
-      const delay = reconnectDelay
-      reconnectDelay = Math.min(reconnectDelay * 2, TIME.RECONNECT_MAX_DELAY_MS)
-      setTimeout(connect, delay)
-    }, 50)
+      connect()
+    }, reconnectDelay)
+    reconnectDelay = Math.min(reconnectDelay * 2, TIME.RECONNECT_MAX_DELAY_MS)
   }
 
   connect()
@@ -409,45 +408,32 @@ export const fetchAllHistory = async (id, hours, apiIndex = 0) => {
 }
 
 export const adminApi = async (data, apiIndex = 0) => {
-  const result = await http.postByIndex('/admin/api', data, apiIndex)
+  const result = await http.postByIndex(adminEndpoint('/api'), data, apiIndex)
   return result
 }
 
-export const login = async (username, password, turnstileToken = '', apiIndex = 0) => {
-  if (turnstileToken) {
-    localStorage.setItem('turnstile_token', turnstileToken)
-  }
-  const result = await http.postByIndex('/admin/api', { action: 'login', username, password }, apiIndex, { autoRedirect: false })
+export const login = async (username, password, apiIndex = 0, factor = {}) => {
+  const result = await http.postByIndex(adminEndpoint('/api'), { action: 'login', username, password, ...factor }, apiIndex, { autoRedirect: false, includeAuth: false })
   
   if (!result.error && result.data && result.data.token) {
-    localStorage.setItem('jwt_token', result.data.token)
+    setAuthToken(result.data.token, getApiBases()[apiIndex])
+    updateAdminAccess({ authorization: true, admin_path: result.data.admin_path })
   }
   return result
 }
 
-export const logout = () => {
-  localStorage.removeItem('jwt_token')
+export const logout = (apiIndex = 0) => {
+  clearAuthToken(getApiBases()[apiIndex])
+  updateAdminAccess({ authorization: false })
 }
 
 export const fetchConfig = async (apiIndex = 0) => {
-  const result = await http.getByIndex('/api/config', apiIndex, { includeAuth: true, includeTurnstile: false })
+  const result = await http.getByIndex('/api/config', apiIndex, { includeAuth: true })
   if (result.error) return null
   if (result.data && result.data.version) {
     VERSION.value = result.data.version
   }
-  LAST_WORKERS_VERSION.value = result.data?.last_workers_version || ''
   LAST_AGENT_VERSION.value = result.data?.last_agent_version || ''
-  return result.data
-}
-
-export const upgradeDatabase = async (apiIndex = 0) => {
-  const result = await http.postByIndex('/updateDatabase', {}, apiIndex, { autoRedirect: false })
-  if (result.error) {
-    if (result.status === 401) {
-      return { success: false, error: 'Unauthorized' }
-    }
-    return { success: false, error: 'Request failed' }
-  }
   return result.data
 }
 
@@ -463,3 +449,14 @@ export const clearHistory = async (apiIndex = 0) => {
 }
 
 export { isAdminLoggedIn }
+
+export const downloadBackup = async (apiIndex = 0) => {
+  const base = getApiBases()[apiIndex];
+  const response = await fetch(`${base}${adminEndpoint('/backup')}`, { method: 'POST', headers: {Authorization: `Bearer ${getAuthToken(base)}`} });
+  if (!response.ok) throw new Error(`Backup failed: ${response.status}`);
+  const url = URL.createObjectURL(await response.blob());
+  const a = document.createElement('a'); a.href = url;
+  a.download = `server-monitor-${new Date().toISOString().slice(0, 10)}.sqlite`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};

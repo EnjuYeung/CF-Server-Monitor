@@ -1,6 +1,7 @@
 const ALGORITHM = { name: 'HMAC', hash: 'SHA-256' };
 import { verifyPasswordHash } from '../utils/common.js';
 import { isValidJwtSecret } from '../utils/settings.js';
+import { digest, readSecurity } from '../services/twoFactor.js';
 
 export const AUTH_COOKIE_NAME = 'cfsm_auth';
 const TOKEN_QUERY_KEYS = ['token', 'auth_token', 'ws_token'];
@@ -100,16 +101,21 @@ async function verifyToken(token, env, sys) {
 
   try {
     const payload = await verifyJwt(token, secret);
-    return payload !== null;
+    return payload?.sub === 'admin' && Number.isFinite(payload.exp) &&
+      payload.admin_entry === digest(env.ADMIN_PATH) &&
+      payload.security_version === readSecurity(env.DB).version;
   } catch (e) {
     console.error('Auth check error:', e);
     return false;
   }
 }
 
-export async function generateToken(env, sys) {
+export async function generateToken(env, sys, securityVersion = readSecurity(env.DB).version) {
   const payload = {
     sub: 'admin',
+    jti: crypto.randomUUID(),
+    admin_entry: digest(env.ADMIN_PATH),
+    security_version: securityVersion,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 604800
   };
@@ -185,6 +191,17 @@ export async function validateCredentials(request, env, sys) {
 
     const username = decoded.slice(0, idx);
     const password = decoded.slice(idx + 1);
+    return validatePasswordCredentials(username, password, env, sys);
+  } catch (_) {
+    return { valid: false, needsPasswordUpgrade: false };
+  }
+}
+
+export async function validatePasswordCredentials(username, password, env, sys) {
+  try {
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password || username.length > 256 || password.length > 4096) {
+      return { valid: false, needsPasswordUpgrade: false };
+    }
 
     const validUsername = (sys && sys.username && sys.username.length > 0)
       ? sys.username
@@ -222,4 +239,12 @@ export function simpleAuthResponse() {
     status: 401,
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+// Called only after successful authentication; conservative expiry across supplied credentials.
+export function websocketTokenExpiry(request) {
+  const url = new URL(request.url);
+  const candidates = [extractBearerToken(request), getCookieValue(request, AUTH_COOKIE_NAME), ...TOKEN_QUERY_KEYS.map(key => url.searchParams.get(key))].filter(Boolean);
+  const expiries = candidates.map(token => { try { return Number(JSON.parse(atob(token.split('.')[1])).exp) * 1000; } catch { return 0; } }).filter(value => value > Date.now());
+  return expiries.length ? Math.min(...expiries) : Date.now();
 }

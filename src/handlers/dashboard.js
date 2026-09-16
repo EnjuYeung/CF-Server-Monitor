@@ -7,9 +7,8 @@ import { createSuccessResponse, createBadRequestResponse, createNotFoundResponse
 import {
   cacheLatestReportUpdate,
   getLatestReportSampleTimestamp,
-  getWorkerLatestReportUpdates
+  getCachedLatestReportUpdates
 } from '../utils/latestReportCache.js';
-import { markFrontendRealtimeActive } from '../utils/realtimeBroadcastGate.js';
 import {
   DASHBOARD_LATENCY_WINDOW_HOURS,
   DASHBOARD_LATENCY_WINDOW_POINTS,
@@ -96,13 +95,12 @@ function attachLatencyHistoryToServers(servers, latencyHistory) {
   }
 }
 
-async function getDurableRealtimeState(env, serverIds) {
+async function getHubRealtimeState(env, serverIds) {
   const empty = { latestReportUpdates: [] };
-  if (!env.METRICS_BROADCASTER || !Array.isArray(serverIds) || serverIds.length === 0) return empty;
+  if (!env.REALTIME_HUB || !Array.isArray(serverIds) || serverIds.length === 0) return empty;
 
   try {
-    const id = env.METRICS_BROADCASTER.idFromName('global');
-    const stub = env.METRICS_BROADCASTER.get(id);
+    const stub = env.REALTIME_HUB;
     const updates = [];
 
     for (let offset = 0; offset < serverIds.length; offset += DASHBOARD_LATEST_REPORT_ID_CHUNK_SIZE) {
@@ -124,16 +122,16 @@ async function getDurableRealtimeState(env, serverIds) {
   }
 }
 
-function mergeLatestReportUpdates(serverIds, durableUpdates, workerUpdates) {
+function mergeLatestReportUpdates(serverIds, hubUpdates, cachedUpdates) {
   const merged = new Map();
 
-  for (const update of durableUpdates) {
+  for (const update of hubUpdates) {
     if (!update?.serverId || !Array.isArray(update.samples)) continue;
     merged.set(String(update.serverId), update);
   }
 
-  // Worker 缓存后合并：样本更新时取更新的一包；同一包优先使用更准确的 Worker 接收时间。
-  for (const update of workerUpdates) {
+  // 合并上报缓存：优先最新样本，同一包使用请求接收时间。
+  for (const update of cachedUpdates) {
     if (!update?.serverId || !Array.isArray(update.samples)) continue;
     const serverId = String(update.serverId);
     const existing = merged.get(serverId);
@@ -162,19 +160,19 @@ async function getRealtimeStateForServers(env, serverIds) {
     return { latestReportUpdates: [] };
   }
 
-  const durableState = await getDurableRealtimeState(env, normalizedServerIds);
-  const durableLatestReportUpdates = durableState.latestReportUpdates;
+  const hubState = await getHubRealtimeState(env, normalizedServerIds);
+  const hubLatestReportUpdates = hubState.latestReportUpdates;
 
-  // DO 命中后反向预热当前 Worker isolate，降低随后 DO 休眠造成的空缓存概率。
-  for (const update of durableLatestReportUpdates) {
+  // 同步实时中心与请求缓存中的最新样本。
+  for (const update of hubLatestReportUpdates) {
     cacheLatestReportUpdate(update.serverId, update.samples, update.reportTs);
   }
 
   return {
     latestReportUpdates: mergeLatestReportUpdates(
       normalizedServerIds,
-      durableLatestReportUpdates,
-      getWorkerLatestReportUpdates(normalizedServerIds)
+      hubLatestReportUpdates,
+      getCachedLatestReportUpdates(normalizedServerIds)
     )
   };
 }
@@ -185,7 +183,6 @@ export async function handleServerAPI(request, env, sys) {
   if (sys.is_public !== 'true' && !isLoggedIn) {
     return simpleAuthResponse();
   }
-  markFrontendRealtimeActive();
   
   const url = new URL(request.url);
   const id = url.searchParams.get('id');
@@ -214,7 +211,6 @@ export async function handleServersAPI(request, env, sys) {
   if (sys.is_public !== 'true' && !isLoggedIn) {
     return simpleAuthResponse();
   }
-  markFrontendRealtimeActive();
   
   const results = (await getAllServers(env.DB, isLoggedIn)).map(withoutPrivateServerFields);
   const shouldIncludeLatencyHistory = sys.show_three_net_details === 'true';

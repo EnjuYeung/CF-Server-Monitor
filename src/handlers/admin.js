@@ -1,13 +1,13 @@
-import { buildAuthCookie, buildClearAuthCookie, checkAuth, simpleAuthResponse, validateCredentials, generateToken } from '../middleware/auth.js';
+import { buildAuthCookie, buildClearAuthCookie, checkAuth, simpleAuthResponse, validatePasswordCredentials, generateToken } from '../middleware/auth.js';
+import { consumeFactor, readSecurity } from '../services/twoFactor.js';
+import { handleTwoFactorAction } from './twoFactor.js';
 import { getLatestMetricsForAllServers } from '../database/schema.js';
 import { getAllServers, clearServersListCache } from '../utils/cache.js';
 import { clearAppearanceSettingsCache, isValidThemeOptions, isWssReportConfigured, isWssReportEnabled, normalizeBooleanSetting, normalizeDefaultLanguage, normalizeDisplayMode, normalizeExpireNotificationTime, normalizeExpireReminder, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, normalizeNotificationTemplate, normalizeNotificationTimezone, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod, normalizePreferredTheme, normalizeResourceAlertRules, normalizeTgNotify, normalizeWssReportHours, saveSiteOptions, saveThemeOptions, SITE_FIELDS, APPEARANCE_FIELDS } from '../utils/settings.js';
 import { mergeMetricsIntoServer } from '../utils/metrics.js';
-import { verifyTurnstileToken, hashPassword } from '../utils/common.js';
+import { hashPassword } from '../utils/common.js';
 import { AppError, createSuccessResponse, createBadRequestResponse, createUnauthorizedResponse, createErrorResponse } from '../utils/errors.js';
-import { addServerColumns } from '../database/updateDatabase.js';
 import { clearResourceAlertState, sendNotification } from '../services/notification.js';
-import { getNextServerHistoryPartitionId, HISTORY_MAX_PARTITION_ID } from '../database/indexOptimization.js';
 import { isValidTrafficCorrection, normalizeConnectionMode, normalizePingMode, normalizeWssReportInterval, validateAgentConfigInput, validatePingNode, validateNetworkInterfaces } from '../utils/agentConfig.js';
 import { scheduleAgentConfigChanged, scheduleAgentReportModeChanged } from '../utils/agentConfigNotify.js';
 import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../utils/serverBilling.js';
@@ -15,19 +15,6 @@ import { THEME_PREVIEW_AUTH_TTL_SECONDS } from '../utils/config.js';
 
 const PING_NODE_FIELDS = ['custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4'];
 const THEME_PREVIEW_AUTH_COOKIE = 'cfsm_theme_preview_auth';
-const DURABLE_OBJECTS_WEBSOCKET_MESSAGE_BILLING_RATIO = 20;
-
-function toUsageNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : 0;
-}
-
-function isDurableObjectsHibernationInvocationType(value) {
-  const type = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  if (!type) return false;
-  return type.includes('hibernation') || (type.includes('websocket') && type.includes('message'));
-}
-
 function normalizeBooleanFlag(value) {
   return value === true || value === 1 || value === '1' || value === 'true' ? '1' : '0';
 }
@@ -61,20 +48,9 @@ function isValidName(name) {
   return name && typeof name === 'string' && name.trim().length > 0 && name.length <= 100;
 }
 
-function isMissingColumnError(error) {
-  const message = error?.message || String(error);
-  return /no such column|has no column/i.test(message);
-}
-
 async function handleServerMutationError(db, error, fallbackMessage) {
-  if (isMissingColumnError(error)) {
-    console.warn('检测到数据库字段缺失，尝试添加缺失字段...');
-    await addServerColumns(db);
-    return createBadRequestResponse('dbColumnsAdded');
-  }
-
-  const errMsg = error?.message || String(error);
-  return createBadRequestResponse(errMsg || fallbackMessage);
+  console.error('[Admin] server mutation failed:', error.message);
+  return createBadRequestResponse(/50 servers/.test(error.message) ? 'Maximum 50 servers supported' : fallbackMessage);
 }
 
 function sanitizeCspDomains(input) {
@@ -110,7 +86,7 @@ function normalizePingNodeFields(source, fields = PING_NODE_FIELDS) {
     if (!result.valid) {
       return { valid: false, field };
     }
-    // Keep the disabled-node sentinel as text so D1 does not coerce it to 0.0 in TEXT columns.
+    // Keep the disabled-node sentinel as text so SQLite does not coerce it to 0.0 in TEXT columns.
     values[field] = source[field] === 0 || source[field] === '0' ? '0' : result.value;
   }
   return { valid: true, values };
@@ -228,236 +204,7 @@ async function validateThemeUrlAvailable(themeUrl) {
 }
 
 async function deleteServer(db, id) {
-  try {
-    const stmt1 = db.prepare(`PRAGMA foreign_key_list(metrics_history)`);
-    const result1 = await stmt1.all();
-    if (result1.results.length > 0) {
-      await db.prepare('DELETE FROM metrics_history WHERE server_id = ?').bind(id).run();
-    }
-
-    const stmt2 = db.prepare(`PRAGMA foreign_key_list(metrics_history_old)`);
-    const result2 = await stmt2.all();
-    if (result2.results.length > 0) {
-      await db.prepare('DELETE FROM metrics_history_old WHERE server_id = ?').bind(id).run();
-    }
-
-    await db.prepare('DELETE FROM servers WHERE id = ?').bind(id).run();
-  } catch (err) {
-    throw err;
-  }
-}
-
-function getUtcTodayRange() {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const end = new Date(start.getTime() + 86400000 - 1);
-  return {
-    date: start.toISOString().slice(0, 10),
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-    startTime: start.toISOString(),
-    endTime: end.toISOString()
-  };
-}
-
-function getUtcYesterdayRange() {
-  const now = new Date();
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(todayStart.getTime() - 86400000);
-  const end = new Date(todayStart.getTime() - 1);
-  return {
-    date: start.toISOString().slice(0, 10),
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-    startTime: start.toISOString(),
-    endTime: end.toISOString()
-  };
-}
-
-async function cloudflareGraphql(query, variables, token) {
-  const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ query, variables })
-  });
-  const data = await response.json();
-  if (!response.ok || data.errors) {
-    const message = data.errors && data.errors.length > 0 ? data.errors.map(e => e.message).join('; ') : 'Cloudflare GraphQL request failed';
-    throw new Error(message);
-  }
-  return data.data;
-}
-
-function estimateDurableObjectsWebSocketBillableRequests(messages) {
-  const count = toUsageNumber(messages);
-  if (count <= 0) return 0;
-  return Math.ceil(count / DURABLE_OBJECTS_WEBSOCKET_MESSAGE_BILLING_RATIO);
-}
-
-export function estimateDurableObjectsBillableRequests(breakdown = {}) {
-  if (breakdown === null || typeof breakdown !== 'object') {
-    return estimateDurableObjectsWebSocketBillableRequests(breakdown);
-  }
-
-  const httpRequests = toUsageNumber(breakdown.httpRequests);
-  const hibernationWakeups = toUsageNumber(breakdown.hibernationWakeups);
-  const inboundWebSocketMessages = toUsageNumber(breakdown.inboundWebSocketMessages);
-
-  return Math.ceil(httpRequests) +
-    Math.ceil(hibernationWakeups) +
-    estimateDurableObjectsWebSocketBillableRequests(inboundWebSocketMessages);
-}
-
-export function summarizeDurableObjectsUsage(invocationGroups = [], periodicGroups = []) {
-  const summary = {
-    httpRequests: 0,
-    hibernationWakeups: 0,
-    inboundWebSocketMessages: 0,
-    outboundWebSocketMessages: 0,
-    rawRequests: 0,
-    billableRequests: 0
-  };
-
-  for (const group of invocationGroups || []) {
-    const requests = toUsageNumber(group?.sum?.requests);
-    summary.rawRequests += requests;
-    if (isDurableObjectsHibernationInvocationType(group?.dimensions?.type)) {
-      summary.hibernationWakeups += requests;
-    } else {
-      summary.httpRequests += requests;
-    }
-  }
-
-  for (const group of periodicGroups || []) {
-    summary.inboundWebSocketMessages += toUsageNumber(group?.sum?.inboundWebsocketMsgCount);
-    summary.outboundWebSocketMessages += toUsageNumber(group?.sum?.outboundWebsocketMsgCount);
-  }
-
-  summary.billableRequests = estimateDurableObjectsBillableRequests(summary);
-  return summary;
-}
-
-async function fetchCloudflareUsage(token, accountId, range) {
-  const query = `query CloudflareUsage($accountTag: string!, $start: Date, $end: Date, $startTime: Time!, $endTime: Time!) {
-    viewer {
-      accounts(filter: { accountTag: $accountTag }) {
-        d1AnalyticsAdaptiveGroups(
-          limit: 10000
-          filter: { date_geq: $start, date_leq: $end }
-        ) {
-          sum { rowsRead rowsWritten }
-          dimensions { databaseId }
-        }
-        workersInvocationsAdaptive(
-          limit: 10000
-          filter: { datetime_geq: $startTime, datetime_leq: $endTime }
-        ) {
-          sum { requests }
-        }
-        durableObjectsInvocationsAdaptiveGroups(
-          limit: 10000
-          filter: { date_geq: $start, date_leq: $end }
-        ) {
-          sum { requests }
-          dimensions { type }
-        }
-        durableObjectsPeriodicGroups(
-          limit: 10000
-          filter: { date_geq: $start, date_leq: $end }
-        ) {
-          sum { duration inboundWebsocketMsgCount outboundWebsocketMsgCount }
-        }
-      }
-    }
-  }`;
-  const data = await cloudflareGraphql(query, {
-    accountTag: accountId,
-    start: range.start,
-    end: range.end,
-    startTime: range.startTime,
-    endTime: range.endTime
-  }, token);
-  const account = data.viewer?.accounts?.[0] || {};
-  const groups = account.d1AnalyticsAdaptiveGroups || [];
-  const usage = groups.reduce((total, group) => {
-    total.rowsRead += Number(group.sum?.rowsRead || 0);
-    total.rowsWritten += Number(group.sum?.rowsWritten || 0);
-    return total;
-  }, { rowsRead: 0, rowsWritten: 0 });
-  const workersRequests = (account.workersInvocationsAdaptive || []).reduce((total, group) => {
-    return total + Number(group.sum?.requests || 0);
-  }, 0);
-  const durableObjectsUsage = summarizeDurableObjectsUsage(
-    account.durableObjectsInvocationsAdaptiveGroups || [],
-    account.durableObjectsPeriodicGroups || []
-  );
-  const durableObjectsDuration = (account.durableObjectsPeriodicGroups || []).reduce((total, group) => {
-    return total + Number(group.sum?.duration || 0);
-  }, 0);
-  return {
-    rowsRead: usage.rowsRead,
-    rowsWritten: usage.rowsWritten,
-    workersRequests,
-    durableObjectsRequests: durableObjectsUsage.billableRequests,
-    durableObjectsHttpRequests: durableObjectsUsage.httpRequests,
-    durableObjectsHibernationWakeups: durableObjectsUsage.hibernationWakeups,
-    durableObjectsInboundWebSocketMessages: durableObjectsUsage.inboundWebSocketMessages,
-    durableObjectsOutboundWebSocketMessages: durableObjectsUsage.outboundWebSocketMessages,
-    durableObjectsRawRequests: durableObjectsUsage.rawRequests,
-    durableObjectsRequestsEstimated: true,
-    durableObjectsRequestBillingRatio: DURABLE_OBJECTS_WEBSOCKET_MESSAGE_BILLING_RATIO,
-    durableObjectsDuration,
-    databaseCount: groups.length
-  };
-}
-
-async function getD1DailyUsage(token, accountId) {
-  if (!token) throw new Error('cloudflareTokenRequired');
-  if (!accountId) throw new Error('cloudflareAccountIdRequired');
-
-  const todayRange = getUtcTodayRange();
-  const yesterdayRange = getUtcYesterdayRange();
-
-  const [todayUsage, yesterdayUsage] = await Promise.all([
-    fetchCloudflareUsage(token, accountId, todayRange),
-    fetchCloudflareUsage(token, accountId, yesterdayRange)
-  ]);
-
-  const yesterday = {
-    rowsRead: yesterdayUsage.rowsRead,
-    rowsWritten: yesterdayUsage.rowsWritten,
-    workersRequests: yesterdayUsage.workersRequests,
-    durableObjectsRequests: yesterdayUsage.durableObjectsRequests,
-    durableObjectsHttpRequests: yesterdayUsage.durableObjectsHttpRequests,
-    durableObjectsHibernationWakeups: yesterdayUsage.durableObjectsHibernationWakeups,
-    durableObjectsInboundWebSocketMessages: yesterdayUsage.durableObjectsInboundWebSocketMessages,
-    durableObjectsOutboundWebSocketMessages: yesterdayUsage.durableObjectsOutboundWebSocketMessages,
-    durableObjectsRawRequests: yesterdayUsage.durableObjectsRawRequests,
-    durableObjectsRequestsEstimated: yesterdayUsage.durableObjectsRequestsEstimated,
-    durableObjectsRequestBillingRatio: yesterdayUsage.durableObjectsRequestBillingRatio,
-    durableObjectsDuration: yesterdayUsage.durableObjectsDuration
-  };
-
-  return {
-    today: {
-      rowsRead: todayUsage.rowsRead,
-      rowsWritten: todayUsage.rowsWritten,
-      workersRequests: todayUsage.workersRequests,
-      durableObjectsRequests: todayUsage.durableObjectsRequests,
-      durableObjectsHttpRequests: todayUsage.durableObjectsHttpRequests,
-      durableObjectsHibernationWakeups: todayUsage.durableObjectsHibernationWakeups,
-      durableObjectsInboundWebSocketMessages: todayUsage.durableObjectsInboundWebSocketMessages,
-      durableObjectsOutboundWebSocketMessages: todayUsage.durableObjectsOutboundWebSocketMessages,
-      durableObjectsRawRequests: todayUsage.durableObjectsRawRequests,
-      durableObjectsRequestsEstimated: todayUsage.durableObjectsRequestsEstimated,
-      durableObjectsRequestBillingRatio: todayUsage.durableObjectsRequestBillingRatio,
-      durableObjectsDuration: todayUsage.durableObjectsDuration
-    },
-    yesterday
-  };
+  db.prepare('DELETE FROM servers WHERE id = ?').bind(id).run();
 }
 
 async function handleLoginAction({ request, env, sys, data }) {
@@ -467,30 +214,18 @@ async function handleLoginAction({ request, env, sys, data }) {
     return createBadRequestResponse('missingCredentials');
   }
 
-  const turnstileEnabled = sys && (sys.turnstile_enabled === 'true' || sys.turnstile_enabled === true);
-  const turnstileLoginEnabled = sys && (sys.turnstile_login_enabled === 'true' || sys.turnstile_login_enabled === true);
-  const turnstileSecretKey = sys && sys.turnstile_secret_key || '';
-
-  if (turnstileEnabled || turnstileLoginEnabled) {
-    const turnstileToken = request.headers.get('X-Turnstile-Token');
-    const isTurnstileVerified = await verifyTurnstileToken(turnstileToken, turnstileSecretKey);
-
-    if (!isTurnstileVerified) {
-      return createErrorResponse(new AppError('verificationFailed', 403));
-    }
-  }
-
-  const authHeader = 'Basic ' + btoa(username + ':' + password);
-  const mockRequest = {
-    headers: {
-      get: (key) => key === 'Authorization' ? authHeader : null
-    }
-  };
-
-  const credentialResult = await validateCredentials(mockRequest, env, sys);
+  const securityVersion = readSecurity(env.DB).version;
+  const credentialResult = await validatePasswordCredentials(username, password, env, sys);
 
   if (!credentialResult.valid) {
     return createUnauthorizedResponse('invalidCredentials');
+  }
+
+  const security = readSecurity(env.DB);
+  if (security.version !== securityVersion) return createUnauthorizedResponse('invalidCredentials');
+  if (security.secret) {
+    if (!data.otp && !data.recoveryCode) return createSuccessResponse({ requiresTwoFactor: true });
+    if (!consumeFactor(env, data.otp, data.recoveryCode)) return createUnauthorizedResponse('invalidTwoFactorCode');
   }
 
   if (credentialResult.needsPasswordUpgrade) {
@@ -506,10 +241,11 @@ async function handleLoginAction({ request, env, sys, data }) {
   }
 
   try {
-    const token = await generateToken(env, sys);
+    const token = await generateToken(env, sys, securityVersion);
     return createSuccessResponse({
       success: true,
       token: token,
+      admin_path: env.ADMIN_PATH,
       message: 'loginSuccessful'
     }, {
       'Set-Cookie': buildAuthCookie(request, token)
@@ -544,10 +280,10 @@ const PUBLIC_ADMIN_ACTION_HANDLERS = {
 
 async function handleGetSettingsAction({ env, sys, loadFullSettings }) {
   const fullSettings = loadFullSettings ? await loadFullSettings() : sys;
-  const { jwt_secret, ...safeSettings } = fullSettings || {};
+  const { jwt_secret, password, ...safeSettings } = fullSettings || {};
   return createSuccessResponse({
     success: true,
-    settings: safeSettings,
+    settings: { ...safeSettings, username: safeSettings.username || env.API_USER_NAME || 'admin' },
     api_secret: env.API_SECRET
   });
 }
@@ -656,24 +392,6 @@ async function handleListAction({ env }) {
   });
 }
 
-async function handleD1UsageAction({ data, sys }) {
-  const hasCloudflareToken = Object.prototype.hasOwnProperty.call(data, 'cloudflare_token');
-  const hasCloudflareAccountId = Object.prototype.hasOwnProperty.call(data, 'cloudflare_account_id');
-  const cloudflareToken = hasCloudflareToken ? data.cloudflare_token : (sys?.cloudflare_token || '');
-  const cloudflareAccountId = hasCloudflareAccountId ? data.cloudflare_account_id : (sys?.cloudflare_account_id || '');
-
-  try {
-    const usage = await getD1DailyUsage(String(cloudflareToken || '').trim(), String(cloudflareAccountId || '').trim());
-    return createSuccessResponse({
-      success: true,
-      usage,
-      message: 'd1UsageQueried'
-    });
-  } catch (e) {
-    return createBadRequestResponse(e.message);
-  }
-}
-
 async function handleSendTestNotificationAction({ data }) {
   const {
     tg_bot_token,
@@ -732,7 +450,6 @@ const AUTHENTICATED_ADMIN_ACTION_HANDLERS = {
   start_theme_preview: handleStartThemePreviewAction,
   save_theme_options: handleSaveThemeOptionsAction,
   list: handleListAction,
-  d1_usage: handleD1UsageAction,
   send_test_notification: handleSendTestNotificationAction
 };
 
@@ -749,6 +466,10 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       return simpleAuthResponse();
     }
 
+    if (typeof data.action === 'string' && data.action.startsWith('two_factor_')) {
+      return handleTwoFactorAction({ request, env, sys, data });
+    }
+
     const authenticatedActionHandler = AUTHENTICATED_ADMIN_ACTION_HANDLERS[data.action];
     if (authenticatedActionHandler) {
       return authenticatedActionHandler({ request, env, sys, data, loadFullSettings, ctx });
@@ -762,16 +483,6 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       }
       if (normalizedThemeUrl && !await validateThemeUrlAvailable(normalizedThemeUrl)) {
         return createBadRequestResponse('invalidThemeUrl');
-      }
-
-      // 如果 turnstile_enabled 或 turnstile_login_enabled 开启，验证 turnstile_site_key 和 turnstile_secret_key 都不为空
-      if (settings.turnstile_enabled === 'true' || settings.turnstile_enabled === true || settings.turnstile_login_enabled === 'true' || settings.turnstile_login_enabled === true) {
-        if (!settings.turnstile_site_key || settings.turnstile_site_key.trim().length === 0) {
-          return createBadRequestResponse('turnstileSiteKeyRequired');
-        }
-        if (!settings.turnstile_secret_key || settings.turnstile_secret_key.trim().length === 0) {
-          return createBadRequestResponse('turnstileSecretKeyRequired');
-        }
       }
 
       // 如果 tg_notify 或 expire_reminder 开启，验证 tg_bot_token 不为空
@@ -825,7 +536,8 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       }
 
       const shouldSaveAppearanceOptions = hasAppearanceInput(settings);
-      const appearanceOptions = {};
+      const appearanceRow = env.DB.prepare("SELECT value FROM settings WHERE key = 'appearance_options'").first();
+      const appearanceOptions = appearanceRow ? JSON.parse(appearanceRow.value) : {};
 
       if (shouldSaveAppearanceOptions) {
         const nestedAppearanceOptions = settings.appearance_options || {};
@@ -908,6 +620,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
         }
       }
       await saveSiteOptions(env.DB, siteOptions);
+      env.REALTIME_HUB?.revokeFrontendSessions();
       const shouldCloseAgentWssReports = !isWssReportEnabled({ ...sys, ...siteOptions });
       // Keep existing states on rule edits so threshold increases can emit recovery notifications.
       // checkResourceAlerts prunes states for removed rules or servers on the next evaluation.
@@ -944,13 +657,12 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
         const { max_order } = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM servers').first();
         const sortOrder = (max_order || 0) + 1;
 
-        const historyPartitionId = await getNextServerHistoryPartitionId(env.DB);
 
         await env.DB.prepare(`
           INSERT INTO servers
-          (id, name, server_group, region, "interface", sort_order, history_partition_id, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(id, name, group, region, networkInterfaces.value, sortOrder, historyPartitionId, Date.now()).run();
+          (id, name, server_group, region, "interface", sort_order, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(id, name, group, region, networkInterfaces.value, sortOrder, Date.now()).run();
       } catch (e) {
         return handleServerMutationError(env.DB, e, 'serverAddFailed');
       }
@@ -970,6 +682,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       }
       
       await deleteServer(env.DB, id);
+      env.REALTIME_HUB?.removeServer(id);
       
       clearServersListCache();
       
@@ -1003,6 +716,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       if (!id || !isValidUUID(id)) {
         return createBadRequestResponse('invalidServerId');
       }
+      if (!isValidName(name)) return createBadRequestResponse('invalidServerName');
       const effectiveConnectionMode = isWssReportConfigured(sys) ? connection_mode : 'http';
       const agentConfigResult = validateAgentConfigInput({
         collect_interval,
@@ -1096,6 +810,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       }
       
       clearServersListCache();
+      env.REALTIME_HUB?.revokeFrontendSessions();
       scheduleAgentConfigChanged(env, ctx, id);
       
       return createSuccessResponse({ 
@@ -1117,6 +832,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       
       for (const id of ids) {
         await deleteServer(env.DB, id);
+      env.REALTIME_HUB?.removeServer(id);
       }
       
       clearServersListCache();
@@ -1148,11 +864,6 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       const existingServers = await env.DB.prepare('SELECT id FROM servers').all();
       const existingIds = new Set((existingServers.results || []).map(s => s.id));
 
-      const existingPartitionIds = await env.DB.prepare('SELECT history_partition_id FROM servers').all();
-      const usedPartitionIds = new Set(
-        (existingPartitionIds.results || []).map(s => s.history_partition_id).filter(id => id > 0)
-      );
-
       let imported = 0;
       let skipped = 0;
       const skippedIds = [];
@@ -1170,25 +881,6 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
           continue;
         }
 
-        let partitionId = Number(server.history_partition_id) || 0;
-        if (partitionId <= 0 || partitionId > HISTORY_MAX_PARTITION_ID || usedPartitionIds.has(partitionId)) {
-          partitionId = 0;
-          for (let id = 1; id <= HISTORY_MAX_PARTITION_ID; id++) {
-            if (!usedPartitionIds.has(id)) {
-              partitionId = id;
-              break;
-            }
-          }
-          if (partitionId === 0) {
-            skipped++;
-            skippedIds.push(server.id);
-            continue;
-          }
-        }
-
-        usedPartitionIds.add(partitionId);
-        existingIds.add(server.id);
-
         const billingData = normalizeServerBillingData(server);
         const networkInterfaces = normalizeNetworkInterfaceField(server.interface);
         if (!networkInterfaces.valid) {
@@ -1203,8 +895,8 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
               currency, expire_date,
               traffic_limit, traffic_calc_type, "interface", reset_day, collect_interval, report_interval, wss_report_interval, connection_mode, ping_mode,
               auto_update, custom_ct, custom_cu, custom_cm, custom_bd, node_1, node_2, node_3, node_4, rx_correction, tx_correction,
-              offline_notify_disabled, is_hidden, sort_order, history_partition_id, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              offline_notify_disabled, is_hidden, sort_order, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             server.id,
             server.name || '',
@@ -1238,9 +930,9 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
             normalizeBooleanFlag(server.offline_notify_disabled),
             normalizeBooleanFlag(server.is_hidden),
             server.sort_order ?? 0,
-            partitionId,
             server.timestamp || Date.now()
           ).run();
+          existingIds.add(server.id);
           imported++;
         } catch (e) {
           skipped++;

@@ -20,23 +20,26 @@
           </select>
         </div>
         <div class="login-form-group">
-          <label class="login-label">{{ trans.username }}</label>
-          <input type="text" name="username" autocomplete="username" v-model="loginForm.username" required class="login-input" placeholder="admin">
+          <label class="login-label" for="login-username">{{ trans.username }}</label>
+          <input id="login-username" type="text" name="username" autocomplete="username" v-model="loginForm.username" required class="login-input" placeholder="admin" :disabled="loginLoading">
         </div>
         <div class="login-form-group last">
-          <label class="login-label">{{ trans.password }}</label>
+          <label class="login-label" for="login-password">{{ trans.password }}</label>
           <div class="password-input-wrapper">
-            <input :type="passwordVisible.login ? 'text' : 'password'" name="password" autocomplete="current-password" v-model="loginForm.password" required class="login-input" placeholder="••••••••">
+            <input id="login-password" :type="passwordVisible.login ? 'text' : 'password'" name="password" autocomplete="current-password" v-model="loginForm.password" required class="login-input" placeholder="••••••••" :disabled="loginLoading">
             <button type="button" class="password-toggle" @click="$emit('toggle-password', 'login')">
               {{ passwordVisible.login ? '🙈' : '👁️' }}
             </button>
           </div>
         </div>
-        <div v-if="turnstileSiteKey && (turnstileLoginEnabled || (turnstileEnabled && !turnstileVerified))" class="login-form-group">
-          <div id="admin-turnstile-container"></div>
+        <div v-if="requiresTwoFactor" class="login-form-group">
+          <p>{{ trans.twoFactorLoginPrompt }}</p>
+          <label class="login-label" for="login-otp">{{ loginForm.useRecovery ? trans.recoveryCode : trans.twoFactorCode }}</label>
+          <input id="login-otp" name="one-time-code" v-model="loginForm.code" type="text" :inputmode="loginForm.useRecovery ? 'text' : 'numeric'" :pattern="loginForm.useRecovery ? undefined : '[0-9]{6}'" :maxlength="loginForm.useRecovery ? 23 : 6" autocomplete="one-time-code" required class="login-input" :disabled="loginLoading">
+          <button type="button" class="btn btn-sm" :disabled="loginLoading" @click="loginForm.useRecovery = !loginForm.useRecovery; loginForm.code = ''">{{ loginForm.useRecovery ? trans.useAuthenticator : trans.useRecoveryCode }}</button>
         </div>
-        <div v-if="loginError" id="login-error" class="login-error">{{ loginError }}</div>
-        <button type="submit" class="login-btn">{{ loginLoading ? '⏳' : trans.login }}</button>
+        <div v-if="loginError" id="login-error" class="login-error" role="alert">{{ loginError }}</div>
+        <button type="submit" class="login-btn" :disabled="loginLoading">{{ loginLoading ? '⏳' : trans.login }}</button>
       </form>
     </div>
     <Footer />
@@ -55,10 +58,7 @@ defineProps({
   passwordVisible: { type: Object, required: true },
   loginError: { type: String, default: '' },
   loginLoading: { type: Boolean, default: false },
-  turnstileSiteKey: { type: String, default: '' },
-  turnstileLoginEnabled: { type: Boolean, default: false },
-  turnstileEnabled: { type: Boolean, default: false },
-  turnstileVerified: { type: Boolean, default: false }
+  requiresTwoFactor: { type: Boolean, default: false },
 })
 
 defineEmits(['login', 'toggle-password', 'api-index-change'])

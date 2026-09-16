@@ -224,13 +224,12 @@ export function useServerCardData(props) {
     const hours = Math.floor((totalSeconds % 86400) / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
     const seconds = totalSeconds % 60
-    const zh = currentLang.value === 'zh'
     const parts = []
 
-    if (days > 0) parts.push(zh ? `${days}天` : `${days}d`)
-    if (hours > 0) parts.push(zh ? `${hours}小时` : `${hours}h`)
-    if (minutes > 0) parts.push(zh ? `${minutes}分` : `${minutes}m`)
-    if (seconds > 0 || parts.length === 0) parts.push(zh ? `${seconds}秒` : `${seconds}s`)
+    if (days > 0) parts.push(`${days}${trans.value.uptimeDay}`)
+    if (hours > 0) parts.push(`${hours}${trans.value.uptimeHour}`)
+    if (minutes > 0) parts.push(`${minutes}${trans.value.uptimeMinute}`)
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}${trans.value.uptimeSecond}`)
 
     return parts.slice(0, 3).join(' ')
   }
@@ -298,7 +297,7 @@ export function useServerCardData(props) {
 
   const formatPingValue = (value) => isPingValid(value) ? `${Math.round(Number(value))}ms` : trans.value.timeout
   const formatLossValue = (value) => formatPercentValue(normalizeProbeMetricValue(value))
-  const noSampleText = computed(() => currentLang.value === 'zh' ? '无样本' : 'No samples')
+  const noSampleText = computed(() => trans.value.noSamples)
 
   const formatLatencyTimeText = (timestamp) => {
     const startTs = normalizeLatencyTimestamp(timestamp, 0)

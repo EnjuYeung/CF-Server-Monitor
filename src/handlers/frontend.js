@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { loadSettings } from '../utils/settings.js';
 import {
   DEFAULT_SITE_TITLE,
@@ -13,43 +15,15 @@ import {
   injectApiBase
 } from '../utils/csp.js';
 import { checkAuth } from '../middleware/auth.js';
+import { isAdminEntry } from '../utils/adminPath.js';
 
 const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const PREVIEW_COOKIE = 'cfsm_theme_preview';
 const PREVIEW_AUTH_COOKIE = 'cfsm_theme_preview_auth';
 
-let filesCache = null;
-
 async function loadFrontendFiles(env) {
-  if (filesCache) return filesCache;
-
-  try {
-    const files = {};
-
-    if (env.ASSETS) {
-      try {
-        const mainFiles = ['dashboard.html', 'style.css'];
-        for (const filename of mainFiles) {
-          try {
-            const res = await env.ASSETS.fetch(new Request(`http://static/${filename}`));
-            if (res.ok) {
-              files[filename] = await res.text();
-            }
-          } catch (e) {
-            // ignore missing asset binding files
-          }
-        }
-      } catch (e) {
-        console.log('[INFO] No ASSETS binding');
-      }
-    }
-
-    filesCache = files;
-    return filesCache;
-  } catch (e) {
-    console.error('[ERROR] Failed to load frontend files:', e);
-    return {};
-  }
+  try { return { 'dashboard.html': await readFile(join(env.STATIC_ROOT, 'dashboard.html'), 'utf8') }; }
+  catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
 }
 
 function escapeHtml(str) {
@@ -205,7 +179,7 @@ function isCommitRef(ref) {
   return /^[a-f0-9]{40}$/i.test(ref);
 }
 
-function getThemeWorkerCacheTtl(parsedTheme) {
+function getThemeCacheTtl(parsedTheme) {
   return isCommitRef(parsedTheme.ref) ? THEME_COMMIT_CACHE_TTL_SECONDS : THEME_ASSET_CACHE_TTL_SECONDS;
 }
 
@@ -306,19 +280,21 @@ function stripBrowserCacheHeaders(response) {
   });
 }
 
+const themeCache = new Map();
+
 async function fetchWithCache(rawUrl, contentType, workerCacheUrl, workerCacheTtl = THEME_ASSET_CACHE_TTL_SECONDS) {
-  const cacheKey = new Request(workerCacheUrl || rawUrl, { method: 'GET' });
-  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = workerCacheUrl || rawUrl;
+  const cache = themeCache;
 
   if (cache) {
-    const cached = await cache.match(cacheKey);
+    const cached = cache.get(cacheKey)?.expires > Date.now() ? new Response(cache.get(cacheKey).body, { headers: cache.get(cacheKey).headers }) : null;
     if (cached) {
       return stripBrowserCacheHeaders(cached);
     }
   }
 
   const originResponse = await fetch(rawUrl, {
-    headers: { 'User-Agent': 'CFSM-Theme-Proxy' }
+    headers: { 'User-Agent': 'CFSM-Theme-Proxy' }, signal: AbortSignal.timeout(10000)
   });
 
   if (!originResponse.ok) {
@@ -343,7 +319,11 @@ async function fetchWithCache(rawUrl, contentType, workerCacheUrl, workerCacheTt
   });
 
   if (cache) {
-    await cache.put(cacheKey, response.clone()).catch(() => {});
+    const body = new Uint8Array(await response.clone().arrayBuffer());
+    if (body.byteLength <= 2 * 1024 * 1024) {
+      if (cache.size >= 16) cache.delete(cache.keys().next().value);
+      cache.set(cacheKey, { body, headers: Object.fromEntries(headers), expires: Date.now() + workerCacheTtl * 1000 });
+    }
   }
 
   return stripBrowserCacheHeaders(response);
@@ -369,7 +349,7 @@ async function serveThemeAsset(request, themeUrl) {
     `${parsedTheme.rawBase}/assets/${assetPath}`,
     contentType,
     `${parsedTheme.cacheBase}/assets/${assetPath}`,
-    getThemeWorkerCacheTtl(parsedTheme)
+    getThemeCacheTtl(parsedTheme)
   );
   const headers = new Headers(response.headers);
   headers.set('X-CFSM-Theme-Asset', '1');
@@ -392,7 +372,7 @@ async function loadThemeIndex(themeUrl) {
     `${parsedTheme.rawBase}/index.html`,
     'text/html;charset=UTF-8',
     `${parsedTheme.cacheBase}/index.html`,
-    getThemeWorkerCacheTtl(parsedTheme)
+    getThemeCacheTtl(parsedTheme)
   );
 
   if (!response.ok) return null;
@@ -400,12 +380,17 @@ async function loadThemeIndex(themeUrl) {
 }
 
 function buildHtmlResponse(html, settings, request, env = {}, previewThemeUrl = '') {
+  if (isAdminEntry(new URL(request.url).pathname, env)) {
+    html = insertBeforeHeadClose(html, `<meta name="adminEntry" content="${escapeHtml(env.ADMIN_PATH)}">`);
+  }
   const rendered = injectAppearanceSettings(html, settings, env);
   const headers = new Headers({
     'Content-Type': 'text/html;charset=UTF-8',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'Content-Security-Policy': rendered.csp
+    'Content-Security-Policy': rendered.csp,
+    'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer'
   });
 
   if (previewThemeUrl) {
@@ -462,10 +447,6 @@ function resolveThemeUrlForAsset(request, settings) {
   };
 }
 
-function shouldUseBuiltinFrontend(path) {
-  return path === '/admin' || path.startsWith('/admin/');
-}
-
 export async function serveFrontend(request, env, settings = null) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -496,7 +477,7 @@ export async function serveFrontend(request, env, settings = null) {
     return buildPreviewUnauthorizedResponse(request);
   }
 
-  if (!shouldUseBuiltinFrontend(path) && effectiveThemeUrl) {
+  if (!isAdminEntry(path, env) && effectiveThemeUrl) {
     const themeHtml = await loadThemeIndex(effectiveThemeUrl);
     if (themeHtml) {
       return buildHtmlResponse(themeHtml, settings, request, env, previewThemeUrl);

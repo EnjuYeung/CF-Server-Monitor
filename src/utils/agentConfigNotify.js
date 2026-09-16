@@ -1,9 +1,8 @@
 export async function notifyAgentConfigChanged(env, serverId) {
   const normalizedServerId = String(serverId || '').trim();
-  if (!normalizedServerId || !env?.METRICS_BROADCASTER) return null;
+  if (!normalizedServerId || !env?.REALTIME_HUB) return null;
 
-  const id = env.METRICS_BROADCASTER.idFromName('global');
-  const stub = env.METRICS_BROADCASTER.get(id);
+  const stub = env.REALTIME_HUB;
   return stub.fetch('http://internal/agent-config-changed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -12,10 +11,9 @@ export async function notifyAgentConfigChanged(env, serverId) {
 }
 
 export async function notifyAgentReportModeChanged(env) {
-  if (!env?.METRICS_BROADCASTER) return null;
+  if (!env?.REALTIME_HUB) return null;
 
-  const id = env.METRICS_BROADCASTER.idFromName('global');
-  const stub = env.METRICS_BROADCASTER.get(id);
+  const stub = env.REALTIME_HUB;
   return stub.fetch('http://internal/agent-config-changed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -29,8 +27,8 @@ export function scheduleAgentConfigChanged(env, ctx, serverId) {
     return null;
   });
 
-  if (ctx && typeof ctx.waitUntil === 'function') {
-    ctx.waitUntil(promise);
+  if (ctx && typeof ctx.defer === 'function') {
+    ctx.defer(promise);
   }
 
   return promise;
@@ -42,8 +40,8 @@ export function scheduleAgentReportModeChanged(env, ctx) {
     return null;
   });
 
-  if (ctx && typeof ctx.waitUntil === 'function') {
-    ctx.waitUntil(promise);
+  if (ctx && typeof ctx.defer === 'function') {
+    ctx.defer(promise);
   }
 
   return promise;

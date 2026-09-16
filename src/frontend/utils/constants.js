@@ -1,4 +1,4 @@
-export const DEFAULT_SITE_TITLE = 'Cloudflare Server Monitor'
+export const DEFAULT_SITE_TITLE = 'Server Monitor'
 export const FRONTEND_WS_TIMEOUT_MINUTES_MAX = 1440
 
 export const TIME = {
@@ -38,7 +38,6 @@ export const STORAGE = {
   LANGUAGE_PREFERENCE: 'language_preference',
   VIEW_PREFERENCE: 'monitor_preferred_view',
   JWT_TOKEN: 'jwt_token',
-  TURNSTILE_TOKEN: 'turnstile_token'
 }
 
 export const STATUS = {

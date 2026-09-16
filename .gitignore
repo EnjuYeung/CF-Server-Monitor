@@ -40,3 +40,13 @@ Thumbs.db
 # Cloudflare Workers
 .wrangler/
 dist/
+
+# Local runtime and acceptance artifacts
+data/
+output/
+.playwright-cli/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+geoip/*.mmdb
+agent-dist/

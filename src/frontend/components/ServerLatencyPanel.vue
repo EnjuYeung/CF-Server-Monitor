@@ -1,7 +1,7 @@
 <template>
   <div v-if="showThreeNetDetails && hasThreeNetDetails" :class="['three-net-panel', { 'three-net-panel-ring': variant === 'ring' }]">
     <div class="three-net-columns">
-      <div class="three-net-column" aria-label="Ping">
+      <div class="three-net-column" :aria-label="trans.latencyMonitor">
         <div class="three-net-row" v-for="row in threeNetDetails" :key="'ping-' + row.key">
           <div class="three-net-head">
             <span class="three-net-name">{{ row.label }}</span>
@@ -19,7 +19,7 @@
           </div>
         </div>
       </div>
-      <div class="three-net-column" aria-label="Loss">
+      <div class="three-net-column" :aria-label="trans.packetLoss">
         <div class="three-net-row" v-for="row in threeNetDetails" :key="'loss-' + row.key">
           <div class="three-net-head three-net-head-loss">
             <strong class="three-net-value" :style="{ color: getLossColor(row.averageLoss) }">{{ formatLossValue(row.averageLoss) }}</strong>
@@ -55,6 +55,8 @@
 </template>
 
 <script setup>
+import { useTranslation } from '../utils/i18n.js'
+const trans = useTranslation()
 defineProps({
   variant: {
     type: String,

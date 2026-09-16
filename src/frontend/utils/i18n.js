@@ -1,7 +1,57 @@
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
+import japanese from './locales/ja.js'
+import security from './locales/security.js'
+import { SUPPORTED_LANGUAGES, normalizeLanguagePreference, resolveBrowserLanguage } from '../../utils/language.js'
+export { normalizeLanguagePreference, isChineseBrowserLanguage } from '../../utils/language.js'
 
 const translations = reactive({
+  ja: japanese,
   en: {
+    cardCpu: "CPU",
+    cardRam: "RAM",
+    cardDisk: "DISK",
+    cardUse: "USE",
+    cardLoad: "LOAD",
+    cardNet: "NET",
+    cardTraffic: "TRF",
+
+    languageJapanese: "Japanese",
+    loading: "Loading...",
+    initializing: "Initializing...",
+    controllerUnavailable: "Controller unavailable. Please reload the page.",
+    more: "MORE",
+    loadingRemainingSites: "Loading remaining sites...",
+    expand: "Expand",
+    collapse: "Collapse",
+    expandChart: "Expand chart",
+    collapseChart: "Collapse chart",
+    noSamples: "No samples",
+    unlimited: "Unlimited",
+    uptimeDay: "d",
+    uptimeHour: "h",
+    uptimeMinute: "m",
+    uptimeSecond: "s",
+    download: "Download",
+    uploadTraffic: "Upload",
+    read: "Read",
+    write: "Write",
+    builtin: "Built-in",
+    sakura: "Sakura",
+    mikusDescription: "Built-in Mikus mode. Switches back to the default theme and enables Mikus colors, loading screens, and sakura effects.",
+    ipGeolocationBy: "IP Geolocation by",
+    basedOn: "Based on",
+    help: "Help",
+    serverNamePlaceholder: "e.g. My Server",
+    groupNamePlaceholder: "e.g. US VPS",
+    exampleTrafficLimit: "e.g. 1000",
+    cores: "Cores",
+    minuteShort: "m",
+    hourShort: "h",
+    dayShort: "d",
+    completeVerification: "Please complete the verification",
+
+    manualBackup: 'Download database backup',
+    manualBackupDesc: 'Download a complete SQLite snapshot including servers, settings and history.',
     theme: 'Theme',
     themeAuto: 'Follow System',
     themeDark: 'Dark',
@@ -13,7 +63,6 @@ const translations = reactive({
     barChart: 'BAR CHART',
     ringChart: 'RING CHART',
     table: 'TABLE',
-    map: 'MAP',
     admin: 'Admin',
     all: 'All',
     totalServers: 'Total Servers',
@@ -83,7 +132,6 @@ const translations = reactive({
     swap: 'Swap',
     used: 'Used',
     lastUpdate: 'Last update',
-    workersUpdateAvailable: 'New version',
     autoRefresh: 'Auto-refresh',
     seconds: 's',
     timeout: 'TIMEOUT',
@@ -172,7 +220,7 @@ const translations = reactive({
     defaultLanguage: 'Default Language',
     displayOptions: 'Display Options',
     wssReportEnabled: 'Agent WSS Reporting',
-    wssReportTip: 'Enabling WSS reduces Workers requests and increases real-time performance, but enabling it 24 hours a day can use 85% of Durable Objects duration regardless of server count. Recommended to enable when no other projects are using Durable Objects.',
+    wssReportTip: 'Enable WebSocket reporting for live updates. The controller stores history at the configured reporting interval; HTTP reporting remains available.',
     wssReportHours: 'Active Hours',
     wssReportHoursTip: 'The panel shows local hours. Settings are saved as UTC hours, and agents use HTTP reporting outside the selected hours.',
     localTime: 'Local time',
@@ -295,10 +343,6 @@ const translations = reactive({
     verificationFailed: 'Verification failed',
     refreshToRetry: 'Please refresh the page to try again',
     verificationError: 'Verification error',
-    turnstileNotSupported: 'Turnstile Not Supported',
-    turnstileNotSupportedDesc: 'Turnstile is enabled on one of the remote endpoints. Please disable it on the remote site to use this dashboard.',
-    turnstileSiteKeyMismatch: 'Turnstile Site Key Mismatch',
-    turnstileSiteKeyMismatchDesc: 'Multiple sites have Turnstile enabled but use different site keys. Use the same Turnstile widget for all enabled sites.',
     dbManagement: 'Database Management',
     upgradeDatabase: 'Upgrade Database',
     clearHistory: 'Clear History Data',
@@ -320,8 +364,6 @@ const translations = reactive({
     selectServersToDelete: 'Please select servers to delete',
     invalidServerIdInList: 'Contains invalid server ID',
     unknownAction: 'Unknown action',
-    cloudflareTokenRequired: 'Please configure Cloudflare Token first',
-    cloudflareAccountIdRequired: 'Please configure Cloudflare Account ID first',
     upgrading: 'Upgrading...',
     clearing: 'Clearing...',
     collectInterval: 'Collect Interval (seconds)',
@@ -353,10 +395,10 @@ const translations = reactive({
     agentVersionShell: 'Shell Version',
     agentVersionGo: 'Go Version',
     installVersionPlaceholder: 'Latest version by default',
-    ghProxy: 'Third-party GitHub Proxy',
-    ghProxyTip: 'Use only trusted proxy services. Third-party proxies can see or modify downloaded installation files and may introduce security risks.',
-    installVersionTip: 'Get the latest version from https://github.com/huilang-me/cfsm-agent/releases',
-    ghProxyPlaceholder: 'Direct',
+    agentDownloadSource: 'Agent download source',
+    agentDownloadTip: 'Optional trusted mirror URL ending in /agent. Empty uses this controller for installation and updates.',
+    installVersionTip: 'Leave empty for the latest stable Agent on this controller. A specified version must exist on the download source.',
+    agentDownloadPlaceholder: 'Default: this controller',
     pingNodes: 'Ping Nodes',
     customCt: 'Telecom',
     customCu: 'Union Telecom',
@@ -375,15 +417,6 @@ const translations = reactive({
     usernameRequired: 'Username is required',
     securitySettings: 'Security Settings',
     securitySettings: 'Security Settings',
-    turnstileSettings: 'Cloudflare Turnstile',
-    enableTurnstile: 'Enable Turnstile (Global)',
-    enableTurnstileLogin: 'Enable Turnstile for Login',
-    turnstileLoginTip: 'When enabled, Turnstile verification is only required during login.',
-    turnstileSiteKey: 'Site Key',
-    turnstileSiteKeyPlaceholder: 'Turnstile Site Key',
-    turnstileSecretKey: 'Secret Key',
-    turnstileSecretKeyPlaceholder: 'Turnstile Secret Key',
-    turnstileTip: 'Cloudflare Turnstile provides bot protection. Get keys from Cloudflare Dashboard.',
     jwtSettings: 'JWT Settings',
     jwtSecret: 'JWT Secret',
     monthlyTraffic: 'Monthly Traffic',
@@ -402,28 +435,10 @@ const translations = reactive({
     trafficCalcUl: 'Upload Only',
     trafficCalcDl: 'Download Only',
     trafficCalcMax: 'Max of Both',
-    cloudflareSettings: 'Cloudflare Settings',
-    cloudflareAccountId: 'Cloudflare Account ID',
-    cloudflareAccountIdPlaceholder: 'e.g. f81d307be4628170a3878394435c9c8b',
-    cloudflareTokenPlaceholder: 'Cloudflare API Token',
-    cloudflareTokenTip: 'Requires Account Analytics Read permission to query usage.',
-    queryD1Quota: 'Query CF Account Usage',
-    d1UsageQueried: 'CF Account Usage query succeeded. Remember to save.',
-    d1UsageDate: 'Usage Date',
-    d1RowsRead: 'Rows Read',
-    d1RowsWritten: 'Rows Written',
-    workersRequests: 'Workers Requests',
-    durableObjectsRequests: 'DO Billable Requests (est.)',
-    durableObjectsHttpRequests: 'DO HTTP Requests',
-    durableObjectsHibernationWakeups: 'DO Hibernation Wake-ups',
-    durableObjectsInboundWebSocketMessages: 'DO Inbound WebSocket Messages',
-    durableObjectsOutboundWebSocketMessages: 'DO Outbound WebSocket Messages',
     billingRatioOneToOne: '1:1 billed',
     billingRatioWebSocketIncoming: '20:1 billed',
     billingRatioNotBilled: 'not billed',
     rawRequests: 'raw',
-    durableObjectsDuration: 'DO Duration (GB-s)',
-    durableObjectsDurationTip: 'Wss connection uptime affects the usage. A 24‑hour persistent connection uses about 85% steadily, and this does not scale with the number of servers.',
     todayUsage: 'Today Usage',
     yesterdayUsage: 'Yesterday Usage',
     secondsAgo: 'secs ago',
@@ -447,8 +462,6 @@ const translations = reactive({
     adminDisabledDesc: 'Admin panel is disabled when using multi-site mode.',
     backToDashboard: 'Back to Dashboard',
     validationError: 'Validation Error',
-    turnstileSiteKeyRequired: 'Turnstile Site Key is required when Turnstile is enabled',
-    turnstileSecretKeyRequired: 'Turnstile Secret Key is required when Turnstile is enabled',
     tgBotTokenRequired: 'Telegram Bot Token is required when notifications are enabled',
     notificationWebhookUrlRequired: 'Webhook URL is required when custom webhook is enabled',
     disableOfflineNotify: 'Disable Offline Notification',
@@ -463,7 +476,7 @@ const translations = reactive({
     exportServers: 'Export Servers',
     importServers: 'Import Servers',
     exportServersDesc: 'Export all server configurations as a JSON file',
-    importServersDesc: 'Import server configurations from a JSON file. Duplicate IDs will be skipped, and conflicting history_partition_id will be reassigned.',
+    importServersDesc: 'Import server configurations from a JSON file. Duplicate IDs will be skipped.',
     serversExported: 'Servers exported successfully',
     serversExportFailed: 'Failed to export servers',
     serversImported: 'Servers imported successfully',
@@ -477,13 +490,6 @@ const translations = reactive({
     skippedIds: 'Skipped IDs',
     selectJsonFile: 'Select a JSON file to import',
     themeStore: 'Theme Store',
-    donation: 'Support',
-    donationTitle: 'Buy Me a Bubble Tea',
-    donationDesc: 'If CFSM has been useful to you, send a little donation token to support continued maintenance.',
-    donationToken: 'Every token becomes energy for more code, fixes, and late-night monitoring.',
-    donationThanks: 'Thanks for keeping this little project running!',
-    donationWechat: 'WeChat Scan to support',
-    donationQrAlt: 'WeChat appreciation QR code',
     themeStoreLoading: 'Loading themes',
     themeStoreLoadFailed: 'Failed to load theme store',
     themeStoreNetworkError: 'Unable to load the theme store. Please check network access to raw.githubusercontent.com and api.github.com, then retry.',
@@ -509,6 +515,51 @@ const translations = reactive({
     view: 'View',
   },
   zh: {
+    cardCpu: "CPU",
+    cardRam: "RAM",
+    cardDisk: "DISK",
+    cardUse: "USE",
+    cardLoad: "LOAD",
+    cardNet: "NET",
+    cardTraffic: "TRF",
+
+    languageJapanese: "日文",
+    loading: "加载中...",
+    initializing: "初始化中...",
+    controllerUnavailable: "无法连接主控，请刷新重试。",
+    more: "更多",
+    loadingRemainingSites: "正在加载其余站点...",
+    expand: "展开",
+    collapse: "收起",
+    expandChart: "放大图表",
+    collapseChart: "收起图表",
+    noSamples: "无样本",
+    unlimited: "不限量",
+    uptimeDay: "天",
+    uptimeHour: "小时",
+    uptimeMinute: "分",
+    uptimeSecond: "秒",
+    download: "下载",
+    uploadTraffic: "上传",
+    read: "读取",
+    write: "写入",
+    builtin: "内置",
+    sakura: "樱花",
+    mikusDescription: "内置 Mikus 模式，启用后切回默认主题，并开启 Mikus 配色、加载页与樱花动效。",
+    ipGeolocationBy: "IP 地区信息来自",
+    basedOn: "基于",
+    help: "帮助",
+    serverNamePlaceholder: "例如：我的服务器",
+    groupNamePlaceholder: "例如：美国 VPS",
+    exampleTrafficLimit: "例如：1000",
+    cores: "核",
+    minuteShort: "分",
+    hourShort: "小时",
+    dayShort: "天",
+    completeVerification: "请完成验证",
+
+    manualBackup: '下载数据库备份',
+    manualBackupDesc: '下载包含服务器、设置和历史数据的完整 SQLite 快照。',
     collectInterval: '采集间隔（秒）',
     theme: '主题',
     themeAuto: '跟随系统',
@@ -521,7 +572,6 @@ const translations = reactive({
     barChart: '条形图',
     ringChart: '环形图',
     table: '列表',
-    map: '地图',
     admin: '管理',
     all: '全部',
     totalServers: '服务器总数',
@@ -591,7 +641,6 @@ const translations = reactive({
     swap: '交换分区',
     used: '已用',
     lastUpdate: '最后更新',
-    workersUpdateAvailable: '新版',
     autoRefresh: '自动刷新',
     seconds: '秒',
     timeout: '超时',
@@ -680,7 +729,7 @@ const translations = reactive({
     defaultLanguage: '默认语言',
     displayOptions: '显示选项',
     wssReportEnabled: 'Agent WSS 上报',
-    wssReportTip: '开启 WSS 可减少 Workers 请求量，增加实时性；24 小时开启会占用 85% Durable Objects 时长消耗（和服务器数量无关），无其他项目占用的情况下，建议开启。',
+    wssReportTip: '开启 WebSocket 上报可提高实时性。主控按配置的上报间隔保存历史，同时保留 HTTP 上报方式。',
     wssReportHours: 'WSS 开启时段',
     wssReportHoursTip: '面板按本地时区显示小时，设置保存为 UTC 小时；未选中时段 Agent 自动使用 HTTP 上报。',
     localTime: '本地时间',
@@ -803,10 +852,6 @@ const translations = reactive({
     verificationFailed: '验证失败',
     refreshToRetry: '请刷新页面重试',
     verificationError: '验证错误',
-    turnstileNotSupported: '不支持 Turnstile',
-    turnstileNotSupportedDesc: '检测到其中一个远程端点开启了 Turnstile，请在该站点关闭后继续使用。',
-    turnstileSiteKeyMismatch: 'Turnstile 站点密钥不一致',
-    turnstileSiteKeyMismatchDesc: '多个站点已启用 Turnstile，但站点密钥不一致。请为所有启用的站点使用同一个 Turnstile 组件。',
     dbManagement: '数据库管理',
     upgradeDatabase: '升级数据库',
     clearHistory: '清空历史数据',
@@ -828,8 +873,6 @@ const translations = reactive({
     selectServersToDelete: '请选择要删除的服务器',
     invalidServerIdInList: '包含无效的服务器 ID',
     unknownAction: '未知操作',
-    cloudflareTokenRequired: '请先配置 Cloudflare Token',
-    cloudflareAccountIdRequired: '请先配置 Cloudflare 用户 ID / Account ID',
     upgrading: '升级中...',
     clearing: '清空中...',
     reportInterval: '上报间隔（秒）',
@@ -860,10 +903,10 @@ const translations = reactive({
     agentVersionShell: 'Shell 版本',
     agentVersionGo: 'Go 版本',
     installVersionPlaceholder: '默认最新版',
-    ghProxy: '第三方 GitHub 代理',
-    ghProxyTip: '仅使用可信代理服务。第三方代理可能查看或篡改下载的安装文件，存在安全风险。',
-    installVersionTip: '通过 https://github.com/huilang-me/cfsm-agent/releases 获取版本号',
-    ghProxyPlaceholder: '海外直连即可',
+    agentDownloadSource: 'Agent 下载源',
+    agentDownloadTip: '可选：填写可信下载镜像的 /agent 地址。留空使用当前主控，安装和更新均从此来源下载。',
+    installVersionTip: '留空安装主控提供的最新稳定版；指定版本必须已由主控或下载镜像提供。',
+    agentDownloadPlaceholder: '默认使用当前主控',
     pingNodes: 'Ping节点',
     customCt: '电信',
     customCu: '联通',
@@ -881,15 +924,6 @@ const translations = reactive({
     passwordMismatch: '两次输入的密码不一致',
     usernameRequired: '用户名不能为空',
     securitySettings: '安全设置',
-    turnstileSettings: 'Cloudflare Turnstile',
-    enableTurnstile: '启用 Turnstile（全局）',
-    enableTurnstileLogin: '登录启用 Turnstile',
-    turnstileLoginTip: '开启后，仅在提交账号密码登录时出现并验证。',
-    turnstileSiteKey: '站点密钥',
-    turnstileSiteKeyPlaceholder: 'Turnstile 站点密钥',
-    turnstileSecretKey: '密钥',
-    turnstileSecretKeyPlaceholder: 'Turnstile 密钥',
-    turnstileTip: 'Cloudflare Turnstile 提供机器人保护。从 Cloudflare 控制台获取密钥。',
     jwtSettings: 'JWT 设置',
     jwtSecret: 'JWT 密钥',
     monthlyTraffic: '月流量',
@@ -908,28 +942,10 @@ const translations = reactive({
     trafficCalcUl: '仅上行',
     trafficCalcDl: '仅下行',
     trafficCalcMax: '取最大',
-    cloudflareSettings: 'Cloudflare 设置',
-    cloudflareAccountId: 'Cloudflare Account ID',
-    cloudflareAccountIdPlaceholder: '例如 f81d307be4628170a3878394435c9c8b',
-    cloudflareTokenPlaceholder: 'Cloudflare API Token',
-    cloudflareTokenTip: '查询用量需要 账户分析读取 权限。',
-    queryD1Quota: '查询CF账户用量',
-    d1UsageQueried: 'CF账户用量查询成功，注意保存',
-    d1UsageDate: '统计日期',
-    d1RowsRead: '已读取行数',
-    d1RowsWritten: '已写入行数',
-    workersRequests: 'Workers 请求数',
-    durableObjectsRequests: 'DO 计费请求数（估算）',
-    durableObjectsHttpRequests: 'DO HTTP 请求',
-    durableObjectsHibernationWakeups: 'DO Hibernation 唤醒',
-    durableObjectsInboundWebSocketMessages: 'DO Inbound WebSocket 消息',
-    durableObjectsOutboundWebSocketMessages: 'DO Outbound WebSocket 消息',
     billingRatioOneToOne: '1:1 计费',
     billingRatioWebSocketIncoming: '20:1 计费',
     billingRatioNotBilled: '不计费',
     rawRequests: '原始',
-    durableObjectsDuration: 'DO 时长 (GB-s)',
-    durableObjectsDurationTip: '和Wss开启时长有关，24小时开启固定占用85%左右，不受服务器台数影响。',
     todayUsage: '当日消耗',
     yesterdayUsage: '昨天消耗',
     secondsAgo: '秒前',
@@ -953,8 +969,6 @@ const translations = reactive({
     adminDisabledDesc: '使用多站点模式时，管理面板已禁用。',
     backToDashboard: '返回仪表盘',
     validationError: '验证错误',
-    turnstileSiteKeyRequired: '启用 Turnstile 时必须填写站点密钥',
-    turnstileSecretKeyRequired: '启用 Turnstile 时必须填写密钥',
     tgBotTokenRequired: '启用通知时必须填写 Telegram Bot Token',
     notificationWebhookUrlRequired: '启用自定义 Webhook 时必须填写 Webhook URL',
     disableOfflineNotify: '关闭离线通知',
@@ -969,7 +983,7 @@ const translations = reactive({
     exportServers: '导出服务器',
     importServers: '导入服务器',
     exportServersDesc: '将所有服务器配置导出为 JSON 文件',
-    importServersDesc: '从 JSON 文件导入服务器配置。重复的 ID 会被跳过，冲突的 history_partition_id 会自动重新分配。',
+    importServersDesc: '从 JSON 文件导入服务器配置。重复的 ID 会被跳过。',
     serversExported: '服务器导出成功',
     serversExportFailed: '服务器导出失败',
     serversImported: '服务器导入成功',
@@ -983,13 +997,6 @@ const translations = reactive({
     skippedIds: '跳过的 ID',
     selectJsonFile: '选择要导入的 JSON 文件',
     themeStore: '主题商店',
-    donation: '捐赠支持',
-    donationTitle: '请我喝杯奶茶吧',
-    donationDesc: '如果 CFSM 对你有帮助，欢迎捐赠一点 token，给我买杯奶茶，支持项目继续维护。',
-    donationToken: '每一份支持都会变成继续写代码、修 bug 和熬夜监控的能量！',
-    donationThanks: '谢谢你，让这个小项目一直有动力更新～',
-    donationWechat: '微信扫码支持',
-    donationQrAlt: '微信赞赏码',
     themeStoreLoading: '加载主题列表',
     themeStoreLoadFailed: '主题商店加载失败',
     themeStoreNetworkError: '无法加载主题商店。请检查当前网络是否可以访问 raw.githubusercontent.com 和 api.github.com 后重试。',
@@ -1016,33 +1023,17 @@ const translations = reactive({
   }
 })
 
+for (const language of ['en', 'zh', 'ja']) Object.assign(translations[language], security[language])
+
 const LANGUAGE_STORAGE_KEY = 'language_preference'
 let defaultLanguage = 'auto'
-
-export const normalizeLanguagePreference = (lang, fallback = 'auto') => {
-  const value = String(lang || '').trim().toLowerCase()
-  if (value === 'zh' || value === 'en' || value === 'auto') return value
-  return fallback === 'zh' || fallback === 'en' ? fallback : 'auto'
-}
-
-export const isChineseBrowserLanguage = (lang) => {
-  const value = String(lang || '').trim().toLowerCase().replace('_', '-')
-  return value === 'zh' ||
-    value.startsWith('zh-') ||
-    value === 'cmn' ||
-    value.startsWith('cmn-') ||
-    value === 'yue' ||
-    value.startsWith('yue-') ||
-    value === 'wuu' ||
-    value.startsWith('wuu-')
-}
 
 export const getBrowserLanguage = () => {
   if (typeof navigator === 'undefined') return 'en'
   const languages = Array.isArray(navigator.languages) && navigator.languages.length > 0
     ? navigator.languages
     : [navigator.language]
-  return languages.some(isChineseBrowserLanguage) ? 'zh' : 'en'
+  return resolveBrowserLanguage(languages)
 }
 
 export const resolveLanguagePreference = (lang) => {
@@ -1051,6 +1042,12 @@ export const resolveLanguagePreference = (lang) => {
 }
 
 const currentLang = ref(resolveLanguagePreference(localStorage.getItem(LANGUAGE_STORAGE_KEY) || defaultLanguage))
+
+watch(currentLang, (language) => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : language
+  }
+}, { immediate: true, flush: 'sync' })
 
 export const t = (key) => {
   return translations[currentLang.value]?.[key] || translations.en[key] || key
@@ -1078,7 +1075,7 @@ export const applyDefaultLanguage = (lang) => {
 }
 
 export const toggleLanguage = () => {
-  const newLang = currentLang.value === 'en' ? 'zh' : 'en'
+  const newLang = SUPPORTED_LANGUAGES[(SUPPORTED_LANGUAGES.indexOf(currentLang.value) + 1) % SUPPORTED_LANGUAGES.length]
   setLanguage(newLang)
   return newLang
 }

@@ -10,12 +10,12 @@
       <div class="form-row">
         <div class="form-group flex-1">
           <label class="form-label">{{ trans.hostnameLabel }} <span class="required">*</span></label>
-          <input type="text" name="edit_name" autocomplete="off" v-model="editForm.name" class="form-input" placeholder="e.g. My Server">
+          <input type="text" name="edit_name" autocomplete="off" v-model="editForm.name" class="form-input" :placeholder="trans.serverNamePlaceholder">
         </div>
 
         <div class="form-group flex-1">
           <label class="form-label">{{ trans.groupName }}</label>
-          <input type="text" name="edit_server_group" autocomplete="off" v-model="editForm.server_group" class="form-input" placeholder="e.g. US VPS">
+          <input type="text" name="edit_server_group" autocomplete="off" v-model="editForm.server_group" class="form-input" :placeholder="trans.groupNamePlaceholder">
         </div>
       </div>
       <div class="form-row">
@@ -69,7 +69,7 @@
       <div class="form-row mobile-two-row">
         <div class="form-group flex-1">
           <label class="form-label">{{ trans.trafficLimit }} (GB)</label>
-          <input type="number" name="edit_traffic_limit" autocomplete="off" v-model="editForm.traffic_limit" class="form-input" placeholder="e.g. 1000" min="0" step="1">
+          <input type="number" name="edit_traffic_limit" autocomplete="off" v-model="editForm.traffic_limit" class="form-input" :placeholder="trans.exampleTrafficLimit" min="0" step="1">
         </div>
         <div class="form-group flex-1">
           <label class="form-label">{{ trans.trafficCalcType }}</label>
@@ -261,6 +261,7 @@
 </template>
 
 <script setup>
+import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 import { PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
@@ -302,10 +303,8 @@ const currencySelectOptions = computed(() => {
   ]
 })
 
-const cycleLabel = (item) => currentLang.value === 'zh' ? item.labelZh : item.labelEn
-const currencyLabel = (item) => currentLang.value === 'zh'
-  ? `${item.symbol} ${item.nameZh}`
-  : `${item.symbol} ${item.nameEn}`
+const cycleLabel = (item) => getBillingCycleLabel(item, currentLang.value)
+const currencyLabel = (item) => `${item.symbol} ${getCurrencyName(item, currentLang.value)}`
 
 const normalizeTgNotifySetting = (value) => {
   if (value === true || value === 'true') return '5'

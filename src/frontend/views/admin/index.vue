@@ -10,10 +10,7 @@
       :password-visible="passwordVisible"
       :login-error="loginError"
       :login-loading="loginLoading"
-      :turnstile-site-key="turnstileSiteKey"
-      :turnstile-login-enabled="turnstileLoginEnabled"
-      :turnstile-enabled="turnstileEnabled"
-      :turnstile-verified="turnstileVerified"
+      :requires-two-factor="requiresTwoFactor"
       @login="handleLogin"
       @toggle-password="togglePassword"
       @api-index-change="handleApiIndexChange"
@@ -97,11 +94,6 @@
             :class="{ active: activeTab === 'themeStore' }"
             @click="activeTab = 'themeStore'"
           >{{ trans.themeStore }}</button>
-          <button
-            class="tab-btn"
-            :class="{ active: activeTab === 'donation' }"
-            @click="activeTab = 'donation'"
-          >{{ trans.donation }}</button>
         </div>
 
         <ServerTable
@@ -145,7 +137,6 @@
           :saving="saving"
           :change-admin-password="changeAdminPassword"
           :test-notification-loading="testNotificationLoading"
-          :d1-usage-loading="d1UsageLoading"
           @toggle-password="togglePassword"
           @toggle-admin-password-change="toggleAdminPasswordChange"
           @save-settings="saveSettings"
@@ -153,7 +144,6 @@
           @upload-bg-mobile="uploadBgMobile"
           @upload-favicon="uploadFavicon"
           @send-test-notification="sendTestNotification"
-          @query-d1-usage="queryD1Usage"
         />
 
         <DatabasePanel
@@ -173,11 +163,6 @@
           @theme-applied="settings.theme_url = $event"
           @theme-options-applied="handleThemeOptionsApplied"
           @alert-message="alertMessage = $event"
-        />
-
-        <DonationPanel
-          :trans="trans"
-          :active-tab="activeTab"
         />
       </div>
 
@@ -237,7 +222,7 @@
         :delete-target-os="deleteTargetOs"
         :delete-version="deleteVersion"
         :delete-install-mode="deleteInstallMode"
-        :delete-gh-proxy="deleteGhProxy"
+        :delete-download-url="deleteDownloadUrl"
         :uninstall-command="getUninstallCommand()"
         :uninstall-copied="uninstallCopied"
         @close="closeDeleteModal"
@@ -246,7 +231,7 @@
         @update:delete-target-os="deleteTargetOs = $event"
         @update:delete-version="deleteVersion = $event"
         @update:delete-install-mode="deleteInstallMode = $event"
-        @update:delete-gh-proxy="deleteGhProxy = $event"
+        @update:delete-download-url="deleteDownloadUrl = $event"
       />
 
       <CopyCommandModal
@@ -256,7 +241,7 @@
         :current-server-name="currentServerName"
         :target-os="targetOs"
         :install-mode="installMode"
-        :install-gh-proxy="installGhProxy"
+        :install-download-url="installDownloadUrl"
         :install-version="installVersion"
         :collect-interval="collectInterval"
         :report-interval="reportInterval"
@@ -282,7 +267,7 @@
         @copy-cmd="copyCustomCmd"
         @update:target-os="targetOs = $event"
         @update:install-mode="installMode = $event"
-        @update:install-gh-proxy="installGhProxy = $event"
+        @update:install-download-url="installDownloadUrl = $event"
         @update:install-version="installVersion = $event"
         @open-edit-from-copy="openEditModalFromCopy"
       />
@@ -290,7 +275,7 @@
       <div id="dbModal" class="modal-overlay" :class="{ active: showDbModal }">
         <div class="modal-dialog">
           <div class="modal-header">
-            <div class="modal-title">$ {{ dbOperation === 'clearHistory' ? 'CLEAR HISTORY' : 'ALTER DATABASE' }}</div>
+            <div class="modal-title">$ {{ dbOperation === 'clearHistory' ? trans.clearHistory : trans.upgradeDatabase }}</div>
             <button class="modal-close" @click="closeDbModal" :disabled="dbLoading">✕</button>
           </div>
 
@@ -301,16 +286,6 @@
             </div>
             <p class="text-secondary text-sm line-height-1-6">
               {{ trans.clearHistoryWarning }}
-            </p>
-          </div>
-
-          <div v-if="dbOperation === 'upgrade'" class="mb-4">
-            <div class="flex-center-gap-sm mb-3">
-              <span class="warning-icon text-xl">ℹ️</span>
-              <span style="color: var(--accent-yellow); font-weight: 600;">{{ trans.upgradeDatabase }}</span>
-            </div>
-            <p class="text-secondary text-sm line-height-1-6">
-              {{ trans.upgradeDesc }}
             </p>
           </div>
 
@@ -328,172 +303,13 @@
           <div v-if="!(dbResult && dbResult.success)" class="modal-footer flex-justify-between">
             <button
               v-if="!dbResult"
-              @click="dbOperation === 'clearHistory' ? handleClearHistory() : handleUpgradeDatabase()"
+              @click="handleClearHistory()"
               class="btn btn-red"
               :disabled="dbLoading"
             >
               {{ dbLoading ? (dbOperation === 'clearHistory' ? trans.clearing : trans.upgrading) : (dbOperation === 'clearHistory' ? trans.confirmClear : trans.upgradeDatabase) }}
             </button>
             <button @click="closeDbModal" class="btn" :disabled="dbLoading">{{ trans.cancel }}</button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="d1UsageResult" id="d1UsageModal" class="modal-overlay active">
-        <div class="modal-dialog">
-          <div class="modal-header">
-            <div class="modal-title">$ D1, Workers & Durable Objects quota --utc</div>
-            <button class="modal-close" @click="d1UsageResult = null">✕</button>
-          </div>
-
-          <div v-if="d1UsageResult.success" class="mb-4">
-            <div class="warning-box mb-4">
-              {{ getMessage(d1UsageResult.message) || trans.d1UsageQueried }}
-            </div>
-            <div class="quota-section">
-              <div class="quota-section-title">{{ trans.todayUsage }}</div>
-              <div class="quota-progress-list">
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.d1RowsRead }}：{{ formatNumber(d1UsageResult.usage.today.rowsRead) }} / {{ formatNumber(5000000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.today.rowsRead, 5000000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.today.rowsRead, 5000000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.d1RowsWritten }}：{{ formatNumber(d1UsageResult.usage.today.rowsWritten) }} / {{ formatNumber(100000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.today.rowsWritten, 100000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.today.rowsWritten, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.workersRequests }}：{{ formatNumber(d1UsageResult.usage.today.workersRequests) }} / {{ formatNumber(100000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.today.workersRequests, 100000) }}%</span>
-                  </div>
-                  <div v-if="d1UsageResult.usage.today.workersRequests" class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.today.workersRequests, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span class="quota-label-with-help">
-                      <span>{{ trans.durableObjectsRequests }}：{{ formatNumber(d1UsageResult.usage.today.durableObjectsRequests) }} / {{ formatNumber(100000) }}</span>
-                      <HelpTooltip>
-                        <template #default>
-                          <span v-for="row in getDurableObjectsUsageRows(d1UsageResult.usage.today)" :key="row.key" class="quota-help-row">
-                            <span class="quota-help-label">{{ row.label }}</span>
-                            <span class="quota-help-value">{{ row.value }}</span>
-                          </span>
-                        </template>
-                      </HelpTooltip>
-                    </span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.today.durableObjectsRequests, 100000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.today.durableObjectsRequests, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span class="quota-label-with-help">
-                      <span>{{ trans.durableObjectsDuration }}：{{ formatNumber(d1UsageResult.usage.today.durableObjectsDuration, 2) }} / {{ formatNumber(13000) }}</span>
-                      <HelpTooltip :text="trans.durableObjectsDurationTip">
-                        <template #default>
-                          <span class="quota-help-row">{{ trans.durableObjectsDurationTip }}</span>
-                        </template>
-                      </HelpTooltip>
-                    </span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.today.durableObjectsDuration, 13000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.today.durableObjectsDuration, 13000) + '%' }"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="quota-section mt-4">
-              <div class="quota-section-title">{{ trans.yesterdayUsage }}</div>
-              <div class="quota-progress-list">
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.d1RowsRead }}：{{ formatNumber(d1UsageResult.usage.yesterday.rowsRead) }} / {{ formatNumber(5000000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.yesterday.rowsRead, 5000000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.yesterday.rowsRead, 5000000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.d1RowsWritten }}：{{ formatNumber(d1UsageResult.usage.yesterday.rowsWritten) }} / {{ formatNumber(100000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.yesterday.rowsWritten, 100000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.yesterday.rowsWritten, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div v-if="d1UsageResult.usage.yesterday.workersRequests" class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span>{{ trans.workersRequests }}：{{ formatNumber(d1UsageResult.usage.yesterday.workersRequests) }} / {{ formatNumber(100000) }}</span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.yesterday.workersRequests, 100000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.yesterday.workersRequests, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span class="quota-label-with-help">
-                      <span>{{ trans.durableObjectsRequests }}：{{ formatNumber(d1UsageResult.usage.yesterday.durableObjectsRequests) }} / {{ formatNumber(100000) }}</span>
-                      <HelpTooltip>
-                        <template #default>
-                          <span v-for="row in getDurableObjectsUsageRows(d1UsageResult.usage.yesterday)" :key="row.key" class="quota-help-row">
-                            <span class="quota-help-label">{{ row.label }}</span>
-                            <span class="quota-help-value">{{ row.value }}</span>
-                          </span>
-                        </template>
-                      </HelpTooltip>
-                    </span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.yesterday.durableObjectsRequests, 100000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.yesterday.durableObjectsRequests, 100000) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="quota-progress-item">
-                  <div class="flex-justify-between text-sm mb-1">
-                    <span class="quota-label-with-help">
-                      <span>{{ trans.durableObjectsDuration }}：{{ formatNumber(d1UsageResult.usage.yesterday.durableObjectsDuration, 2) }} / {{ formatNumber(13000) }}</span>
-                      <HelpTooltip :text="trans.durableObjectsDurationTip">
-                        <template #default>
-                          <span class="quota-help-row">{{ trans.durableObjectsDurationTip }}</span>
-                        </template>
-                      </HelpTooltip>
-                    </span>
-                    <span>{{ getUsagePercent(d1UsageResult.usage.yesterday.durableObjectsDuration, 13000) }}%</span>
-                  </div>
-                  <div class="quota-progress-bar">
-                    <div class="quota-progress-fill" :style="{ width: getUsageBarPercent(d1UsageResult.usage.yesterday.durableObjectsDuration, 13000) + '%' }"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="danger-box mb-4">
-            {{ getMessage(d1UsageResult.error) }}
-          </div>
-
-          <div class="modal-footer flex-justify-between">
-            <div></div>
-            <button @click="d1UsageResult = null" class="btn">{{ trans.close }}</button>
           </div>
         </div>
       </div>
@@ -581,20 +397,19 @@ import ServerTable from './components/ServerTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import DatabasePanel from './components/DatabasePanel.vue'
 import ThemeStorePanel from './components/ThemeStorePanel.vue'
-import DonationPanel from './components/DonationPanel.vue'
 import EditServerModal from './components/EditServerModal.vue'
 import BatchEditServersModal from './components/BatchEditServersModal.vue'
 import DeleteServerModal from './components/DeleteServerModal.vue'
 import CopyCommandModal from './components/CopyCommandModal.vue'
-import { adminApi, login, logout as apiLogout, upgradeDatabase, clearHistory, getApiBases, fetchConfig } from '../../utils/api'
+import { getAuthToken } from '../../utils/http'
+import { adminApi, login, logout as apiLogout, clearHistory, getApiBases, fetchConfig } from '../../utils/api'
 import { hasMultipleApiBases } from '../../utils/config.js'
-import { t, useTranslation } from '../../utils/i18n'
+import { t, useTranslation, normalizeLanguagePreference } from '../../utils/i18n'
 import { PING_NODE_FIELDS, validatePingNode } from '../../utils/pingNode.js'
 import { normalizeDisplayMode, resolveDisplayMode } from '../../utils/displayMode.js'
 import { applyMikusThemeOptions } from '../../utils/themeOptions.js'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../utils/constants.js'
 import { usePasswordVisibility } from '../../composables/usePasswordVisibility'
-import { useTurnstile } from './composables/useTurnstile'
 import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../../utils/server.js'
 
 const trans = useTranslation()
@@ -602,43 +417,7 @@ const route = useRoute()
 const router = useRouter()
 const appConfig = inject('appConfig', {})
 let startupConfigConsumed = false
-const AGENT_RELEASE_URL = 'https://api.github.com/repos/huilang-me/cfsm-agent/releases/latest'
-const AGENT_RELEASE_FAILURE_TTL = 30 * 1000
-
-let cachedAgentReleaseVersion = ''
-let cachedAgentReleaseFailureAt = 0
-let agentReleasePromise = null
-
-const normalizeVersion = (version) => String(version || '').trim()
-
-const fetchLatestAgentReleaseVersion = async () => {
-  if (cachedAgentReleaseVersion) return cachedAgentReleaseVersion
-  if (cachedAgentReleaseFailureAt && Date.now() - cachedAgentReleaseFailureAt < AGENT_RELEASE_FAILURE_TTL) return ''
-  if (agentReleasePromise) return agentReleasePromise
-
-  agentReleasePromise = fetch(AGENT_RELEASE_URL, {
-    headers: { Accept: 'application/vnd.github+json' }
-  }).then(async (res) => {
-    if (!res.ok) throw new Error(`GitHub release request failed: ${res.status}`)
-    const release = await res.json()
-    const version = normalizeVersion(release?.tag_name)
-    if (version) {
-      cachedAgentReleaseVersion = version
-      cachedAgentReleaseFailureAt = 0
-    } else {
-      cachedAgentReleaseFailureAt = Date.now()
-    }
-    return version
-  }).catch((e) => {
-    cachedAgentReleaseFailureAt = Date.now()
-    console.error('[ERROR] Load latest agent release failed:', e)
-    return ''
-  }).finally(() => {
-    agentReleasePromise = null
-  })
-
-  return agentReleasePromise
-}
+const normalizeVersion = version => String(version || '').trim()
 
 const getMessage = (msg) => {
   if (typeof msg === 'string') {
@@ -816,10 +595,7 @@ const normalizePreferredThemeSetting = (value) => {
   return ['dark', 'light', 'auto'].includes(theme) ? theme : 'auto'
 }
 
-const normalizeDefaultLanguageSetting = (value) => {
-  const language = String(value || '').trim().toLowerCase()
-  return ['zh', 'en', 'auto'].includes(language) ? language : 'auto'
-}
+const normalizeDefaultLanguageSetting = normalizeLanguagePreference
 
 const formatThemeOptions = (value) => {
   const normalized = value === undefined || value === null ? {} : value
@@ -842,39 +618,6 @@ const parseThemeOptions = (value) => {
   } catch (_) {
     return { valid: false }
   }
-}
-
-const formatNumber = (value, maximumFractionDigits = 0) => (
-  Number(value || 0).toLocaleString(undefined, { maximumFractionDigits })
-)
-const getDurableObjectsUsageRows = (usage = {}) => ([
-  {
-    key: 'http',
-    label: trans.value.durableObjectsHttpRequests,
-    value: `${formatNumber(usage.durableObjectsHttpRequests)} · ${trans.value.billingRatioOneToOne}`
-  },
-  {
-    key: 'hibernation',
-    label: trans.value.durableObjectsHibernationWakeups,
-    value: `${formatNumber(usage.durableObjectsHibernationWakeups)} · ${trans.value.billingRatioOneToOne}`
-  },
-  {
-    key: 'inbound-ws',
-    label: trans.value.durableObjectsInboundWebSocketMessages,
-    value: `${formatNumber(usage.durableObjectsInboundWebSocketMessages)} · ${trans.value.billingRatioWebSocketIncoming}`
-  },
-  {
-    key: 'outbound-ws',
-    label: trans.value.durableObjectsOutboundWebSocketMessages,
-    value: `${formatNumber(usage.durableObjectsOutboundWebSocketMessages)} · ${trans.value.billingRatioNotBilled}`
-  }
-])
-const getUsagePercent = (used, limit) => {
-  if (!limit) return 0
-  return Number(((Number(used || 0) / Number(limit)) * 100).toFixed(2))
-}
-const getUsageBarPercent = (used, limit) => {
-  return Math.min(100, Math.max(0, getUsagePercent(used, limit)))
 }
 
 const isMultipleMode = computed(() => hasMultipleApiBases())
@@ -903,7 +646,8 @@ const syncApiIndexQuery = () => {
 const adminApiForSite = (data) => adminApi(data, selectedApiIndex.value)
 
 const isLoggedIn = ref(false)
-const loginForm = ref({ username: '', password: '' })
+const loginForm = ref({ username: '', password: '', code: '', useRecovery: false })
+const requiresTwoFactor = ref(false)
 const loginError = ref('')
 const loginLoading = ref(false)
 const adminSiteLoading = ref(false)
@@ -951,11 +695,6 @@ const settings = ref({
   notification_webhook_headers: '',
   notification_webhook_body: '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
   notification_template: '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
-  turnstile_enabled: false,
-  turnstile_site_key: '',
-  turnstile_secret_key: '',
-  cloudflare_account_id: '',
-  cloudflare_token: '',
   jwt_secret: '',
   username: '',
   password: '',
@@ -994,15 +733,10 @@ const toggleAdminPasswordChange = () => {
 }
 
 const { visibility: passwordVisible, toggle: togglePassword } = usePasswordVisibility([
-  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'turnstileSecret', 'cloudflareToken', 'jwtSecret', 'password', 'confirmPassword'
+  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'jwtSecret', 'password', 'confirmPassword'
 ])
 
-const {
-  turnstileEnabled, turnstileLoginEnabled, turnstileSiteKey,
-  turnstileToken, turnstileVerified,
-  hasSharedTurnstileVerified, loadTurnstileConfig: loadTurnstileConfigBase,
-  renderTurnstile, resetTurnstile, clearTurnstile
-} = useTurnstile()
+
 
 const showEditModal = ref(false)
 const showBatchEditModal = ref(false)
@@ -1082,7 +816,7 @@ const copiedSpecKey = ref(null)
 const deleteTargetOs = ref('linux')
 const deleteVersion = ref('go')
 const deleteInstallMode = ref('current-user')
-const deleteGhProxy = ref('')
+const deleteDownloadUrl = ref('')
 const uninstallCopied = ref(false)
 const saving = ref(false)
 
@@ -1091,8 +825,6 @@ const showDbModal = ref(false)
 const dbOperation = ref('')
 const dbLoading = ref(false)
 const dbResult = ref(null)
-const d1UsageLoading = ref(false)
-const d1UsageResult = ref(null)
 const validationError = ref(null)
 const alertMessage = ref(null)
 const showAutoUpdateWarning = ref(false)
@@ -1109,7 +841,7 @@ const copyServerId = ref('')
 const currentServerName = ref('')
 const targetOs = ref('linux')
 const installMode = ref('current-user')
-const installGhProxy = ref('')
+const installDownloadUrl = ref('')
 const installVersion = ref('')
 const collectInterval = ref(0)
 const reportInterval = ref(60)
@@ -1225,37 +957,33 @@ const copyServerSpec = async ({ key, text } = {}) => {
 }
 
 const handleLogin = async () => {
+  if (loginLoading.value) return
   loginError.value = ''
   loginLoading.value = true
 
-  if (turnstileLoginEnabled.value && !turnstileToken.value) {
-    loginError.value = 'Please complete the verification'
-    loginLoading.value = false
-    return
-  }
-
-  if (turnstileEnabled.value && !turnstileVerified.value && !turnstileToken.value) {
-    loginError.value = 'Please complete the verification'
-    loginLoading.value = false
-    return
-  }
-
-  const result = await login(loginForm.value.username, loginForm.value.password, turnstileToken.value, selectedApiIndex.value)
-  if (!result.error) {
+  const factor = requiresTwoFactor.value ? (loginForm.value.useRecovery ? {recoveryCode: loginForm.value.code} : {otp: loginForm.value.code}) : {}
+  const result = await login(loginForm.value.username, loginForm.value.password, selectedApiIndex.value, factor)
+  if (result.data?.requiresTwoFactor) {
+    requiresTwoFactor.value = true
+    await nextTick()
+    document.getElementById('login-otp')?.focus()
+  } else if (!result.error && result.data?.token) {
+    loginForm.value.password = ''; loginForm.value.code = ''
+    requiresTwoFactor.value = false
     isLoggedIn.value = true
     syncApiIndexQuery()
-    clearTurnstile()
-    turnstileVerified.value = hasSharedTurnstileVerified()
     await Promise.all([
       loadSettings(),
       loadServers(),
       loadLatestAgentVersion()
     ])
   } else {
-    loginError.value = result.status === 403 ? 'Please complete the verification' : trans.value.errorInvalidUsername
-    loginForm.value.password = ''
-    clearTurnstile()
-    resetTurnstile('#admin-turnstile-container')
+    loginError.value = trans.value[result.error] || trans.value.securityRequestFailed
+    loginForm.value.code = ''
+    if (result.error === 'invalidCredentials') {
+      loginForm.value.password = ''
+      requiresTwoFactor.value = false
+    }
   }
   loginLoading.value = false
 }
@@ -1265,16 +993,15 @@ const logout = async () => {
     await adminApiForSite({ action: 'logout' })
   } catch (_) {
   }
-  apiLogout()
+  apiLogout(selectedApiIndex.value)
   isLoggedIn.value = false
   latestAgentVersion.value = ''
-  clearTurnstile()
-  await loadTurnstileConfig()
+  loginError.value = ''
   window.location.href = '/'
 }
 
 const checkLoginStatus = () => {
-  const token = localStorage.getItem('jwt_token')
+  const token = getAuthToken(selectedApiBase.value)
   return !!token
 }
 
@@ -1283,25 +1010,13 @@ const initAdmin = async () => {
   if (hasCreds) {
     isLoggedIn.value = true
     syncApiIndexQuery()
-    const savedTurnstileToken = localStorage.getItem('turnstile_token')
-    if (savedTurnstileToken) {
-      turnstileToken.value = savedTurnstileToken
-    }
     await Promise.all([
       loadSettings(),
       loadServers(),
       loadLatestAgentVersion()
     ])
   } else {
-    await loadTurnstileConfig()
-  }
-}
-
-const loadTurnstileConfig = async () => {
-  await loadTurnstileConfigBase(selectedApiIndex.value, isMultipleMode.value, loginError)
-  if (turnstileSiteKey.value && (turnstileLoginEnabled.value || (turnstileEnabled.value && !turnstileVerified.value))) {
-    await nextTick()
-    renderTurnstile('#admin-turnstile-container', turnstileSiteKey.value)
+    loginError.value = ''
   }
 }
 
@@ -1309,7 +1024,7 @@ const handleApiIndexChange = async (newIndex) => {
   selectedApiIndex.value = newIndex
   syncApiIndexQuery()
   await nextTick()
-  await loadTurnstileConfig()
+  loginError.value = ''
 }
 
 const resetAdminContext = () => {
@@ -1353,10 +1068,10 @@ const loadLatestAgentVersion = async () => {
     const startupConfig = getStartupConfigForCurrentSite()
     const config = startupConfig || await fetchConfig(selectedApiIndex.value)
     const configVersion = normalizeVersion(config?.last_agent_version)
-    latestAgentVersion.value = configVersion || await fetchLatestAgentReleaseVersion()
+    latestAgentVersion.value = configVersion
   } catch (e) {
     console.error('[ERROR] Load latest agent version failed:', e)
-    latestAgentVersion.value = await fetchLatestAgentReleaseVersion()
+    latestAgentVersion.value = ''
   }
 }
 
@@ -1401,12 +1116,6 @@ const loadSettings = async () => {
         notification_webhook_headers: settingsData.notification_webhook_headers || '',
         notification_webhook_body: settingsData.notification_webhook_body || '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
         notification_template: settingsData.notification_template || '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
-        turnstile_enabled: settingsData.turnstile_enabled === 'true',
-        turnstile_login_enabled: settingsData.turnstile_login_enabled === 'true',
-        turnstile_site_key: settingsData.turnstile_site_key || '',
-        turnstile_secret_key: settingsData.turnstile_secret_key || '',
-        cloudflare_account_id: settingsData.cloudflare_account_id || '',
-        cloudflare_token: settingsData.cloudflare_token || '',
         jwt_secret: '',
         username: settingsData.username || '',
         password: '',
@@ -1497,17 +1206,6 @@ const saveSettings = async () => {
     }
   }
 
-  if (settings.value.turnstile_enabled || settings.value.turnstile_login_enabled) {
-    if (!settings.value.turnstile_site_key || settings.value.turnstile_site_key.trim().length === 0) {
-      validationError.value = trans.value.turnstileSiteKeyRequired
-      return
-    }
-    if (!settings.value.turnstile_secret_key || settings.value.turnstile_secret_key.trim().length === 0) {
-      validationError.value = trans.value.turnstileSecretKeyRequired
-      return
-    }
-  }
-
   const isTrafficReportEnabled = settings.value.traffic_report_enabled
   if (isTgNotifyEnabled(settings.value.tg_notify) || isExpireReminderEnabled(settings.value.expire_reminder) || isResourceAlertEnabled(settings.value.resource_alert_rules) || isTrafficReportEnabled) {
     if (isNotificationWebhookEnabled()) {
@@ -1583,12 +1281,6 @@ const saveSettings = async () => {
       notification_webhook_headers: settings.value.notification_webhook_headers,
       notification_webhook_body: settings.value.notification_webhook_body,
       notification_template: settings.value.notification_template,
-      turnstile_enabled: settings.value.turnstile_enabled ? 'true' : 'false',
-      turnstile_login_enabled: settings.value.turnstile_login_enabled ? 'true' : 'false',
-      turnstile_site_key: settings.value.turnstile_site_key,
-      turnstile_secret_key: settings.value.turnstile_secret_key,
-      cloudflare_account_id: settings.value.cloudflare_account_id,
-      cloudflare_token: settings.value.cloudflare_token,
       username: settings.value.username,
       custom_ct: pingNodeValidation.values.custom_ct,
       custom_cu: pingNodeValidation.values.custom_cu,
@@ -1677,11 +1369,6 @@ const addServer = async () => {
   }
 }
 
-const getInstallCommand = (serverId) => {
-  const HOST = selectedApiBase.value
-  return `curl -sL ${HOST}/install.sh | bash -s install -id=${serverId} -secret='${apiSecret.value}' -url=${HOST}/update`
-}
-
 const resolveServerPingNode = (server, field) => {
   const value = server?.[field]
   const explicitEmpty = value === 0 || value === '0'
@@ -1694,17 +1381,16 @@ const resolveServerPingNode = (server, field) => {
 const getUninstallCommand = () => {
   const HOST = selectedApiBase.value
   const isGo = deleteVersion.value === 'go'
-  const proxy = isGo ? deleteGhProxy.value.trim() : ''
+  const downloadBase = deleteDownloadUrl.value.trim() || `${HOST}/agent`
   if (isGo) {
     if (deleteTargetOs.value === 'windows') {
-      const ghUrl = buildGhRawUrl(proxy, '/huilang-me/cfsm-agent/main/install.ps1')
-      const proxyParam = proxy ? ` ${quotePowerShellArg(`--install-ghproxy=${proxy}`)}` : ''
-      return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(ghUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script uninstall${proxyParam}`
+      const scriptUrl = `${HOST}/agent/install.ps1`
+      const downloadParam = ` ${quotePowerShellArg(`--download-url=${downloadBase}`)}`
+      return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(scriptUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script uninstall${downloadParam}`
     }
-    const sudoPrefix = deleteTargetOs.value === 'mac' ? 'sudo ' : ''
-    const ghUrl = buildGhRawUrl(proxy, '/huilang-me/cfsm-agent/main/install.sh')
-    const proxyParam = proxy ? ` ${quotePosixShellArg(`--install-ghproxy=${proxy}`)}` : ''
-    const uninstallCommand = `curl -fsSL ${quotePosixShellArg(ghUrl)} | ${sudoPrefix}sh -s -- uninstall${proxyParam}`
+    const scriptUrl = `${HOST}/agent/install.sh`
+    const downloadParam = ` ${quotePosixShellArg(`--download-url=${downloadBase}`)}`
+    const uninstallCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- uninstall${downloadParam}`
     if (deleteTargetOs.value === 'linux' && deleteInstallMode.value === 'cfsm-user') {
       return buildUninstallAsCfsmCommand(uninstallCommand)
     }
@@ -1722,7 +1408,7 @@ const copyCmd = (serverId) => {
   currentServerName.value = server?.name || ''
   targetOs.value = 'linux'
   installMode.value = 'current-user'
-  installGhProxy.value = ''
+  installDownloadUrl.value = ''
   installVersion.value = ''
   collectInterval.value = server?.collect_interval ?? 0
   reportInterval.value = server?.report_interval || 60
@@ -1761,13 +1447,6 @@ const copyCmd = (serverId) => {
 }
 
 const hasCorrectionValue = (value) => value !== null && value !== undefined && value !== ''
-
-const buildGhRawUrl = (proxy, path) => {
-  const base = 'https://raw.githubusercontent.com'
-  if (!proxy) return `${base}${path}`
-  const cleanProxy = proxy.replace(/\/$/, '')
-  return `${cleanProxy}/${base}${path}`
-}
 
 const quotePosixShellArg = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`
 
@@ -1832,67 +1511,42 @@ const buildInstallAsCfsmCommand = (command, runStep) => {
 
 const getCustomInstallCommand = () => {
   const HOST = selectedApiBase.value
-  const autoUpdateFlag = autoUpdate.value ? 1 : 0
-  const proxy = installGhProxy.value.trim()
+  const downloadBase = installDownloadUrl.value.trim() || `${HOST}/agent`
   const version = installVersion.value.trim()
-  const effectiveConnectionMode = getEffectiveConnectionMode(connectionMode.value)
   const isDedicatedUserInstall = targetOs.value === 'linux' && installMode.value === 'cfsm-user'
-  const effectivePingMode = getEffectivePingMode(isDedicatedUserInstall ? 'tcp' : pingMode.value)
-  if (targetOs.value === 'windows') {
-    const params = [
-      'install'
-    ]
-    if (proxy) params.push(quotePowerShellArg(`--install-ghproxy=${proxy}`))
-    if (version) params.push(quotePowerShellArg(`--install-version=${version}`))
-    params.push(
-      `-id='${copyServerId.value}'`,
-      `-secret='${apiSecret.value}'`,
-      `-url='${HOST}/update'`,
-      `-collect_interval='${collectInterval.value}'`,
-      `-interval='${reportInterval.value}'`,
-      `-connection_mode='${effectiveConnectionMode}'`,
-      `-ping_mode='${effectivePingMode}'`,
-      `-reset_day='${resetDay.value ?? 1}'`,
-      `-auto_update='${autoUpdateFlag}'`
-    )
-    if (customCt.value || explicitEmptyNodes.value.custom_ct) params.push(`-ct='${customCt.value}'`)
-    if (customCu.value || explicitEmptyNodes.value.custom_cu) params.push(`-cu='${customCu.value}'`)
-    if (customCm.value || explicitEmptyNodes.value.custom_cm) params.push(`-cm='${customCm.value}'`)
-    if (customBd.value || explicitEmptyNodes.value.custom_bd) params.push(`-bd='${customBd.value}'`)
-    if (node1.value || explicitEmptyNodes.value.node_1) params.push(`-node_1='${node1.value}'`); if (node2.value || explicitEmptyNodes.value.node_2) params.push(`-node_2='${node2.value}'`); if (node3.value || explicitEmptyNodes.value.node_3) params.push(`-node_3='${node3.value}'`); if (node4.value || explicitEmptyNodes.value.node_4) params.push(`-node_4='${node4.value}'`)
-    if (networkInterface.value) params.push(`-interface='${networkInterface.value}'`)
-    if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction='${rxCorrection.value}'`)
-    if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction='${txCorrection.value}'`)
-    const ghUrl = buildGhRawUrl(proxy, '/huilang-me/cfsm-agent/main/install.ps1')
-    return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(ghUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script ${params.join(' ')}`
-  }
-  const params = ['install']
-  if (proxy) params.push(quotePosixShellArg(`--install-ghproxy=${proxy}`))
-  if (version) params.push(quotePosixShellArg(`--install-version=${version}`))
-  params.push(
+  const params = [
+    'install',
+    `--download-url=${downloadBase}`,
     `-id=${copyServerId.value}`,
-    `-secret='${apiSecret.value}'`,
+    `-secret=${apiSecret.value}`,
     `-url=${HOST}/update`,
     `-collect_interval=${collectInterval.value}`,
     `-interval=${reportInterval.value}`,
-    `-connection_mode=${effectiveConnectionMode}`,
-    `-ping_mode=${effectivePingMode}`,
+    `-connection_mode=${getEffectiveConnectionMode(connectionMode.value)}`,
+    `-ping_mode=${getEffectivePingMode(isDedicatedUserInstall ? 'tcp' : pingMode.value)}`,
     `-reset_day=${resetDay.value ?? 1}`,
-    `-auto_update=${autoUpdateFlag}`
-  )
-  if (customCt.value || explicitEmptyNodes.value.custom_ct) params.push(`-ct='${customCt.value}'`)
-  if (customCu.value || explicitEmptyNodes.value.custom_cu) params.push(`-cu='${customCu.value}'`)
-  if (customCm.value || explicitEmptyNodes.value.custom_cm) params.push(`-cm='${customCm.value}'`)
-  if (customBd.value || explicitEmptyNodes.value.custom_bd) params.push(`-bd='${customBd.value}'`)
-  if (node1.value || explicitEmptyNodes.value.node_1) params.push(`-node_1='${node1.value}'`); if (node2.value || explicitEmptyNodes.value.node_2) params.push(`-node_2='${node2.value}'`); if (node3.value || explicitEmptyNodes.value.node_3) params.push(`-node_3='${node3.value}'`); if (node4.value || explicitEmptyNodes.value.node_4) params.push(`-node_4='${node4.value}'`)
+    `-auto_update=${autoUpdate.value ? 1 : 0}`
+  ]
+  if (version) params.push(`--install-version=${version}`)
+  const nodes = [
+    ['ct', 'custom_ct', customCt.value], ['cu', 'custom_cu', customCu.value],
+    ['cm', 'custom_cm', customCm.value], ['bd', 'custom_bd', customBd.value],
+    ['node_1', 'node_1', node1.value], ['node_2', 'node_2', node2.value],
+    ['node_3', 'node_3', node3.value], ['node_4', 'node_4', node4.value]
+  ]
+  for (const [flag, field, value] of nodes) {
+    if (value || explicitEmptyNodes.value[field]) params.push(`-${flag}=${value}`)
+  }
   if (networkInterface.value) params.push(`-interface=${networkInterface.value}`)
   if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction=${rxCorrection.value}`)
   if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction=${txCorrection.value}`)
-  const ghUrl = buildGhRawUrl(proxy, '/huilang-me/cfsm-agent/main/install.sh')
-  const installCommand = `curl -fsSL ${quotePosixShellArg(ghUrl)} | sh -s -- ${params.join(' ')}`
-  if (!isDedicatedUserInstall) return installCommand
-
-  return buildInstallAsCfsmCommand(installCommand, trans.value.nonRootInstallRunStep)
+  if (targetOs.value === 'windows') {
+    const scriptUrl = `${HOST}/agent/install.ps1`
+    return `$script = "$env:TEMP\\install-cf-probe.ps1"; Invoke-WebRequest -Uri ${quotePowerShellArg(scriptUrl)} -OutFile $script -UseBasicParsing; PowerShell -ExecutionPolicy Bypass -File $script ${params.map(quotePowerShellArg).join(' ')}`
+  }
+  const scriptUrl = `${HOST}/agent/install.sh`
+  const installCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- ${params.map(quotePosixShellArg).join(' ')}`
+  return isDedicatedUserInstall ? buildInstallAsCfsmCommand(installCommand, trans.value.nonRootInstallRunStep) : installCommand
 }
 
 const copyCustomCmd = async () => {
@@ -2145,7 +1799,7 @@ const openDeleteModal = (id) => {
   deleteTargetOs.value = 'linux'
   deleteVersion.value = 'go'
   deleteInstallMode.value = 'current-user'
-  deleteGhProxy.value = ''
+  deleteDownloadUrl.value = ''
   uninstallCopied.value = false
   showDeleteModal.value = true
 }
@@ -2363,21 +2017,6 @@ const uploadBgMobile = (e) => uploadImageSetting(e, 'custom_bg_mobile')
 
 const uploadFavicon = (e) => uploadImageSetting(e, 'favicon')
 
-const handleUpgradeDatabase = async () => {
-  dbOperation.value = 'upgrade'
-  dbLoading.value = true
-  dbResult.value = null
-
-  try {
-    const result = await upgradeDatabase(selectedApiIndex.value)
-    dbResult.value = result
-  } catch (e) {
-    dbResult.value = { success: false, error: e.message }
-  } finally {
-    dbLoading.value = false
-  }
-}
-
 const handleClearHistory = async () => {
   dbOperation.value = 'clearHistory'
   dbLoading.value = true
@@ -2402,30 +2041,6 @@ const openDbModal = (operation) => {
 const closeDbModal = () => {
   if (!dbLoading.value) {
     showDbModal.value = false
-  }
-}
-
-const queryD1Usage = async () => {
-  if (d1UsageLoading.value) return
-  d1UsageLoading.value = true
-  d1UsageResult.value = null
-  alertMessage.value = null
-
-  try {
-    const result = await adminApiForSite({
-      action: 'd1_usage',
-      cloudflare_account_id: settings.value.cloudflare_account_id,
-      cloudflare_token: settings.value.cloudflare_token
-    })
-    if (!result.error) {
-      d1UsageResult.value = result.data
-    } else {
-      alertMessage.value = getMessage(result.error) || result.error || trans.value.operationFailed
-    }
-  } catch (e) {
-    alertMessage.value = getMessage(e.message) || e.message || trans.value.operationFailed
-  } finally {
-    d1UsageLoading.value = false
   }
 }
 
@@ -2468,7 +2083,7 @@ watch(() => route.query.apiIndex, async (value) => {
   if (isLoggedIn.value) {
     await switchAdminSite()
   } else {
-    await loadTurnstileConfig()
+    loginError.value = ''
   }
 })
 

@@ -110,7 +110,7 @@ export function isDisabledProbeMetric(value) {
 }
 
 // 将探针上报的指标字段统一转换为数字类型，与 /api/servers 的 servers[] 字段类型保持一致。
-// 数据库 D1 对 REAL/INTEGER 列返回 JS number，而探针 POST 的原始字段可能是字符串，
+// SQLite 对 REAL/INTEGER 列返回 JS number，而探针 POST 的原始字段可能是字符串，
 // latestReportUpdates 和 WebSocket 推送直接透传探针数据，需要在此统一类型。
 export function coerceNumericMetricFields(payload) {
   if (!payload || typeof payload !== 'object') return payload;

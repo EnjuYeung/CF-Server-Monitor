@@ -165,6 +165,7 @@
 </template>
 
 <script setup>
+import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed } from 'vue'
 import BatchEditField from './BatchEditField.vue'
 import { currentLang } from '../../../utils/i18n.js'
@@ -197,10 +198,8 @@ const currencySelectOptions = computed(() => {
   ]
 })
 
-const cycleLabel = (item) => currentLang.value === 'zh' ? item.labelZh : item.labelEn
-const currencyLabel = (item) => currentLang.value === 'zh'
-  ? `${item.symbol} ${item.nameZh}`
-  : `${item.symbol} ${item.nameEn}`
+const cycleLabel = (item) => getBillingCycleLabel(item, currentLang.value)
+const currencyLabel = (item) => `${item.symbol} ${getCurrencyName(item, currentLang.value)}`
 
 const hasEnabledFields = computed(() => Object.values(enabled.value).some(Boolean))
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +9,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const publicDir = path.join(rootDir, 'public');
 const distDir = path.join(rootDir, 'dist');
+
+if (!process.argv.includes('--frontend-only')) {
+  execFileSync(process.execPath, [path.join(rootDir, 'scripts/agent.js'), 'build'], {cwd:rootDir,stdio:'inherit'});
+}
 
 console.log('Cleaning dist directory...');
 if (fs.existsSync(distDir)) {
@@ -23,7 +28,7 @@ if (fs.existsSync(publicDir)) {
   console.log('Copied all static assets');
 }
 
-// 重命名为 dashboard.html，避免 ASSETS 直接拦截首页
+// 保留模板名称，首页由主控注入站点配置后响应
 const indexHtmlPath = path.join(distDir, 'index.html');
 const dashboardHtmlPath = path.join(distDir, 'dashboard.html');
 if (fs.existsSync(indexHtmlPath)) {

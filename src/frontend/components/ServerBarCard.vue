@@ -33,7 +33,7 @@
     </div>
     <div class="server-stats">
       <div class="stat-row">
-        <span class="stat-key">CPU</span>
+        <span class="stat-key">{{ trans.cardCpu }}</span>
         <div class="stat-content stat-content-meter">
           <div class="stat-bar-container">
             <div class="stat-bar-fill" :style="{ width: cpuPercent + '%', background: getUsageColor(cpuPercent) }"></div>
@@ -42,7 +42,7 @@
         </div>
       </div>
       <div class="stat-row">
-        <span class="stat-key">RAM</span>
+        <span class="stat-key">{{ trans.cardRam }}</span>
         <div class="stat-content stat-content-meter">
           <div class="stat-bar-container">
             <div class="stat-bar-fill" :style="{ width: ramPercent + '%', background: getUsageColor(ramPercent) }"></div>
@@ -51,7 +51,7 @@
         </div>
       </div>
       <div class="stat-row">
-        <span class="stat-key">DISK</span>
+        <span class="stat-key">{{ trans.cardDisk }}</span>
         <div class="stat-content stat-content-meter">
           <div class="stat-bar-container">
             <div class="stat-bar-fill" :style="{ width: diskPercent + '%', background: getUsageColor(diskPercent) }"></div>
@@ -60,7 +60,7 @@
         </div>
       </div>
       <div class="stat-row" v-if="sysConfig.show_tf">
-        <span class="stat-key">USE</span>
+        <span class="stat-key">{{ trans.cardUse }}</span>
         <div class="stat-content stat-content-meter">
           <template v-if="server.traffic_limit">
             <div class="stat-bar-container">
@@ -77,7 +77,7 @@
         </div>
       </div>
       <div class="stat-row">
-        <span class="stat-key">LOAD</span>
+        <span class="stat-key">{{ trans.cardLoad }}</span>
         <div class="stat-content">
           <span class="net-down">{{ loadAvg[0].toFixed(2) }}</span>
           <span>{{ loadAvg[1].toFixed(2) }}</span>
@@ -85,14 +85,14 @@
         </div>
       </div>
       <div class="stat-row">
-        <span class="stat-key">NET</span>
+        <span class="stat-key">{{ trans.cardNet }}</span>
         <div class="stat-content">
           <span class="net-down">▼ {{ netInSpeed }}/s</span>
           <span class="net-up">▲ {{ netOutSpeed }}/s</span>
         </div>
       </div>
       <div class="stat-row">
-        <span class="stat-key">TRF</span>
+        <span class="stat-key">{{ trans.cardTraffic }}</span>
         <div class="stat-content">
           <span class="net-down">▼ {{ totalRxMonthly }}</span>
           <span class="net-up">▲ {{ totalTxMonthly }}</span>

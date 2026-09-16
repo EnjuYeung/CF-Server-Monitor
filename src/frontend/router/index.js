@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { isAdminEntryPage } from '../utils/adminAccess.js'
 
 const routes = [
   {
@@ -22,5 +23,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes
 })
+
+router.beforeEach(to => to.name === 'Admin' && !isAdminEntryPage ? '/' : true)
 
 export default router

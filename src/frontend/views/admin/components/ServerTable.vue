@@ -176,6 +176,7 @@
 </template>
 
 <script setup>
+import { getBillingCycleLabel } from '../../../utils/server.js'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getFlagRegionCode, formatBytes } from '../../../utils/api'
 import { getPublicAssetUrl } from '../../../utils/config'
@@ -464,7 +465,7 @@ const formatServerPrice = (server) => {
   if (isFreePrice(price)) return props.trans.free
   const currency = normalizeCurrency(server.currency || detectCurrencySymbol(server.price))
   const option = getBillingCycleOption(detectBillingCycle(server.price) || server.billing_cycle)
-  const cycleLabel = currentLang.value === 'zh' ? option.shortLabelZh : option.shortLabelEn
+  const cycleLabel = getBillingCycleLabel(option, currentLang.value, true)
   return `${currency}${trimDisplayPrice(price)}/${cycleLabel}`
 }
 const isServerAutoRenewal = (server) => isEnabledFlag(server.auto_renewal)

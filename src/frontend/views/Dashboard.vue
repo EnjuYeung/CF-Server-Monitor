@@ -22,6 +22,7 @@
       </template>
     </div>
 
+    <div v-else-if="appConfig?.is_public === false && !adminAccess.authorized" class="empty-state">{{ trans.privateDashboard }}</div>
     <template v-else>
     <div class="nav-area">
       <div class="header-row">
@@ -43,11 +44,6 @@
               :class="{ active: currentView === 'table' }"
               @click="switchView('table')"
             >≡ {{ trans.table }}</button>
-            <button
-              class="toggle-btn"
-              :class="{ active: currentView === 'map' }"
-              @click="switchView('map')"
-            >◉ {{ trans.map }}</button>
           </div>
         </div>
       </div>
@@ -150,26 +146,37 @@
       </div>
     </div>
 
+    <div v-if="groupFilterOptions.length > 0" class="filter-bar group-filter-bar" role="group" :aria-label="trans.group">
+      <button
+        v-for="group in groupFilterOptions"
+        :key="group.name"
+        type="button"
+        class="filter-tag"
+        :class="{ active: currentGroupFilter === group.name }"
+        :aria-pressed="currentGroupFilter === group.name"
+        :title="group.name"
+        :data-group="group.name"
+        @click="setGroupFilter(group.name)"
+      >
+        <span class="filter-tag-label">{{ group.name }}</span>
+        <span class="filter-tag-count">{{ group.count }}</span>
+      </button>
+    </div>
+
     <div id="view-card" class="view-panel" :class="{ active: isCardView, 'high-density': filteredServers.length > 12 }">
-      <div v-if="groupedServers.length === 0" class="empty-state">
-        [!] {{ trans.noServer }}，请在 <a href="/admin#admin" class="admin-link-color">{{ trans.backToAdmin }}</a> 中添加
+      <div v-if="servers.length === 0" class="empty-state">
+        [!] {{ adminAccess.authorized ? trans.noServer : trans.noData }} <a v-if="adminAccess.authorized" :href="adminAccess.path" class="admin-link-color">{{ trans.backToAdmin }}</a>
       </div>
-      <div v-else>
-        <div v-for="group in groupedServers" :key="group.name" class="group-section">
-          <div class="group-header" :data-group="group.name">
-            <span class="prompt-sign">#</span> {{ group.name }} <span class="group-count">[{{ group.servers.length }}]</span>
-          </div>
-          <div class="servers-grid">
-            <component
-              :is="currentCardComponent"
-              v-for="server in group.servers"
-              :key="server.id + '-' + currentView"
-              :server="server"
-              :sys-config="sysConfig"
-              :to="getServerLink(server)"
-            />
-          </div>
-        </div>
+      <div v-else-if="filteredServers.length === 0" class="empty-state">[*] {{ trans.noData }}</div>
+      <div v-else class="servers-grid">
+        <component
+          :is="currentCardComponent"
+          v-for="server in filteredServers"
+          :key="server.id + '-' + currentView"
+          :server="server"
+          :sys-config="sysConfig"
+          :to="getServerLink(server)"
+        />
       </div>
     </div>
 
@@ -273,16 +280,11 @@
       </div>
     </div>
 
-    <div id="view-map" class="view-panel" :class="{ active: currentView === 'map' }">
-      <div class="map-wrapper">
-        <div ref="mapContainer" id="map-container"></div>
-      </div>
-    </div>
     </template>
 
     <div v-if="!isLoading && sitesRemaining > 0" class="loading-more">
       <div class="loading-spinner-small"></div>
-      <span>Loading remaining sites... ({{ sitesRemaining }})</span>
+      <span>{{ trans.loadingRemainingSites }} ({{ sitesRemaining }})</span>
     </div>
 
     <div v-if="hasCorsError" class="modal-overlay active">
@@ -364,6 +366,7 @@
 </template>
 
 <script setup>
+import { adminAccess } from '../utils/adminAccess.js'
 import { ref, computed, inject, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import TerminalHeader from '../components/TerminalHeader.vue'
@@ -419,12 +422,12 @@ const sysConfig = ref({
 const regionStats = ref({})
 const currentView = ref('bar')
 const currentFilter = ref('all')
+const currentGroupFilter = ref(null)
 const filterWrap = ref(null)
 const filterMeasure = ref(null)
 const filterMoreMeasure = ref(null)
 const filterVisibleCount = ref(Number.POSITIVE_INFINITY)
 const filterMoreOpen = ref(false)
-const mapInitialized = ref(false)
 const liveConnected = ref(false)
 const isLoading = ref(true)
 const sitesRemaining = ref(0)
@@ -542,7 +545,7 @@ const filterOptionEntries = computed(() => Object.entries(filterOptions.value).m
   flagCode: code !== 'all' && code !== 'unknown' ? getFlagRegionCode(code) : ''
 })))
 
-const filterMoreLabel = computed(() => currentLang.value === 'zh' ? '更多' : 'MORE')
+const filterMoreLabel = computed(() => trans.value.more)
 const visibleFilterOptions = computed(() => filterOptionEntries.value.slice(0, filterVisibleCount.value))
 const overflowFilterOptions = computed(() => filterOptionEntries.value.slice(filterVisibleCount.value))
 const isOverflowFilterActive = computed(() => overflowFilterOptions.value.some(item => item.code === currentFilter.value))
@@ -633,23 +636,24 @@ watch(
 watch(filterMoreLabel, scheduleFilterMeasurement, { flush: 'post' })
 
 const filteredServers = computed(() => {
-  if (currentFilter.value === 'all') return servers.value
-  if (currentFilter.value === 'unknown') return servers.value.filter(s => !s.region)
-  return servers.value.filter(s => (s.region || 'xx').toLowerCase() === currentFilter.value)
+  return servers.value.filter(server => {
+    const matchesRegion = currentFilter.value === 'all'
+      || (currentFilter.value === 'unknown'
+        ? !server.region
+        : (server.region || 'xx').toLowerCase() === currentFilter.value)
+    const matchesGroup = currentGroupFilter.value === null
+      || (server.server_group || 'Default') === currentGroupFilter.value
+    return matchesRegion && matchesGroup
+  })
 })
 
-const groupedServers = computed(() => {
-  const groups = {}
-  const order = []
-  filteredServers.value.forEach(server => {
-    const groupName = server.server_group || 'Default'
-    if (!groups[groupName]) {
-      groups[groupName] = []
-      order.push(groupName)
-    }
-    groups[groupName].push(server)
-  })
-  return order.map(name => ({ name, servers: groups[name] }))
+const groupFilterOptions = computed(() => {
+  const counts = new Map()
+  for (const server of servers.value) {
+    const name = server.server_group || 'Default'
+    counts.set(name, (counts.get(name) || 0) + 1)
+  }
+  return Array.from(counts, ([name, count]) => ({ name, count }))
 })
 
 const isCardView = computed(() => currentView.value === 'bar' || currentView.value === 'ring')
@@ -659,18 +663,16 @@ const switchView = (viewName) => {
   const normalizedView = normalizeDashboardView(viewName, sysConfig.value.display_mode)
   currentView.value = normalizedView
   localStorage.setItem(STORAGE.VIEW_PREFERENCE, normalizedView)
-  if (normalizedView === 'map' && !mapInitialized.value) {
-    initMap()
-    mapInitialized.value = true
-  } else if (normalizedView === 'map' && window.myMap) {
-    setTimeout(() => window.myMap.invalidateSize(), 100)
-  }
 }
 
 const setFilter = (code) => {
   const nextFilter = code.toLowerCase()
   currentFilter.value = currentFilter.value === nextFilter ? 'all' : nextFilter
   filterMoreOpen.value = false
+}
+
+const setGroupFilter = (name) => {
+  currentGroupFilter.value = currentGroupFilter.value === name ? null : name
 }
 
 const getStatusColor = (server) => {
@@ -703,7 +705,7 @@ const getUpdateTime = (lastUpdated) => {
   const lang = currentLang.value
   // 时间差为负或小于1秒时，显示0秒前
   if (diff < 1000) {
-    return lang === 'zh' ? `0${trans.value.secondsAgo}` : `0 ${trans.value.secondsAgo}`
+    return lang !== 'en' ? `0${trans.value.secondsAgo}` : `0 ${trans.value.secondsAgo}`
   }
 
   const seconds = Math.floor(diff / 1000)
@@ -712,13 +714,13 @@ const getUpdateTime = (lastUpdated) => {
   const days = Math.floor(hours / 24)
 
   if (seconds < 60) {
-    return lang === 'zh' ? `${seconds}${trans.value.secondsAgo}` : `${seconds} ${trans.value.secondsAgo}`
+    return lang !== 'en' ? `${seconds}${trans.value.secondsAgo}` : `${seconds} ${trans.value.secondsAgo}`
   } else if (minutes < 60) {
-    return lang === 'zh' ? `${minutes}${trans.value.minutesAgo}` : `${minutes} ${trans.value.minutesAgo}`
+    return lang !== 'en' ? `${minutes}${trans.value.minutesAgo}` : `${minutes} ${trans.value.minutesAgo}`
   } else if (hours < 24) {
-    return lang === 'zh' ? `${hours}${trans.value.hoursAgo}` : `${hours} ${trans.value.hoursAgo}`
+    return lang !== 'en' ? `${hours}${trans.value.hoursAgo}` : `${hours} ${trans.value.hoursAgo}`
   } else if (days < 30) {
-    return lang === 'zh' ? `${days}${trans.value.daysAgo}` : `${days} ${trans.value.daysAgo}`
+    return lang !== 'en' ? `${days}${trans.value.daysAgo}` : `${days} ${trans.value.daysAgo}`
   } else {
     return date.toLocaleString(undefined, { hour12: false })
   }
@@ -946,7 +948,6 @@ const runDashboardTick = () => {
   now.value = Date.now()
   advanceServerClocks()
   recomputeStats(now.value)
-  if (currentView.value === 'map') drawMarkers()
 }
 
 const mergeServersIntoList = (rawServers) => {
@@ -1013,7 +1014,6 @@ const refreshData = async () => {
 
         if (data.corsErrorSites?.length && !hasCorsError.value) hasCorsError.value = [...data.corsErrorSites]
         if (isLoading.value) isLoading.value = false
-        drawMarkers()
         sitesRemaining.value = Math.max(0, sitesRemaining.value - 1)
       })
       replayLatestReportUpdates(data)
@@ -1054,7 +1054,6 @@ const refreshData = async () => {
       latency_window: data.sysConfig?.latency_window || sysConfig.value.latency_window
     }
 
-    drawMarkers()
     isLoading.value = false
   } catch (e) {
     console.log('[INFO] Full refresh pending...', e)
@@ -1068,7 +1067,6 @@ const refreshData = async () => {
 // -------------------------------------------------------------------------
 let liveSockets = []
 let liveConnectionClosedByUser = false
-let themeObserver = null
 let timeUpdateInterval = null
 
 const stopLiveSockets = () => {
@@ -1165,123 +1163,6 @@ const handleVisibility = () => {
   }
 }
 
-const initMap = () => {
-  if (!window.L) {
-    const script = document.createElement('script')
-    script.src = getPublicAssetUrl('files/leaflet.js')
-    script.onload = () => {
-      loadLeafletCSS()
-    }
-    document.head.appendChild(script)
-  } else {
-    loadLeafletCSS()
-  }
-}
-
-const loadLeafletCSS = () => {
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = getPublicAssetUrl('files/leaflet.css')
-  document.head.appendChild(link)
-  link.onload = () => {
-    createMap()
-  }
-}
-
-const isMobile = () => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768
-
-const createMap = () => {
-  const mobileView = isMobile()
-  window.myMap = window.L.map('map-container', {
-    zoomControl: false,
-    attributionControl: false,
-    minZoom: mobileView ? 1 : 1
-  }).setView(mobileView ? [35, 105] : [30, 10], mobileView ? 1 : 2)
-
-  window.L.control.zoom({ position: 'bottomright' }).addTo(window.myMap)
-
-  fetch(getPublicAssetUrl('files/world.zh.json'))
-    .then(res => res.json())
-    .then(worldGeoJson => {
-      window.worldGeoJson = worldGeoJson
-      drawMarkers()
-    })
-    .catch(e => console.error('[ERROR] Map load failed', e))
-}
-
-const regionCoords = {
-  'US': [37.09, -95.71], 'CN': [35.86, 104.19], 'JP': [36.20, 138.25], 'HK': [22.31, 114.16],
-  'SG': [1.35, 103.81], 'KR': [35.90, 127.76], 'DE': [51.16, 10.45], 'GB': [55.37, -3.43],
-  'NL': [52.13, 5.29], 'FR': [46.22, 2.21], 'CA': [56.13, -106.34], 'AU': [-25.27, 133.77],
-  'IN': [20.59, 78.96], 'BR': [-14.23, -51.92], 'RU': [61.52, 105.31], 'ZA': [-30.55, 22.93],
-  'TW': [23.69, 120.96], 'IT': [41.87, 12.56], 'SE': [60.12, 18.64], 'CH': [46.81, 8.22],
-  'ES': [40.46, -3.74], 'PL': [51.91, 19.14], 'FI': [61.92, 25.74], 'NO': [60.47, 8.46],
-  'DK': [56.26, 9.50], 'IE': [53.14, -7.69], 'AT': [47.51, 14.55], 'TR': [38.96, 35.24],
-  'AE': [23.42, 53.84], 'MY': [4.21, 101.97], 'TH': [15.87, 100.99], 'VN': [14.05, 108.27],
-  'PH': [12.87, 121.77], 'ID': [-0.78, 113.92]
-}
-
-let markersLayer, geoJsonLayer, currentMapDataStr = ""
-
-const getThemeColors = () => {
-  const isLight = document.body.classList.contains('light')
-  return {
-    bgPrimary: isLight ? '#0a0e14' : '#0a0e14',
-    bgSecondary: isLight ? '#e8e8e0' : '#12171f',
-    borderColor: isLight ? '#1e2a3a' : '#1e2a3a',
-    accentGreen: isLight ? '#00d4aa' : '#00d4aa',
-    colorBlack: isLight ? '#000' : '#000',
-    colorWhite: isLight ? '#fff' : '#fff'
-  }
-}
-
-const drawMarkers = () => {
-  if (!window.myMap || !window.worldGeoJson) return
-
-  const newDataStr = JSON.stringify(regionStats.value)
-  if (currentMapDataStr === newDataStr) return
-  currentMapDataStr = newDataStr
-
-  if (geoJsonLayer) window.myMap.removeLayer(geoJsonLayer)
-  if (markersLayer) markersLayer.clearLayers()
-  else markersLayer = window.L.layerGroup().addTo(window.myMap)
-
-  const colors = getThemeColors()
-  const activeIso2 = {}
-  for (const code in regionStats.value) {
-    const upperCode = code.toUpperCase()
-    activeIso2[upperCode] = true
-    if (upperCode === 'HK' || upperCode === 'TW' || upperCode === 'MO') {
-      activeIso2['CN'] = true
-    }
-  }
-
-  geoJsonLayer = window.L.geoJSON(window.worldGeoJson, {
-    style: function(feature) {
-      const isActive = activeIso2[feature.properties.iso_a2]
-      return {
-        fillColor: isActive ? colors.accentGreen : colors.borderColor,
-        weight: 1,
-        opacity: 0.8,
-        color: colors.bgPrimary,
-        fillOpacity: isActive ? 0.4 : 0.2
-      }
-    }
-  }).addTo(window.myMap)
-
-  for (const [code, count] of Object.entries(regionStats.value)) {
-    const upperCode = code.toUpperCase()
-    if (regionCoords[upperCode]) {
-      const icon = window.L.divIcon({
-        className: 'custom-map-marker',
-        html: `<div style="background:${colors.accentGreen}; color:${colors.colorBlack}; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold; border:2px solid ${colors.bgPrimary}; box-shadow:0 0 10px ${colors.accentGreen}80; font-family:JetBrains Mono,monospace;">${count}</div>`,
-        iconSize: [22,22]
-      })
-      window.L.marker(regionCoords[upperCode], {icon: icon}).addTo(markersLayer)
-    }
-  }
-}
-
 const getServerLink = (server) => {
   const bases = getApiBases()
   if (bases.length === 0) return `/server/${server.id}`
@@ -1323,20 +1204,6 @@ onMounted(async () => {
   // 每秒更新 now 变量，使相对时间实时刷新
   runDashboardTick()
   timeUpdateInterval = setInterval(runDashboardTick, 1000)
-
-  if (currentView.value === 'map') {
-    switchView('map')
-  }
-
-  themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'class' && currentView.value === 'map') {
-        currentMapDataStr = ''
-        drawMarkers()
-      }
-    })
-  })
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
 })
 
 onUnmounted(() => {
@@ -1347,6 +1214,5 @@ onUnmounted(() => {
   if (filterResizeObserver) filterResizeObserver.disconnect()
   if (timeUpdateInterval) clearInterval(timeUpdateInterval)
   stopLiveSockets()
-  if (themeObserver) themeObserver.disconnect()
 })
 </script>

@@ -32,20 +32,15 @@
       <div class="form-row">
         <div class="form-group flex-1">
           <label class="form-label">
-            {{ trans.ghProxy }}
-            <HelpTooltip :text="trans.ghProxyTip" />
+            {{ trans.agentDownloadSource }}
+            <HelpTooltip :text="trans.agentDownloadTip" />
           </label>
-          <select v-model="selectedGhProxy" class="form-select">
-            <option v-for="option in ghProxyOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-            <option :value="CUSTOM_GH_PROXY_VALUE">{{ trans.custom || 'Custom' }}</option>
-          </select>
           <input
-            v-if="showCustomGhProxy"
             type="text"
-            :value="installGhProxy"
+            :value="installDownloadUrl"
             class="form-input mt-2"
-            :placeholder="trans.ghProxyPlaceholder"
-            @input="$emit('update:install-gh-proxy', $event.target.value)"
+            :placeholder="trans.agentDownloadPlaceholder"
+            @input="$emit('update:install-download-url', $event.target.value)"
           >
         </div>
 
@@ -149,7 +144,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 
 const props = defineProps({
@@ -159,7 +154,7 @@ const props = defineProps({
   currentServerName: { type: String, default: '' },
   targetOs: { type: String, default: 'linux' },
   installMode: { type: String, default: 'current-user' },
-  installGhProxy: { type: String, default: '' },
+  installDownloadUrl: { type: String, default: '' },
   installVersion: { type: String, default: '' },
   collectInterval: { type: [Number, String], default: 0 },
   reportInterval: { type: [Number, String], default: 60 },
@@ -186,58 +181,15 @@ const emit = defineEmits([
   'open-edit-from-copy',
   'update:target-os',
   'update:install-mode',
-  'update:install-gh-proxy',
+  'update:install-download-url',
   'update:install-version'
 ])
 
-const CUSTOM_GH_PROXY_VALUE = '__custom__'
-const ghProxyOptions = [
-  { value: '', label: props.trans.ghProxyPlaceholder || 'Direct' },
-  { value: 'https://ghfast.top/', label: 'https://ghfast.top/' },
-  { value: 'https://ghproxy.net/', label: 'https://ghproxy.net/' },
-  { value: 'https://gh.llkk.cc/', label: 'https://gh.llkk.cc/' },
-  { value: 'https://gh-proxy.com/', label: 'https://gh-proxy.com/' }
-]
-
-const manualCustomGhProxy = ref(false)
-const isKnownGhProxy = (value) => ghProxyOptions.some(option => option.value === String(value || '').trim())
-
-const selectedGhProxy = computed({
-  get: () => {
-    const currentProxy = String(props.installGhProxy || '').trim()
-    if (manualCustomGhProxy.value || (!isKnownGhProxy(currentProxy) && currentProxy)) {
-      return CUSTOM_GH_PROXY_VALUE
-    }
-    return currentProxy
-  },
-  set: (value) => {
-    if (value === CUSTOM_GH_PROXY_VALUE) {
-      manualCustomGhProxy.value = true
-      if (isKnownGhProxy(props.installGhProxy)) {
-        emit('update:install-gh-proxy', '')
-      }
-      return
-    }
-    manualCustomGhProxy.value = false
-    emit('update:install-gh-proxy', value)
-  }
-})
-
-const showCustomGhProxy = computed(() => selectedGhProxy.value === CUSTOM_GH_PROXY_VALUE)
 const effectivePingMode = computed(() => (
   props.targetOs === 'linux' && props.installMode === 'cfsm-user'
     ? 'tcp'
     : (props.pingMode === 'icmp' ? 'icmp' : 'tcp')
 ))
-
-watch(
-  () => props.show,
-  (show) => {
-    if (show && isKnownGhProxy(props.installGhProxy)) {
-      manualCustomGhProxy.value = false
-    }
-  }
-)
 
 const isBlank = (value) => value === '' || value === null || value === undefined
 const formatWithUnit = (value, unit) => (isBlank(value) ? '-' : `${value} ${unit}`)

@@ -87,7 +87,7 @@ export const BROADCAST_DELETE_FIELDS = Object.freeze([
 
 export const HISTORY_TABLE_COLUMNS = Object.freeze([
   ['id', 'INTEGER PRIMARY KEY'],
-  ['server_id', 'TEXT NOT NULL'],
+  ['server_id', 'TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE'],
   ['timestamp', 'INTEGER DEFAULT 0'],
   ['agent_version', "TEXT DEFAULT ''"],
   ['cpu', 'REAL DEFAULT 0'],
@@ -144,12 +144,6 @@ export const HISTORY_TABLE_COLUMNS = Object.freeze([
 export const HISTORY_INSERT_COLUMNS = Object.freeze(
   HISTORY_TABLE_COLUMNS.map(([name]) => name)
 );
-
-export const HISTORY_UPGRADE_COLUMNS = Object.freeze(Object.fromEntries(
-  HISTORY_TABLE_COLUMNS
-    .filter(([name]) => !['id', 'server_id', 'timestamp', 'cpu', 'load_avg', 'net_in_speed', 'net_out_speed', 'net_rx', 'net_tx', 'processes', 'tcp_conn', 'udp_conn', 'ping_ct', 'ping_cu', 'ping_cm', 'ping_bd', 'ram_total', 'ram_used', 'swap_total', 'swap_used', 'disk_total', 'disk_used'].includes(name))
-    .map(([name, definition]) => [name, definition])
-));
 
 export function createHistoryTableSql(tableName = 'metrics_history') {
   const columnDefinitions = HISTORY_TABLE_COLUMNS

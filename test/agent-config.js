@@ -132,16 +132,16 @@ clearSiteSettingsCache();
             this.args = args;
             return this;
           },
-          async first() {
+          first() {
             if (sql.includes("WHERE key = 'site_options'")) {
               return persistedSiteOptions ? { value: persistedSiteOptions } : null;
             }
             return null;
           },
-          async all() {
+          all() {
             return { results: [] };
           },
-          async run() {
+          run() {
             if (sql.includes('INSERT INTO settings') && Array.isArray(this.args)) {
               if (this.args[0] === 'site_options' && typeof this.args[1] === 'string') {
                 persistedSiteOptions = this.args[1];
@@ -163,7 +163,7 @@ clearSiteSettingsCache();
   assert.equal(isWssReportEnabled(defaultSettings, new Date('2026-08-20T10:00:00Z')), true);
 
   clearSiteSettingsCache();
-  const initializedSiteOptions = await saveSiteOptions(createEmptySettingsDb(), { servers_optimized: 'true' });
+  const initializedSiteOptions = await saveSiteOptions(createEmptySettingsDb(), { is_public: 'true' });
   assert.equal(initializedSiteOptions.show_three_net_details, 'true');
   assert.equal(initializedSiteOptions.wss_report_enabled, 'true');
   assert.deepEqual(initializedSiteOptions.wss_report_hours, Array.from({ length: 24 }, (_, hour) => hour));

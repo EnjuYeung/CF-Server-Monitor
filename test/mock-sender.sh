@@ -1,9 +1,9 @@
 #!/bin/bash
 # 模拟数据发送脚本
-# 用于测试 CF-Server-Monitor 工作原理
-# bash test/mock-sender.sh 550e8400-e29b-41d4-a716-446655440001 123456 http://localhost:8787/update 10 1.3.0 2
+# 用于测试 Server Monitor 工作原理
+# bash test/mock-sender.sh 550e8400-e29b-41d4-a716-446655440001 123456 http://localhost:8080/update 10 1.3.0 2
 # 第6个参数为GPU数量，默认1
-# curl -k -i -X POST 'https://localhost:8787/update' \
+# curl -k -i -X POST 'http://localhost:8080/update' \
 #   -H 'Content-Type: application/json' \
 #   -H 'X-Agent-Version: 1.3.0' \
 #   -d '{"id":"550e8400-e29b-41d4-a716-446655440001","secret":"123456","metrics":{"cpu":"45.5","gpu_info":[{"name":"Mock GPU","info":60.5,"id":"0"}],"ram_total":"16","ram_used":"8","disk_total":"256","disk_used":"128","load_avg":"1.50 1.20 0.80","boot_time":"1700000000000","net_rx":"1000000000","net_tx":"500000000","net_rx_monthly":"5000000000","net_tx_monthly":"2000000000","net_in_speed":"10000000","net_out_speed":"5000000","os":"Ubuntu 22.04","arch":"x86_64","cpu_info":"Intel Core i7-12700K","cpu_cores":"8","processes":"256","tcp_conn":"128","udp_conn":"32","ip_v4":"203.0.113.10","ip_v6":"0","ping_ct":"35","ping_cu":"45","ping_cm":"55","ping_bd":"75","loss_ct":"0","loss_cu":"1","loss_cm":"2","loss_bd":"3"}}'
@@ -23,7 +23,7 @@ step() { echo -e "${BLUE}[→]${NC} $1"; }
 
 SERVER_ID="${1:-550e8400-e29b-41d4-a716-446655440001}"
 SECRET="${2:-123456}"
-WORKER_URL="${3:-https://localhost:8787/update}"
+CONTROLLER_URL="${3:-http://localhost:8080/update}"
 REPORT_INTERVAL="${4:-10}"
 AGENT_VERSION="${5:-1.3.0}"
 GPU_COUNT="${6:-1}"
@@ -46,11 +46,11 @@ escape_json() {
 }
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       CF-Server-Monitor Mock Data Sender         ║${NC}"
+echo -e "${BLUE}║       Server Monitor Mock Data Sender         ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 info "服务器ID: $SERVER_ID"
-info "上报地址: $WORKER_URL"
+info "上报地址: $CONTROLLER_URL"
 info "上报间隔: ${REPORT_INTERVAL}秒"
 info "Agent版本: ${AGENT_VERSION}"
 info "GPU数量: ${GPU_COUNT}"
@@ -154,7 +154,7 @@ while true; do
 EOF
 )
     
-    RESPONSE=$(curl -s -k -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-Agent-Version: ${AGENT_VERSION}" -d "$PAYLOAD" -m 5 --connect-timeout 2 "$WORKER_URL" 2>/dev/null || echo "000")
+    RESPONSE=$(curl -s -k -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-Agent-Version: ${AGENT_VERSION}" -d "$PAYLOAD" -m 5 --connect-timeout 2 "$CONTROLLER_URL" 2>/dev/null || echo "000")
     
     if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "201" ]; then
         info "[$(date '+%Y-%m-%d %H:%M:%S')] 数据上报成功 - CPU: ${CPU}% | GPU: [${GPU_UTIL_LOG}] | Loss CT: ${LOSS_CT}% | RAM: ${RAM}% | Disk: ${DISK}%"

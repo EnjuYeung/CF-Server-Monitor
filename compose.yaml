@@ -1,0 +1,24 @@
+services:
+  monitor:
+    build: .
+    image: server-monitor:local
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-8080}:8080"
+    environment:
+      API_SECRET: ${API_SECRET:?Set API_SECRET in .env (at least 16 characters)}
+      API_USER_NAME: ${API_USER_NAME:-admin}
+      ADMIN_PATH: ${ADMIN_PATH:?Set a random ADMIN_PATH in .env (at least 8 characters)}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      PUBLIC_IP: ${PUBLIC_IP:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      AGENT_ARCHIVE_ENABLED: ${AGENT_ARCHIVE_ENABLED:-true}
+    volumes:
+      - ${DATA_PATH:-./data}:/app/data
+    networks:
+      - monitor
+networks:
+  monitor:
+    driver: bridge

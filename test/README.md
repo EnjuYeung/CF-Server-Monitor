@@ -1,72 +1,36 @@
-# 本地测试工具
+# 测试环境与执行
 
-本目录包含用于本地测试聚合功能的完整工具，可以无需部署到 Cloudflare 就验证效果。
+遵守根目录 testing.md。先准备依赖、GeoIP 和前端构建，再执行测试；不使用生产数据库。
 
-## 快速开始
+```bash
+npm ci
+npm run geoip:download
+npm run build
+npm run test:all
+npm run test:acceptance
+```
 
-### 方式一：使用 Wrangler 本地模式（推荐）
+`test:all` 包含 Node 测试、Agent 配置脚本及原生 Go vet/test；`test:acceptance` 在临时目录启动真实主控、HTTP/WS 客户端和本地 Webhook，覆盖登录、服务器管理、上报、历史、备份、告警、权限、容量、写入失败、持久化和恢复。结束后关闭服务，证据保存在 `output/test-results/acceptance.json`。临时数据库路径记录在该文件内，可按需人工删除。
 
-这是最真实的测试方式，体验与生产环境完全一致。
+负载测试只允许明确提供的空测试主控，拒绝非空安装。先用独立 Compose 项目及独立 DATA_PATH 启动主控，然后：
 
-1. **生成模拟数据 SQL**
-   ```bash
-   # 在项目根目录
-   node test/generate-sql.js
-   ```
+```bash
+TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMIN_PATH='<测试安全路径>' node test/load.js
+```
 
-2. **初始化数据库结构**
-   （如果数据库是空的，先启动一次 dev 来自动创建表）
-   ```bash
-   # 在项目根目录
-   npm run dev
-   # 访问一次 http://localhost:8787 会自动初始化表结构
-   # 然后按 Ctrl+C 停止
-   ```
+该测试创建 50 个服务器、50 条 Agent WS 和 10 条看板 WS，每两秒上报一次，持续 60 秒；验证全部确认、广播计数及健康检查。结果为 `output/test-results/load.json`。测试结束保留数据供检查，清理时只操作测试容器和测试数据目录。
 
-3. **导入模拟数据**
-   ```bash
-   # 执行 SQL 导入数据
-   wrangler d1 execute server-monitor-db --file=test/mock-data.sql
-   ```
+部署验收另需实际构建镜像、启动 Compose、容器重建、验证数据保留；通过真实 HTTPS/WSS 反代验证 Cookie 和 Upgrade；用官方 Agent 验证 HTTP/WS 模式和配置下发。浏览器实际执行登录、增改服务器、看板/详情、设置保存和备份下载。外部通知渠道需配置专用测试账号后另行验收，禁止发到生产收件人。
 
-4. **启动本地开发服务器**
-   ```bash
-   npm run dev
-   ```
+本次结果、证据及未覆盖项目见 TEST_REPORT.md。
 
-5. **访问界面**
-   - 首页仪表盘: http://localhost:8787
-   - 服务器详情页: http://localhost:8787/?id=s550e8400-e29b-41d4-a716-446655440001
-   - 后台管理: http://localhost:8787/admin
+`test/admin-security.test.js` 覆盖安全路径、RFC TOTP 向量、二维码独立解码、绑定/验证/恢复码、防重放、会话撤销、限流、SQLite 重启与备份恢复。
 
-## 模拟数据说明
 
-### 服务器配置
+## 同仓库原生 Agent
 
-- **US-East-Fast** (`s550e8400-e29b-41d4-a716-446655440001`)
-  - 位置: 美国东部
-  - 上报间隔: 60 秒
-  - 配置: 4 核 / 32G RAM
+先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 16 个 Agent 目标；`npm run build:frontend` 仅构建前端。
+`npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，使用当前宿主机对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。
 
-- **JP-Tokyo-Stable** (`550e8400-e29b-41d4-a716-446655440002`)
-  - 位置: 日本东京
-  - 上报间隔: 120 秒
-  - 配置: 2 核 / 16G RAM
-
-### 数据特点
-
-- 72 小时完整历史数据
-- 指标带有真实波动（白天负载高、晚上负载低）
-- 包含完整的 CPU、RAM、网络、Ping 等指标
-- 聚合表保持空，方便测试聚合逻辑
-
-## 文件说明
-
-- `generate-sql.js` - 生成 SQL 格式模拟数据的脚本
-- `mock-data.sql` - 生成后的 SQL 文件（运行脚本后产生）
-- `README.md` - 本文档
-
-## 测试流程建议
-
-1. **测试仪表盘显示** - 访问 http://localhost:8787 查看是否正常显示两台服务器
-2. **测试历史图表** - 点击服务器查看详情页，验证历史数据展示
+`npm run test:agent-deployment` 要求 Docker 和预先构建的 `server-monitor:agent-native` 镜像（`docker build -t server-monitor:agent-native .`）。它预建隔离环境，在 internal bridge 中验证 TLS 下载、原生安装、v1.0.99 测试版本实际自更新到当前版本、主控重建及卸载。v1.0.99 仅为验收编译的旧版本，不是对外发布版本。证据保存在 `output/test-results/agent-integration/`，默认清理自己的测试容器和网络。
+可通过 `TEST_DOCKER_CLI` 指定 Docker 包装命令，通过 `AGENT_TEST_IMAGE` 指定测试镜像。`AGENT_KEEP_TEST_ENV=1` 仅用于接续浏览器核验；使用后须按 browser-fixture.json 记录清理测试容器和网络。

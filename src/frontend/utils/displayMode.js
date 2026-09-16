@@ -1,6 +1,6 @@
 export const DEFAULT_DISPLAY_MODE = 'bar'
 export const ADMIN_DISPLAY_MODES = ['bar', 'ring', 'table']
-export const DASHBOARD_VIEWS = ['bar', 'ring', 'table', 'map']
+export const DASHBOARD_VIEWS = ['bar', 'ring', 'table']
 
 export const normalizeDisplayMode = (value, fallback = DEFAULT_DISPLAY_MODE) => {
   const mode = String(value || '').trim().toLowerCase()

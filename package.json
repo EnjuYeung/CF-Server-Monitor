@@ -1,25 +1,28 @@
 {
-  "name": "cf-server-monitor",
-  "version": "2.8.5",
-  "description": "Cloudflare Workers Server Monitor - 多服务器监控探针",
+  "name": "server-monitor",
+  "version": "3.0.0",
+  "description": "Self-hosted server monitor — Docker, Node.js and SQLite",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "npm run build:frontend && wrangler deploy",
-    "tail": "wrangler tail",
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "dev:frontend": "vite",
     "build": "node scripts/build.js",
-    "build:frontend": "node scripts/build.js",
-    "build:github-page": "node scripts/build-github-page.js",
-    "test": "node --test test/admin-usage.test.js test/dashboard-latency-window.test.js test/frontend-api-base.test.js test/frontend-live-socket.test.js test/metrics-broadcaster-agent-config.test.js test/traffic-report.test.js",
-    "test:all": "npm run test && npm run test:agent-config && npm run test:history-query",
+    "build:frontend": "node scripts/build.js --frontend-only",
+    "build:agent": "node scripts/agent.js build",
+    "geoip:download": "node scripts/download-geoip.js",
+    "test": "node --test test/*.test.js",
+    "test:all": "npm test && npm run test:agent-config && npm run test:agent-native",
+    "test:agent-native": "node scripts/agent.js test",
     "test:agent-config": "node test/agent-config.js",
-    "test:history-query": "node --test test/history-query.test.js",
+    "test:acceptance": "node test/acceptance.js && npm run test:agent-acceptance",
+    "test:agent-acceptance": "node test/agent-acceptance.js",
+    "test:agent-deployment": "node test/agent-deployment.js",
     "preview": "vite preview"
   },
   "keywords": [
-    "cloudflare",
-    "workers",
+    "docker",
+    "sqlite",
     "monitor",
     "server",
     "probe"
@@ -29,18 +32,21 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
     "fs-extra": "^11.3.5",
-    "vite": "^6.0.0",
-    "vite-plugin-mkcert": "^2.1.0",
-    "wrangler": "^4.0.0"
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
+    "vite": "^6.0.0"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
     "chartjs-adapter-date-fns": "^3.0.0",
-    "leaflet": "^1.9.4",
+    "maxmind": "^5.0.0",
+    "proxy-addr": "^2.0.7",
+    "qrcode": "^1.5.4",
     "vue": "^3.4.0",
-    "vue-router": "^4.4.0"
+    "vue-router": "^4.4.0",
+    "ws": "^8.18.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.11.0 <25"
   }
 }

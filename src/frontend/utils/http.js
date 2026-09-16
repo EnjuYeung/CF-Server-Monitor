@@ -1,4 +1,5 @@
 import { getApiBases } from './config'
+import { adminAccess } from './adminAccess.js'
 
 const DEFAULT_ERROR_MESSAGES = {
   401: 'Unauthorized',
@@ -7,16 +8,16 @@ const DEFAULT_ERROR_MESSAGES = {
   500: 'Internal Server Error'
 }
 
-const TURNSTILE_VERIFIED_KEY = 'turnstile_verified'
-
-const getAdminPath = () => {
-  return '/admin'
-}
+const tokenKey = base => `jwt_token:${new URL(base || getApiBases()[0]).origin}`
+export const getAuthToken = base => localStorage.getItem(tokenKey(base)) || ''
+export const setAuthToken = (token, base) => localStorage.setItem(tokenKey(base), token)
+export const clearAuthToken = base => localStorage.removeItem(tokenKey(base))
 
 const redirectToAdminLogin = () => {
   if (typeof window === 'undefined') return
 
-  const adminPath = getAdminPath()
+  const adminPath = adminAccess.path
+  if (!adminPath) return
   if (window.location.pathname === adminPath || window.location.pathname.startsWith(`${adminPath}/`)) {
     window.location.reload()
     return
@@ -25,56 +26,26 @@ const redirectToAdminLogin = () => {
   window.location.assign(adminPath)
 }
 
-const createHeaders = (includeAuth = true, includeTurnstile = true, baseUrl = null, options = {}) => {
-  const {
-    includeTurnstileToken = includeTurnstile,
-    includeTurnstileVerified = true
-  } = options
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  
-  if (includeAuth) {
-    const token = localStorage.getItem('jwt_token')
-    if (token) {
-      headers['Authorization'] = 'Bearer ' + token
-    }
-  }
-  
-  if (includeTurnstile && includeTurnstileToken) {
-    const turnstileToken = localStorage.getItem('turnstile_token')
-    if (turnstileToken) {
-      headers['X-Turnstile-Token'] = turnstileToken
-    }
-  }
-
-  if (includeTurnstileVerified) {
-    const turnstileVerified = localStorage.getItem(TURNSTILE_VERIFIED_KEY)
-    if (turnstileVerified) {
-      headers['X-Turnstile-Verified'] = turnstileVerified
-    }
-  }
-  
-  return headers
+const createHeaders = (includeAuth = true, baseUrl = null) => {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = includeAuth ? getAuthToken(baseUrl) : '';
+  if (token) headers.Authorization = 'Bearer ' + token;
+  return headers;
 }
 
 const handleResponse = async (res, options = {}) => {
   const { autoRedirect = true, baseUrl = null } = options
   
   if (res.status === 401) {
-    localStorage.removeItem('jwt_token')
-    if (autoRedirect) {
+    const hadToken = !!getAuthToken(baseUrl)
+    clearAuthToken(baseUrl)
+    adminAccess.authorized = false
+    if (autoRedirect && hadToken) {
       redirectToAdminLogin()
     }
-    return { error: DEFAULT_ERROR_MESSAGES[401], status: 401 }
   }
   
   if (res.status === 403) {
-    localStorage.removeItem('turnstile_token')
-    localStorage.removeItem(TURNSTILE_VERIFIED_KEY)
-    if (autoRedirect) {
-      window.location.reload()
-    }
     return { error: DEFAULT_ERROR_MESSAGES[403], status: 403 }
   }
   
@@ -104,10 +75,6 @@ const handleResponse = async (res, options = {}) => {
   
   try {
     const data = await res.json()
-    if (data && data.turnstile_verified) {
-      localStorage.setItem(TURNSTILE_VERIFIED_KEY, data.turnstile_verified)
-      localStorage.removeItem('turnstile_token')
-    }
     return { data, status: res.status }
   } catch (e) {
     return { data: null, status: res.status }
@@ -115,8 +82,8 @@ const handleResponse = async (res, options = {}) => {
 }
 
 const request = async (method, url, body, options = {}) => {
-  const { includeAuth = true, includeTurnstile = true, autoRedirect = true, baseUrl = null } = options
-  const headers = createHeaders(includeAuth, includeTurnstile, baseUrl, options)
+  const { includeAuth = true, autoRedirect = true, baseUrl = null } = options
+  const headers = createHeaders(includeAuth, baseUrl)
   const base = baseUrl || getApiBases()[0]
 
   try {
@@ -133,8 +100,8 @@ const request = async (method, url, body, options = {}) => {
 }
 
 const fetchWithBase = async (baseUrl, url, options, method = 'GET', body = null) => {
-  const { includeAuth = true, includeTurnstile = true, autoRedirect = true } = options
-  const headers = createHeaders(includeAuth, includeTurnstile, baseUrl, options)
+  const { includeAuth = true, autoRedirect = true } = options
+  const headers = createHeaders(includeAuth, baseUrl)
 
   const res = await fetch(`${baseUrl}${url}`, {
     method,
@@ -230,7 +197,7 @@ export const http = {
 }
 
 export const isAdminLoggedIn = () => {
-  return !!localStorage.getItem('jwt_token')
+  return !!getAuthToken()
 }
 
 export default http

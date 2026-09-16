@@ -1,3 +1,4 @@
+import { normalizeLanguagePreference } from './language.js';
 import {
   DEFAULT_SITE_TITLE,
   JWT_SECRET_MIN_LENGTH,
@@ -6,7 +7,7 @@ import {
 
 export const APPEARANCE_FIELDS = ['site_title', 'custom_bg', 'custom_bg_mobile', 'favicon', 'custom_head', 'custom_script', 'csp_static', 'csp_api', 'display_mode', 'preferred_theme', 'default_language', 'theme_options'];
 
-export const SITE_FIELDS = ['is_public', 'show_price', 'show_expire', 'show_tf', 'show_three_net_details', 'wss_report_enabled', 'wss_report_hours', 'frontend_ws_timeout_minutes', 'long_history_points', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'notification_timezone', 'expire_notification_time', 'traffic_report_enabled', 'notification_webhook_enabled', 'notification_webhook_url', 'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body', 'notification_template', 'turnstile_enabled', 'turnstile_login_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'jwt_secret', 'username', 'password', 'cloudflare_account_id', 'cloudflare_token', 'custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4', 'custom_ct_name', 'custom_cu_name', 'custom_cm_name', 'custom_bd_name', 'node_1_name', 'node_2_name', 'node_3_name', 'node_4_name', 'expire_reminder', 'resource_alert_rules', 'theme_url', 'history_id_optimized','servers_optimized'];
+export const SITE_FIELDS = ['is_public', 'show_price', 'show_expire', 'show_tf', 'show_three_net_details', 'wss_report_enabled', 'wss_report_hours', 'frontend_ws_timeout_minutes', 'long_history_points', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'notification_timezone', 'expire_notification_time', 'traffic_report_enabled', 'notification_webhook_enabled', 'notification_webhook_url', 'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body', 'notification_template', 'jwt_secret', 'username', 'password', 'custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4', 'custom_ct_name', 'custom_cu_name', 'custom_cm_name', 'custom_bd_name', 'node_1_name', 'node_2_name', 'node_3_name', 'node_4_name', 'expire_reminder', 'resource_alert_rules', 'theme_url', ];
 
 export const TG_NOTIFY_MINUTES_MIN = 2;
 export const TG_NOTIFY_MINUTES_MAX = 30;
@@ -92,13 +93,7 @@ const defaults = {
   notification_webhook_headers: '',
   notification_webhook_body: DEFAULT_NOTIFICATION_WEBHOOK_BODY,
   notification_template: DEFAULT_NOTIFICATION_TEMPLATE,
-  turnstile_enabled: 'false',
-  turnstile_login_enabled: 'false',
-  turnstile_site_key: '',
-  turnstile_secret_key: '',
   jwt_secret: '',
-  cloudflare_account_id: '',
-  cloudflare_token: '',
   custom_ct: 'gd-ct-dualstack.ip.zstaticcdn.com',
   custom_cu: 'gd-cu-dualstack.ip.zstaticcdn.com',
   custom_cm: 'gd-cm-dualstack.ip.zstaticcdn.com',
@@ -118,8 +113,6 @@ const defaults = {
   expire_reminder: '0',
   resource_alert_rules: [],
   theme_url: '',
-  history_id_optimized: 'false',
-  servers_optimized: 'false'
 };
 
 export function normalizeLongHistoryPoints(value) {
@@ -465,9 +458,7 @@ export function normalizePreferredTheme(value, fallback = 'auto') {
 }
 
 export function normalizeDefaultLanguage(value, fallback = 'auto') {
-  const language = String(value || '').trim().toLowerCase();
-  if (language === 'zh' || language === 'en' || language === 'auto') return language;
-  return fallback === 'zh' || fallback === 'en' ? fallback : 'auto';
+  return normalizeLanguagePreference(value, fallback);
 }
 
 export function normalizeBooleanSetting(value, fallback = 'false') {
@@ -557,25 +548,6 @@ export function isWssReportEnabled(settings = {}, now = Date.now()) {
   return getWssReportScheduleState(settings, now).active;
 }
 
-function hasMissingFields(source, fields) {
-  if (!source || typeof source !== 'object') return true;
-  return fields.some(field => source[field] === undefined);
-}
-
-async function loadLegacySettings(db, fields) {
-  const legacy = {};
-  const fieldSet = new Set(fields);
-  const { results } = await db.prepare('SELECT * FROM settings').all();
-  if (results && results.length > 0) {
-    results.forEach(r => {
-      if (fieldSet.has(r.key)) {
-        legacy[r.key] = r.value;
-      }
-    });
-  }
-  return legacy;
-}
-
 async function saveJwtSecretIfMissing(db, secret) {
   await db.prepare(`
     INSERT INTO settings (key, value)
@@ -636,9 +608,7 @@ export async function loadSiteSettings(db, options = {}) {
       }
     }
 
-    if (hasMissingFields(siteOptions, SITE_FIELDS)) {
-      copyFields(result, await loadLegacySettings(db, SITE_FIELDS), SITE_FIELDS);
-    }
+
     copyFields(result, siteOptions, SITE_FIELDS);
 
     if (!isValidJwtSecret(siteOptions?.jwt_secret) || !isValidJwtSecret(result.jwt_secret)) {
@@ -662,7 +632,7 @@ export async function loadSiteSettings(db, options = {}) {
     result.expire_notification_time = normalizeExpireNotificationTime(result.expire_notification_time);
     result.traffic_report_enabled = normalizeBooleanSetting(result.traffic_report_enabled);
   } catch (e) {
-    console.error('加载站点设置失败:', e);
+    throw new Error('Unable to load site settings', { cause: e });
   }
 
   cachedSiteSettings = result;
@@ -698,17 +668,13 @@ export async function loadAppearanceOptions(db) {
       }
     }
 
-    const needsLegacyAppearance = hasMissingFields(appearanceOptions, APPEARANCE_FIELDS);
-    if (needsLegacyAppearance) {
-      const legacy = await loadLegacySettings(db, APPEARANCE_FIELDS);
-      copyFields(result, legacy, APPEARANCE_FIELDS);
-    }
+
     copyFields(result, appearanceOptions, APPEARANCE_FIELDS);
     result.display_mode = normalizeDisplayMode(result.display_mode, defaults.display_mode);
     result.preferred_theme = normalizePreferredTheme(result.preferred_theme);
     result.default_language = normalizeDefaultLanguage(result.default_language);
   } catch (e) {
-    console.error('加载外观设置失败:', e);
+    throw new Error('Unable to load appearance settings', { cause: e });
   }
 
   cachedAppearanceOptions = result;
@@ -756,18 +722,14 @@ export async function loadSettings(db) {
 }
 
 export async function saveSiteOptions(db, updates) {
-  const siteRow = await db.prepare(
+  const siteRow = db.prepare(
     "SELECT value FROM settings WHERE key = 'site_options'"
   ).first();
   
   const existingSiteOptions = siteRow && siteRow.value
     ? tryParseJSON(siteRow.value) || {}
     : {};
-  const legacySiteOptions = hasMissingFields(existingSiteOptions, SITE_FIELDS)
-    ? await loadLegacySettings(db, SITE_FIELDS)
-    : {};
-  
-  const siteOptions = { ...legacySiteOptions, ...existingSiteOptions, ...updates };
+  const siteOptions = { ...existingSiteOptions, ...updates };
   delete siteOptions.show_long_history;
   delete siteOptions.show_time;
   siteOptions.tg_notify = normalizeTgNotify(siteOptions.tg_notify);

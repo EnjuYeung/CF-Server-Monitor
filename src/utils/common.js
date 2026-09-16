@@ -3,40 +3,6 @@
  * 统一存放各处重复定义的函数
  */
 
-/**
- * 验证 Turnstile token
- * @param {string} token - Turnstile token
- * @param {string} secretKey - Turnstile secret key
- * @returns {Promise<boolean>} 验证结果
- */
-export async function verifyTurnstileToken(token, secretKey) {
-  if (!token || !secretKey) {
-    return false;
-  }
-  
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        secret: secretKey,
-        response: token
-      })
-    });
-    
-    const data = await response.json();
-    return data.success === true;
-  } catch (e) {
-    console.error('Turnstile verification error:', e);
-    return false;
-  }
-}
-
-/**
- * 管理后台密码哈希参数
- */
 export const PASSWORD_HASH_ALGORITHM = 'pbkdf2_sha256';
 export const PASSWORD_HASH_ITERATIONS = 50000;
 const PASSWORD_SALT_BYTES = 16;

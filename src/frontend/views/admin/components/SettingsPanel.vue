@@ -7,7 +7,7 @@
         <div class="form-row">
           <div class="form-group flex-1">
             <label class="form-label">{{ trans.siteTitle }}</label>
-            <input type="text" v-model="settings.site_title" class="form-input" :placeholder="'Cloudflare Server Monitor'">
+            <input type="text" v-model="settings.site_title" class="form-input" :placeholder="'Server Monitor'">
           </div>
 
           <div class="form-group flex-1">
@@ -36,6 +36,7 @@
               <option value="auto">{{ trans.languageAuto }}</option>
               <option value="zh">{{ trans.languageChinese }}</option>
               <option value="en">{{ trans.languageEnglish }}</option>
+              <option value="ja">{{ trans.languageJapanese }}</option>
             </select>
           </div>
         </div>
@@ -508,41 +509,7 @@
       <div class="settings-section">
         <div class="section-title"><span>▸</span> {{ trans.securitySettings }}</div>
 
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <div class="checkbox-item">
-              <input type="checkbox" id="cfg_turnstile_enabled" v-model="settings.turnstile_enabled">
-              <label><b>{{ trans.enableTurnstile }}</b></label>
-            </div>
-            </div>
-          <div class="form-group flex-1">
-            <div class="checkbox-item">
-              <input type="checkbox" id="cfg_turnstile_login_enabled" v-model="settings.turnstile_login_enabled">
-              <label>{{ trans.enableTurnstileLogin }}</label>
-              <HelpTooltip :text="trans.turnstileLoginTip" />
-            </div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label class="form-label">
-              {{ trans.turnstileSiteKey }}
-              <HelpTooltip :text="trans.turnstileTip" />
-            </label>
-            <input type="text" name="turnstile_site_key" autocomplete="off" v-model="settings.turnstile_site_key" class="form-input" :placeholder="trans.turnstileSiteKeyPlaceholder">
-          </div>
-
-          <div class="form-group flex-1">
-            <label class="form-label">{{ trans.turnstileSecretKey }}</label>
-            <div class="password-input-wrapper">
-              <input type="text" name="turnstile_secret_key" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" v-model="settings.turnstile_secret_key" :class="['form-input', { 'secret-input-masked': !passwordVisible.turnstileSecret }]" :placeholder="trans.turnstileSecretKeyPlaceholder">
-              <button type="button" class="password-toggle" @click="$emit('toggle-password', 'turnstileSecret')">
-                {{ passwordVisible.turnstileSecret ? '🙈' : '👁️' }}
-              </button>
-            </div>
-          </div>
-        </div>
+        <TwoFactorPanel :key="selectedApiBase" :trans="trans" :base-url="selectedApiBase" />
 
         <div class="form-group mt-4">
           <label class="form-label">
@@ -554,37 +521,6 @@
             <button type="button" class="password-toggle" @click="$emit('toggle-password', 'jwtSecret')">
               {{ passwordVisible.jwtSecret ? '🙈' : '👁️' }}
             </button>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="settings-section">
-        <div class="section-title"><span>▸</span> {{ trans.cloudflareSettings }}</div>
-
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label class="form-label">{{ trans.cloudflareAccountId }}</label>
-            <input type="text" name="cloudflare_account_id" autocomplete="off" v-model="settings.cloudflare_account_id" class="form-input" :placeholder="trans.cloudflareAccountIdPlaceholder">
-          </div>
-
-          <div class="form-group flex-1">
-            <label class="form-label">
-              Cloudflare API Token
-              <HelpTooltip :text="trans.cloudflareTokenTip" />
-            </label>
-            <div class="password-input-wrapper">
-              <input type="text" name="cloudflare_token" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" v-model="settings.cloudflare_token" :class="['form-input', { 'secret-input-masked': !passwordVisible.cloudflareToken }]" :placeholder="trans.cloudflareTokenPlaceholder">
-              <button type="button" class="password-toggle" @click="$emit('toggle-password', 'cloudflareToken')">
-                {{ passwordVisible.cloudflareToken ? '🙈' : '👁️' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group  flex-1">
-            <button type="button" @click="$emit('query-d1-usage')" class="btn btn-primary btn-lg" :disabled="d1UsageLoading">{{ d1UsageLoading ? '⏳' : '🔍' }} {{ trans.queryD1Quota }}</button>
           </div>
         </div>
 
@@ -715,8 +651,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
+import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
-import { currentLang } from '../../../utils/i18n.js'
 import { PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
 
 const props = defineProps({
@@ -730,13 +666,12 @@ const props = defineProps({
   saving: { type: Boolean, default: false },
   changeAdminPassword: { type: Boolean, default: false },
   testNotificationLoading: { type: Boolean, default: false },
-  d1UsageLoading: { type: Boolean, default: false }
 })
 
 defineEmits([
   'toggle-password', 'toggle-admin-password-change',
   'save-settings', 'upload-bg', 'upload-bg-mobile', 'upload-favicon',
-  'send-test-notification', 'query-d1-usage'
+  'send-test-notification'
 ])
 
 const commonNotificationTimezones = [
@@ -898,10 +833,7 @@ const resourceAlertRules = computed(() => ensureResourceAlertRules())
 const resourceAlertExpanded = ref(false)
 const resourceAlertRuleNameInputs = new Map()
 const resourceAlertToggleText = computed(() => {
-  const isZh = currentLang.value === 'zh'
-  return resourceAlertExpanded.value
-    ? (isZh ? '收起' : 'Collapse')
-    : (isZh ? '展开' : 'Expand')
+  return resourceAlertExpanded.value ? props.trans.collapse : props.trans.expand
 })
 
 const toggleResourceAlertExpanded = () => {

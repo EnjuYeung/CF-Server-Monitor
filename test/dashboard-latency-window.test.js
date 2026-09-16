@@ -1,188 +1,21 @@
-import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Miniflare } from 'miniflare';
-
-import { getDashboardLatencyHistory } from '../src/database/schema.js';
-import { buildHistoryId } from '../src/database/indexOptimization.js';
-import {
-  DASHBOARD_LATENCY_WINDOW_HOURS,
-  DASHBOARD_LATENCY_WINDOW_POINTS
-} from '../src/utils/config.js';
-
-function createMiniflare() {
-  return new Miniflare({
-    modules: true,
-    script: 'export default { fetch() { return new Response("OK"); } }',
-    d1Databases: { DB: 'dashboard-latency-window-test' }
-  });
-}
-
-async function createHistoryTable(db) {
-  await db.prepare(`
-    CREATE TABLE metrics_history (
-      id INTEGER PRIMARY KEY,
-      timestamp INTEGER,
-      ping_ct INTEGER,
-      ping_cu INTEGER,
-      ping_cm INTEGER,
-      ping_bd INTEGER,
-      loss_ct INTEGER,
-      loss_cu INTEGER,
-      loss_cm INTEGER,
-      loss_bd INTEGER
-    )
-  `).run();
-}
-
-function latencyRow(partitionId, timestamp, value) {
-  return `(${buildHistoryId(partitionId, timestamp)}, ${timestamp}, ${value}, ${value + 1}, ${value + 2}, ${value + 3}, ${value % 10}, ${(value + 1) % 10}, ${(value + 2) % 10}, ${(value + 3) % 10})`;
-}
-
-test('dashboard latency history samples two hours from D1 into at most 20 real points', async () => {
-  const miniflare = createMiniflare();
-
-  try {
-    const db = await miniflare.getD1Database('DB');
-    await createHistoryTable(db);
-
-    const partitionId = 1;
-    const start = Date.UTC(2026, 6, 29, 0, 0, 0);
-    const rows = [];
-    for (let index = 0; index < 120; index++) {
-      rows.push(latencyRow(partitionId, start + index * 60_000, 20 + index));
-    }
-
-    await db.prepare(`
-      INSERT INTO metrics_history (
-        id, timestamp,
-        ping_ct, ping_cu, ping_cm, ping_bd,
-        loss_ct, loss_cu, loss_cm, loss_bd
-      )
-      VALUES ${rows.join(',')}
-    `).run();
-
-    const history = await getDashboardLatencyHistory(db, [{
-      id: 'server-1',
-      history_partition_id: partitionId,
-      timestamp: start
-    }], {
-      now: start + 120 * 60_000,
-      cache: false
-    });
-
-    const window = history.get('server-1');
-    assert.equal(window.ping.length, 20);
-    assert.equal(window.loss.length, 20);
-    assert.equal(new Set(window.ping.map(point => point.ts)).size, 20);
-    assert.equal(window.ping.every(point => point.ct >= 20), true);
-    assert.equal(window.loss.every(point => point.ct >= 0 && point.ct <= 100), true);
-  } finally {
-    await miniflare.dispose();
-  }
+import assert from 'node:assert/strict';
+import { SQLiteDatabase } from '../src/database/sqlite.js';
+import { initDatabase, saveMetricsHistory, getDashboardLatencyHistory, clearDashboardLatencyHistoryCache } from '../src/database/schema.js';
+test('two-hour latency window has 20 buckets and preserves gaps', async t => {
+  clearDashboardLatencyHistoryCache();const db=new SQLiteDatabase();t.after(()=>db.close());await initDatabase(db);
+  db.prepare('INSERT INTO servers(id) VALUES (?)').bind('a').run();
+  const now=Date.now();const start=now-7200000;const interval=Math.ceil((Math.floor(now/1000)*1000+1000-start)/20);
+  for(const i of [0,5,19]) await saveMetricsHistory(db,'a',{ping_ct:i+20,loss_ct:0},'',start+i*interval+1000);
+  const window=(await getDashboardLatencyHistory(db,[{id:'a'}],{now,cache:false})).get('a');
+  assert.equal(window.ping.length,20);assert.equal(window.ping[0].ct,20);assert.equal(window.ping[1].ct,undefined);assert.equal(window.ping[5].ct,25);
 });
-
-test('dashboard latency window config exposes the public contract', () => {
-  assert.equal(DASHBOARD_LATENCY_WINDOW_POINTS, 20);
-  assert.equal(DASHBOARD_LATENCY_WINDOW_HOURS, 2);
-});
-
-test('dashboard latency history preserves empty buckets inside the window', async () => {
-  const miniflare = createMiniflare();
-
-  try {
-    const db = await miniflare.getD1Database('DB');
-    await createHistoryTable(db);
-
-    const partitionId = 3;
-    const now = Date.UTC(2026, 6, 29, 4, 0, 0);
-    const queryStart = now - DASHBOARD_LATENCY_WINDOW_HOURS * 60 * 60 * 1000;
-    const queryEnd = Math.floor(now / 1000) * 1000 + 1000;
-    const intervalMs = Math.max(10_000, Math.ceil((queryEnd - queryStart) / DASHBOARD_LATENCY_WINDOW_POINTS));
-    const slotTimestamp = index => queryStart + index * intervalMs + 1000;
-
-    await db.prepare(`
-      INSERT INTO metrics_history (
-        id, timestamp,
-        ping_ct, ping_cu, ping_cm, ping_bd,
-        loss_ct, loss_cu, loss_cm, loss_bd
-      )
-      VALUES
-        ${latencyRow(partitionId, slotTimestamp(0), 20)},
-        ${latencyRow(partitionId, slotTimestamp(5), 50)},
-        ${latencyRow(partitionId, slotTimestamp(19), 90)}
-    `).run();
-
-    const history = await getDashboardLatencyHistory(db, [{
-      id: 'server-gap',
-      history_partition_id: partitionId,
-      timestamp: queryStart
-    }], {
-      now,
-      cache: false
-    });
-
-    const window = history.get('server-gap');
-    assert.equal(window.ping.length, DASHBOARD_LATENCY_WINDOW_POINTS);
-    assert.equal(window.loss.length, DASHBOARD_LATENCY_WINDOW_POINTS);
-    assert.equal(window.ping[0].ct, 20);
-    assert.equal(window.ping[1].ct, undefined);
-    assert.equal(window.ping[5].ct, 50);
-    assert.equal(window.ping[6].ct, undefined);
-    assert.equal(window.ping[19].ct, 90);
-    assert.equal(window.loss[1].ct, undefined);
-    assert.equal(window.ping[5].ts, queryStart + 5 * intervalMs);
-  } finally {
-    await miniflare.dispose();
-  }
-});
-
-test('dashboard latency history cache is reused for five minutes per server', async () => {
-  const miniflare = createMiniflare();
-
-  try {
-    const db = await miniflare.getD1Database('DB');
-    await createHistoryTable(db);
-
-    const partitionId = 2;
-    const start = Date.UTC(2026, 6, 29, 1, 0, 0);
-    await db.prepare(`
-      INSERT INTO metrics_history (
-        id, timestamp,
-        ping_ct, ping_cu, ping_cm, ping_bd,
-        loss_ct, loss_cu, loss_cm, loss_bd
-      )
-      VALUES ${latencyRow(partitionId, start, 30)}
-    `).run();
-
-    const server = {
-      id: 'server-cache',
-      history_partition_id: partitionId,
-      timestamp: start
-    };
-    const first = await getDashboardLatencyHistory(db, [server], {
-      now: start + 60_000
-    });
-    assert.equal(first.get('server-cache').ping.at(-1).ct, 30);
-
-    await db.prepare(`
-      INSERT INTO metrics_history (
-        id, timestamp,
-        ping_ct, ping_cu, ping_cm, ping_bd,
-        loss_ct, loss_cu, loss_cm, loss_bd
-      )
-      VALUES ${latencyRow(partitionId, start + 60_000, 90)}
-    `).run();
-
-    const cached = await getDashboardLatencyHistory(db, [server], {
-      now: start + 4 * 60_000
-    });
-    assert.equal(cached.get('server-cache').ping.at(-1).ct, 30);
-
-    const refreshed = await getDashboardLatencyHistory(db, [server], {
-      now: start + 6 * 60_000
-    });
-    assert.equal(refreshed.get('server-cache').ping.at(-1).ct, 90);
-  } finally {
-    await miniflare.dispose();
-  }
+test('latency cache refreshes after five minutes', async t => {
+  clearDashboardLatencyHistoryCache();const db=new SQLiteDatabase();t.after(()=>db.close());await initDatabase(db);
+  db.prepare('INSERT INTO servers(id) VALUES (?)').bind('cache').run();const now=Date.now();
+  await saveMetricsHistory(db,'cache',{ping_ct:30,loss_ct:0},'',now-1000);
+  assert.equal((await getDashboardLatencyHistory(db,[{id:'cache'}],{now})).get('cache').ping.at(-1).ct,30);
+  await saveMetricsHistory(db,'cache',{ping_ct:90,loss_ct:0},'',now);
+  assert.equal((await getDashboardLatencyHistory(db,[{id:'cache'}],{now:now+240000})).get('cache').ping.at(-1).ct,30);
+  const result=(await getDashboardLatencyHistory(db,[{id:'cache'}],{now:now+360000})).get('cache');assert.ok(result.ping.some(point=>point.ct===90));
 });

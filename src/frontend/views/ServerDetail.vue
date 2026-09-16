@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <TerminalHeader :title="server.name || 'Loading...'" />
+    <TerminalHeader :title="server.name || trans.loading" />
     
     <div v-if="loading" class="loading-state">
       <div class="loading-spinner"></div>
@@ -39,7 +39,7 @@
             <span class="flag-fallback">🏳️</span>
             <OsIcon :os="server.os" />
           </span>
-          <span>{{ server.name || 'Loading...' }}</span>
+          <span>{{ server.name || trans.loading }}</span>
           <span style="color: var(--text-muted);">:~#</span>
         </div>
         <span class="status-badge" :class="{ online: isOnline, offline: !isOnline }">
@@ -97,7 +97,7 @@
           <span class="sysinfo-value sysinfo-small">
             {{ formatBytes(trafficUsageBytes) }}
             /
-            {{ server.traffic_limit ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : 'Unlimited' }}
+            {{ server.traffic_limit ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : trans.unlimited }}
           </span>
         </div>
         <div class="sysinfo-item">
@@ -287,7 +287,7 @@
           <div class="chart-header-actions">
             <div class="ping-indicator">
               <span v-for="item in visiblePingStats" :key="item.field" :class="item.className">
-                {{ item.label }} <b>{{ item.value !== null ? item.value + 'ms' : 'Timeout' }}</b>
+                {{ item.label }} <b>{{ item.value !== null ? item.value + 'ms' : trans.timeout }}</b>
               </span>
             </div>
             <ChartExpandButton :expanded="isChartExpanded('ping')" @toggle="toggleChartExpanded('ping')" />
@@ -329,11 +329,10 @@
           <button class="modal-close" @click="showLoginModal = false">✕</button>
         </div>
         <div class="modal-body-content">
-          <p class="modal-body-text">{{ trans.loginRequired }}</p>
+          <p class="modal-body-text">{{ trans.secureEntryRequired }}</p>
         </div>
         <div class="modal-footer flex-justify-between">
-          <button @click="goToLogin" class="btn btn-primary">{{ trans.login }}</button>
-          <button @click="showLoginModal = false" class="btn">{{ trans.cancel }}</button>
+                    <button @click="showLoginModal = false" class="btn">{{ trans.cancel }}</button>
         </div>
       </div>
     </div>
@@ -408,8 +407,8 @@ const ChartExpandButton = {
   emits: ['toggle'],
   setup(props, { emit }) {
     const getLabel = () => props.expanded
-      ? (currentLang.value === 'en' ? 'Collapse chart' : '收起图表')
-      : (currentLang.value === 'en' ? 'Expand chart' : '放大图表')
+      ? trans.value.collapseChart
+      : trans.value.expandChart
 
     return () => h('button', {
       type: 'button',
@@ -505,15 +504,15 @@ const formatDiskIoAxisTick = (value) => {
 
 const timeOptions = computed(() => {
   return [
-    { hours: REALTIME_HISTORY_HOURS, label: '10m' },
-    { hours: 0.5, label: '30m' },
-    { hours: 1, label: '1h' },
-    { hours: 6, label: '6h' },
-    { hours: 12, label: '12h' },
-    { hours: 24, label: '24h' },
-    { hours: 48, label: '2d' },
-    { hours: 96, label: '4d' },
-    { hours: 168, label: '7d' },
+    { hours: REALTIME_HISTORY_HOURS, label: `10${trans.value.minuteShort}` },
+    { hours: 0.5, label: `30${trans.value.minuteShort}` },
+    { hours: 1, label: `1${trans.value.hourShort}` },
+    { hours: 6, label: `6${trans.value.hourShort}` },
+    { hours: 12, label: `12${trans.value.hourShort}` },
+    { hours: 24, label: `24${trans.value.hourShort}` },
+    { hours: 48, label: `2${trans.value.dayShort}` },
+    { hours: 96, label: `4${trans.value.dayShort}` },
+    { hours: 168, label: `7${trans.value.dayShort}` },
   ]
 })
 
@@ -724,7 +723,7 @@ const parseLoadAvg = (loadAvgStr) => {
 const isLossValid = (value) => !isDisabledProbeMetric(value) && value !== null && value !== undefined && value !== '' && !Number.isNaN(parseFloat(value))
 const formatLoss = (value) => isLossValid(value) ? `${Math.max(0, Math.min(100, parseFloat(value))).toFixed(0)}%` : ''
 const hasLossData = computed(() => visibleLossFields.value.length > 0)
-const formatPing = (value) => (value === null || value === undefined || value === '' || value === 'null') ? 'Timeout' : `${value}ms`
+const formatPing = (value) => (value === null || value === undefined || value === '' || value === 'null') ? trans.value.timeout : `${value}ms`
 
 const parseBootTimeToMs = (bootTime) => {
   if (!bootTime) return null
@@ -828,19 +827,19 @@ const ds = (label, color, opts = {}) => ({
 
 const GPU_COLORS = ['#ff7b72', '#79c0ff', '#d2a8ff', '#7ee787', '#ffa657', '#ff7b72', '#56d4dd', '#e3b341']
 
-const CHART_DEFS = [
+const getChartDefs = () => [
   { key: 'cpu', ref: () => cpuChartRef.value, datasets: [ds('CPU', '#00d4aa', { fill: true })], unit: '%' },
   { key: 'gpu', ref: () => gpuChartRef.value, datasets: [], unit: '%', legend: true },
-  { key: 'ram', ref: () => ramChartRef.value, datasets: [ds('Memory', '#b392f0', { fill: true }), ds('Swap', '#ffb870', { fill: true })], unit: '%', legend: true },
-  { key: 'disk', ref: () => diskChartRef.value, datasets: [ds('Disk', '#39d2c0', { fill: true })], unit: '%' },
+  { key: 'ram', ref: () => ramChartRef.value, datasets: [ds(trans.value.ram, '#b392f0', { fill: true }), ds(trans.value.swap, '#ffb870', { fill: true })], unit: '%', legend: true },
+  { key: 'disk', ref: () => diskChartRef.value, datasets: [ds(trans.value.disk, '#39d2c0', { fill: true })], unit: '%' },
   {
     key: 'diskIo',
     ref: () => diskIoChartRef.value,
     datasets: [
-      ds('Read', '#00d4aa', { fill: true, yAxisID: 'y', formatValue: (v) => formatBytes(v) + '/s' }),
-      ds('Write', '#ffb870', { fill: true, yAxisID: 'y', formatValue: (v) => formatBytes(v) + '/s' }),
-      ds('Read IOPS', '#4da6ff', { yAxisID: 'y1', borderDash: [5, 4], formatValue: (v) => `${formatDiskIoNumber(v)} ops/s` }),
-      ds('Write IOPS', '#b392f0', { yAxisID: 'y1', borderDash: [5, 4], formatValue: (v) => `${formatDiskIoNumber(v)} ops/s` }),
+      ds(trans.value.read, '#00d4aa', { fill: true, yAxisID: 'y', formatValue: (v) => formatBytes(v) + '/s' }),
+      ds(trans.value.write, '#ffb870', { fill: true, yAxisID: 'y', formatValue: (v) => formatBytes(v) + '/s' }),
+      ds(`${trans.value.read} IOPS`, '#4da6ff', { yAxisID: 'y1', borderDash: [5, 4], formatValue: (v) => `${formatDiskIoNumber(v)} ops/s` }),
+      ds(`${trans.value.write} IOPS`, '#b392f0', { yAxisID: 'y1', borderDash: [5, 4], formatValue: (v) => `${formatDiskIoNumber(v)} ops/s` }),
       ds('await', '#f778ba', { yAxisID: 'y1', borderDash: [2, 4], formatValue: (v) => `${formatDiskIoNumber(v)} ms` }),
       ds('util', '#ff7b72', { yAxisID: 'y1', borderDash: [8, 4], formatValue: (v) => `${formatDiskIoNumber(v)}%` })
     ],
@@ -860,8 +859,8 @@ const CHART_DEFS = [
       }
     })
   },
-  { key: 'proc', ref: () => procChartRef.value, datasets: [ds('Processes', '#f778ba', { fill: true })] },
-  { key: 'net', ref: () => netChartRef.value, datasets: [ds('Download', '#00d4aa', { fill: true }), ds('Upload', '#4da6ff', { fill: true })], legend: true, formatValue: (v) => formatBytes(v) + '/s', tickFormat: (v) => formatBytes(v) },
+  { key: 'proc', ref: () => procChartRef.value, datasets: [ds(trans.value.processes, '#f778ba', { fill: true })] },
+  { key: 'net', ref: () => netChartRef.value, datasets: [ds(trans.value.download, '#00d4aa', { fill: true }), ds(trans.value.uploadTraffic, '#4da6ff', { fill: true })], legend: true, formatValue: (v) => formatBytes(v) + '/s', tickFormat: (v) => formatBytes(v) },
   { key: 'conn', ref: () => connChartRef.value, datasets: [ds('TCP', '#b392f0'), ds('UDP', '#f778ba')], legend: true },
   { key: 'ping', ref: () => pingChartRef.value, datasets: ['ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4'].map((key, i) => ds(pingLabel(key), ['#00d4aa', '#ffb870', '#4da6ff', '#b392f0', '#ff7b72', '#79c0ff', '#7ee787', '#ffa657'][i], { tension: 0.3 })), unit: ' ms', legend: true },
   { key: 'loss', ref: () => lossChartRef.value, datasets: ['ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4'].map((key, i) => ds(pingLabel(key), ['#00d4aa', '#ffb870', '#4da6ff', '#b392f0', '#ff7b72', '#79c0ff', '#7ee787', '#ffa657'][i], { tension: 0.3 })), unit: '%', legend: true },
@@ -984,7 +983,7 @@ const initCharts = () => {
               if (items.length > 0 && items[0].raw) {
                 const label = items[0].raw.x ?? items[0].chart?.data?.labels?.[items[0].dataIndex]
                 const date = new Date(Number(label))
-                return '> ' + date.toLocaleString(undefined, {
+                return '> ' + date.toLocaleString(currentLang.value === 'zh' ? 'zh-CN' : currentLang.value, {
                   year: 'numeric',
                   month: '2-digit',
                   day: '2-digit',
@@ -1056,7 +1055,7 @@ const initCharts = () => {
     }
   }
 
-  for (const def of CHART_DEFS) {
+  for (const def of getChartDefs()) {
     const ref = def.ref()
     if (!ref) continue
     charts[def.key] = new Chart(ref.getContext('2d'), {
@@ -1685,14 +1684,6 @@ const setTimeRange = (hours) => {
   loadAllHistory(hours)
 }
 
-const goToLogin = () => {
-  showLoginModal.value = false
-  router.push({
-    path: '/admin',
-    query: { apiIndex: String(apiIndex.value) }
-  })
-}
-
 let liveSocket = null
 let liveConnectionClosedByUser = false
 
@@ -1801,6 +1792,17 @@ const init = async () => {
 watch([cpuChartRef, gpuChartRef, ramChartRef, diskChartRef, diskIoChartRef, netChartRef, procChartRef, connChartRef, pingChartRef, lossChartRef, loadChartRef], () => {
   if (!chartsReady.value) {
     initChartsOnMount()
+  }
+})
+
+watch(currentLang, () => {
+  for (const def of getChartDefs()) {
+    const chart = charts[def.key]
+    if (!chart) continue
+    def.datasets.forEach((dataset, index) => {
+      if (chart.data.datasets[index]) chart.data.datasets[index].label = dataset.label
+    })
+    chart.update('none')
   }
 })
 

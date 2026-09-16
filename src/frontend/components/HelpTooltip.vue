@@ -11,7 +11,7 @@
       ref="triggerRef"
       type="button"
       class="help-tooltip-trigger"
-      :aria-label="ariaLabel"
+      :aria-label="ariaLabel || trans.help"
       :aria-expanded="open ? 'true' : 'false'"
       @click.stop="toggle"
       @focus="handleFocus"
@@ -23,7 +23,7 @@
       class="help-tooltip-trigger"
       role="button"
       tabindex="0"
-      :aria-label="ariaLabel"
+      :aria-label="ariaLabel || trans.help"
       :aria-expanded="open ? 'true' : 'false'"
       @click.prevent.stop="toggle"
       @focus="handleFocus"
@@ -52,10 +52,12 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { useTranslation } from '../utils/i18n.js'
+const trans = useTranslation()
 
 const props = defineProps({
   text: { type: String, default: '' },
-  ariaLabel: { type: String, default: 'Help' },
+  ariaLabel: { type: String, default: '' },
   passive: { type: Boolean, default: false },
   placement: {
     type: String,

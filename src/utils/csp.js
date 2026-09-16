@@ -1,5 +1,3 @@
-const TURNSTILE_DOMAIN = 'https://challenges.cloudflare.com';
-const INSIGHTS_DOMAIN = 'https://static.cloudflareinsights.com';
 const FONTS_API_DOMAIN = 'https://fonts.googleapis.com';
 const FONTS_STATIC_DOMAIN = 'https://fonts.gstatic.com';
 const RAW_GITHUB_DOMAIN = 'https://raw.githubusercontent.com';
@@ -68,12 +66,12 @@ export function buildApiDomainsWithWs(rawApiDomains) {
 export function buildCspHeader({ staticDomains = [], apiDomains = [] } = {}) {
   return [
     buildDirective('default-src', ["'self'"]),
-    buildDirective('script-src', ["'self'", "'unsafe-inline'", TURNSTILE_DOMAIN, INSIGHTS_DOMAIN, ...staticDomains]),
-    buildDirective('style-src', ["'self'", "'unsafe-inline'", TURNSTILE_DOMAIN, FONTS_API_DOMAIN, ...staticDomains]),
-    buildDirective('img-src', ["'self'", TURNSTILE_DOMAIN, RAW_GITHUB_DOMAIN, ...staticDomains, 'data:']),
-    buildDirective('font-src', ["'self'", TURNSTILE_DOMAIN, FONTS_STATIC_DOMAIN, ...staticDomains]),
-    buildDirective('connect-src', ["'self'", TURNSTILE_DOMAIN, INSIGHTS_DOMAIN, RAW_GITHUB_DOMAIN, ...DEFAULT_CONNECT_DOMAINS, ...apiDomains]),
-    buildDirective('frame-src', [TURNSTILE_DOMAIN]),
+    buildDirective('script-src', ["'self'", "'unsafe-inline'", ...staticDomains]),
+    buildDirective('style-src', ["'self'", "'unsafe-inline'", FONTS_API_DOMAIN, ...staticDomains]),
+    buildDirective('img-src', ["'self'", RAW_GITHUB_DOMAIN, ...staticDomains, 'data:']),
+    buildDirective('font-src', ["'self'", FONTS_STATIC_DOMAIN, ...staticDomains]),
+    buildDirective('connect-src', ["'self'", RAW_GITHUB_DOMAIN, ...DEFAULT_CONNECT_DOMAINS, ...apiDomains]),
+    buildDirective('frame-src', ["'none'"]),
     buildDirective('frame-ancestors', ["'none'"]),
     buildDirective('form-action', ["'self'"]),
     buildDirective('object-src', ["'none'"]),

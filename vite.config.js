@@ -1,13 +1,13 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import mkcert from 'vite-plugin-mkcert'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { parseCspOrigins, buildBackgroundStyle, injectTitle, injectApiBase, stripCspMeta } from './src/utils/csp.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const devProxyTarget = process.env.VITE_DEV_PROXY_TARGET || 'https://localhost:8787'
+const devProxyTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080'
+const devAdminPath = `/${String(process.env.ADMIN_PATH || loadEnvFile().ADMIN_PATH || '').replace(/^\//, '')}`
 
 const createWorkerProxy = () => ({
   target: devProxyTarget,
@@ -52,10 +52,14 @@ function envPlugin() {
 
   return {
     name: 'env-inject',
-    transformIndexHtml(html) {
+    transformIndexHtml(html, context) {
       html = stripCspMeta(html)
       html = injectTitle(html, title)
       html = injectApiBase(html, rawApiDomains)
+      const requestPath = (context.originalUrl || context.path).split('?')[0]
+      if (context.server && /^[A-Za-z0-9_-]{8,128}$/.test(devAdminPath.slice(1)) && [devAdminPath, `${devAdminPath}/`].includes(requestPath)) {
+        html = html.replace('</head>', `<meta name="adminEntry" content="${devAdminPath}"></head>`)
+      }
       if (backgroundImage || mobileBackgroundImage) {
         const bgStyle = buildBackgroundStyle(backgroundImage, mobileBackgroundImage)
         html = html.replace('</head>', `${bgStyle}\n</head>`)
@@ -66,7 +70,7 @@ function envPlugin() {
 }
 
 export default defineConfig({
-  plugins: [vue(), mkcert(), envPlugin()],
+  plugins: [vue(), envPlugin()],
   base: process.env.VITE_BASE || '/',
   resolve: {
     alias: {
@@ -86,16 +90,16 @@ export default defineConfig({
     }
   },
   server: {
-    https: true,
     port: 5173,
     proxy: {
       '/api': createWorkerProxy(),
-      '/admin/api': createWorkerProxy(),
+      ...(devAdminPath !== '/' ? { [`${devAdminPath}/api`]: createWorkerProxy(), [`${devAdminPath}/backup`]: createWorkerProxy() } : {}),
       '/theme': createWorkerProxy(),
       '/update': createWorkerProxy(),
+      '/agent': createWorkerProxy(),
       '/updateDatabase': createWorkerProxy(),
       '/clearHistory': createWorkerProxy(),
-      '/__do': createWorkerProxy()
+      '/healthz': createWorkerProxy()
     }
   }
 })

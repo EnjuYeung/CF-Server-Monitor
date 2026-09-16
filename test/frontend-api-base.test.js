@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -17,20 +20,19 @@ const settings = {
   theme_url: ''
 }
 
-test('Workers API_BASE env is injected into frontend runtime config and CSP', async () => {
+test('Docker API_BASE env is injected into frontend runtime config and CSP', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'monitor-html-'));
+  await writeFile(join(root, 'dashboard.html'), dashboardHtml);
   const response = await serveFrontend(
     new Request('https://dashboard.example/'),
     {
       API_BASE: 'https://api-a.example, https://api-b.example/, http://invalid.example',
-      ASSETS: {
-        fetch: async () => new Response(dashboardHtml, {
-          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
-        })
-      }
+      STATIC_ROOT: root
     },
     settings
   )
 
+  await rm(root, {recursive:true,force:true})
   assert.equal(response.status, 200)
 
   const html = await response.text()
