@@ -110,7 +110,7 @@ func managementCommands(paths Paths, system string) []managementCommand {
 		rcFile := synologyServiceFile(paths)
 		return []managementCommand{
 			{labelRealtimeLog, "tail -f " + quoteShell(paths.LogFile)},
-			{labelStatus, "ps | grep '[c]f-probe'"},
+			{labelStatus, "ps | grep " + quoteShell("["+paths.ServiceName[:1]+"]"+paths.ServiceName[1:])},
 			{labelStop, rcFile + " stop"},
 		}
 	case "windows":

@@ -39,7 +39,7 @@ func Execute(args []string, buildVersion string) error {
 	case "upgrade-apply":
 		return ApplyScheduledUpdate(buildVersion)
 	case "version", "-v", "--version":
-		fmt.Printf("CF-Server-Monitor Go Probe %s\n", buildVersion)
+		fmt.Printf("Jan Monitor Probe %s\n", buildVersion)
 		return nil
 	case "help", "-h", "--help":
 		printUsage(os.Stdout)
@@ -166,9 +166,9 @@ func parseUninstallArgs(args []string) error {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "用法:")
-	fmt.Fprintln(w, "  cf-probe install -id=SERVER_ID -secret=SECRET -url=CONTROLLER_URL [选项]")
-	fmt.Fprintln(w, "  cf-probe run [-debug=0|1]")
-	fmt.Fprintln(w, "  cf-probe uninstall")
+	fmt.Fprintln(w, "  jan-probe install -id=SERVER_ID -secret=SECRET -url=CONTROLLER_URL [选项]")
+	fmt.Fprintln(w, "  jan-probe run [-debug=0|1]")
+	fmt.Fprintln(w, "  jan-probe uninstall")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "安装选项:")
 	fmt.Fprintln(w, "  -interval=N          上报间隔(秒)，默认60")

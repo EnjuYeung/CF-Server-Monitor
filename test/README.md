@@ -2,6 +2,8 @@
 
 遵守根目录 testing.md。先准备依赖、GeoIP 和前端构建，再执行测试；不使用生产数据库。
 
+首页恢复回归包括 `dashboard-snapshot.test.js`（完整快照、旧响应竞争、延迟历史补取）和 `frontend-live-socket.test.js`（详情页时限、首页持续重连、卸载停止及请求失败保留数据）。浏览器验收需验证真实 `document.hidden`、后台 WS 更新、冻结/解冻、断网恢复和超过连接时限；Playwright 的默认焦点模拟会使标签页始终可见，不能将这种默认会话当成真实切换测试。使用独立 Chromium 并通过 `connectOverCDP(..., { noDefaults: true })` 接入，实测记录见 TEST_REPORT.md。
+
 ```bash
 npm ci
 npm run geoip:download
@@ -37,3 +39,5 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 
 `npm run test:agent-deployment` 要求 Docker 和预先构建的 `server-monitor:agent-native` 镜像（`docker build -t server-monitor:agent-native .`）。它预建隔离环境，在 internal bridge 中验证 TLS 下载、原生安装、v1.0.99 测试版本实际自更新到当前版本、主控重建及卸载。v1.0.99 仅为验收编译的旧版本，不是对外发布版本。证据保存在 `output/test-results/agent-integration/`，默认清理自己的测试容器和网络。
 可通过 `TEST_DOCKER_CLI` 指定 Docker 包装命令，通过 `AGENT_TEST_IMAGE` 指定测试镜像。`AGENT_KEEP_TEST_ENV=1` 仅用于接续浏览器核验；使用后须按 browser-fixture.json 记录清理测试容器和网络。
+
+Agent v1.2.0 的每日检查由 Go `testing/synctest` 推进 24/48/72 小时，验证启用、关闭及取消边界；没有实际等待数天。部署套件覆盖 `jan-probe` 安装、更新、配置和流量保留、关闭自动更新及卸载。设置 `AGENT_LEGACY_DIST` 为保留的旧版发布目录（包含 manifest 和对应程序，例如 `agent-dist/v1.1.1`），可实际验证旧 `cf-probe` 自动升级为 `jan-probe`；应在修改源码前构建并保留该旧版本，不能用新源码冒充旧版迁移验收。没有指定时使用新源码构建低版本号载荷，仅验证新版更新流程。

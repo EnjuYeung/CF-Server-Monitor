@@ -63,11 +63,11 @@ docker network inspect "$(docker inspect "$(docker compose ps -q monitor)" --for
 
 ## Agent 安装与同机运行
 
-登录后台添加服务器，复制该服务器的安装命令。安装脚本、程序、版本查询和自动更新均由当前主控 `/agent` 提供，无需 GitHub Release。Docker 构建仅编译 4 种程序：Linux amd64/arm64、FreeBSD amd64/arm64；不提供 macOS、Windows、32 位 ARM/x86 或 LoongArch 版本。采集和连接模式仍由 Agent 自动协商。当前 Agent 独立版本为 v1.1.1，完整说明见 [agent/README.md](agent/README.md)。
+登录后台添加服务器，复制该服务器的安装命令。安装脚本、程序、版本查询和自动更新均由当前主控 `/agent` 提供，无需 GitHub Release。Docker 构建仅编译 4 种程序：Linux amd64/arm64、FreeBSD amd64/arm64；不提供 macOS、Windows、32 位 ARM/x86 或 LoongArch 版本。采集和连接模式仍由 Agent 自动协商。当前 Agent 独立版本为 v1.2.0，完整说明见 [agent/README.md](agent/README.md)。
 
 主控和 Agent 位于同一 VPS 时，Agent 使用原生进程/服务采集宿主机；可将上报地址设为 `http://127.0.0.1:8080/update`，并使用后台生成的 UUID 和 API_SECRET。新配置使用 `CONTROLLER_URL`，同时兼容旧 `WORKER_URL`。不要在 Agent 所在的独立容器内把 `127.0.0.1` 当成宿主机。
 
-主控启动时将内置 Agent 版本归档到数据卷 `agent-releases/`，镜像升级后仍可指定已保留的版本安装。自动更新默认关闭，启用后仍每 6 小时检查，但来源改为当前主控或显式配置的下载镜像。Agent 更新需修改 `agent/release.json` 的版本号后重新构建；仅更新主控界面不会强制升级 Agent。后台 SQLite 备份不包含二进制归档，如需保留旧版本下载能力，应另行备份该目录。
+主控启动时将内置 Agent 版本归档到数据卷 `agent-releases/`，镜像升级后仍可指定已保留的版本安装。自动更新默认关闭，安装时启用后在启动时及每 24 小时检查，来源为当前主控或显式配置的下载镜像；后台勾选后需重新执行安装命令才会改变本地开关。v1.2.0 的服务及已安装程序名为 `jan-probe`，升级保留原配置和月流量，并迁移旧 `cf-probe` 服务。Agent 更新需修改 `agent/release.json` 的版本号后重新构建；仅更新主控界面不会强制升级 Agent。后台 SQLite 备份不包含二进制归档，如需保留旧版本下载能力，应另行备份该目录。
 
 自动地区来自本地 GeoIP，支持 IPv4/IPv6。同机私网连接优先使用 Agent 提供的公网 IP，缺失时使用 `PUBLIC_IP` 或主控启动时发现的出口 IP。后台手动地区始终优先。识别粒度是国家/地区，库更新或出口 IP 变化可能影响结果。
 

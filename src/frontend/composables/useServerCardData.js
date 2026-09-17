@@ -375,8 +375,6 @@ export function useServerCardData(props) {
       const label = String(customName || trans.value[def.labelKey] || def.fallbackLabel)
       const pingSeries = getLatencySeries('ping', def.key)
       const lossSeries = getLatencySeries('loss', def.key)
-      const pingScale = Math.max(PING.CRITICAL_THRESHOLD * 2,
-        ...pingSeries.map(point => typeof point.value === 'number' ? point.value : 0))
       const pointCount = Math.max(pingSeries.length, lossSeries.length, getLatencyWindowPointCount())
       const points = Array.from({ length: pointCount }, (_, index) => {
         const pingPoint = pingSeries[index] ?? null
@@ -392,8 +390,6 @@ export function useServerCardData(props) {
         return {
           ping,
           loss,
-          pingHeight: hasPing ? 20 + Math.min(1, ping / pingScale) * 80 : 20,
-          lossHeight: hasLoss ? 20 + clampPercent(loss) * 0.8 : 20,
           pingColor: hasPing ? getPingColor(ping) : (hasLoss ? 'var(--accent-red)' : 'var(--text-muted)'),
           lossColor: missing ? 'var(--text-muted)' : getLossColor(loss),
           pingOpacity: hasPing ? 0.94 : 0.52,

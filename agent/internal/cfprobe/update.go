@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	autoUpdateCheckInterval  = 6 * time.Hour
+	autoUpdateCheckInterval  = 24 * time.Hour
 	autoUpdateLockTTL        = 30 * time.Minute
 	snapshotVersionPrefix    = "Snapshot-"
 	updateChecksumsAssetName = "checksums.txt"
@@ -55,7 +55,15 @@ type updateVersion struct {
 }
 
 func (a *Agent) autoUpdateWorker(ctx context.Context) {
-	a.checkAndScheduleAgentUpdate("startup")
+	runAutoUpdateChecks(ctx, a.configSnapshot().AutoUpdate, a.checkAndScheduleAgentUpdate)
+}
+
+// AutoUpdate is an installation-local opt-in, never enabled by remote config.
+func runAutoUpdateChecks(ctx context.Context, enabled bool, check func(string)) {
+	if !enabled || ctx.Err() != nil {
+		return
+	}
+	check("startup")
 
 	ticker := time.NewTicker(autoUpdateCheckInterval)
 	defer ticker.Stop()
@@ -64,7 +72,10 @@ func (a *Agent) autoUpdateWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.checkAndScheduleAgentUpdate("periodic")
+			if ctx.Err() != nil {
+				return
+			}
+			check("daily")
 		}
 	}
 }
@@ -530,7 +541,7 @@ func scheduleSystemdUnit(unit, cmdLine string) (string, error) {
 	}
 	serviceFile := filepath.Join("/run/systemd/system", unit+".service")
 	content := fmt.Sprintf(`[Unit]
-Description=CF Probe auto update
+Description=Jan Probe auto update
 
 [Service]
 Type=oneshot

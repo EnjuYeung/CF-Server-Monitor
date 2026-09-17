@@ -116,3 +116,43 @@ test('frontend WebSocket closes at its lifetime limit without reconnecting', asy
     await vite.close()
   }
 })
+
+test('dashboard retries past ten failures, connects, and stops retries when unmounted', async t => {
+  const original = { window: globalThis.window, WebSocket: globalThis.WebSocket, localStorage: globalThis.localStorage };
+  const connections = [];
+  globalThis.window = { location: new URL('https://monitor.invalid') };
+  globalThis.localStorage = { getItem: () => null };
+  globalThis.WebSocket = class extends EventTarget {
+    readyState = 0;
+    constructor() { super(); connections.push(this); }
+    send() {}
+    close() { this.readyState = 3; this.dispatchEvent(new Event('close')); }
+    open() { this.readyState = 1; this.dispatchEvent(new Event('open')); }
+  };
+  const vite = await createServer({ configFile: false, appType: 'custom', logLevel: 'silent', server: { middlewareMode: true, watch: null } });
+  let socket;
+  t.after(async () => { socket?.close(); t.mock.timers.reset(); await vite.close(); Object.assign(globalThis, original); });
+  const { createLiveSocket, fetchServersAll } = await vite.ssrLoadModule('/src/frontend/utils/api.js');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  socket = createLiveSocket('all', { reconnectForever: true, timeoutMinutes: 0 });
+  assert.equal(socket.isConnecting, true);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    connections.at(-1).close();
+    t.mock.timers.tick(30000);
+    assert.equal(connections.length, attempt + 2);
+  }
+  connections.at(-1).open();
+  assert.equal(socket.isConnecting, false);
+  assert.equal(socket.isConnected, true);
+  t.mock.timers.tick(3600000);
+  assert.equal(socket.isConnected, true);
+  socket.close();
+  const count = connections.length;
+  t.mock.timers.tick(3600000);
+  assert.equal(socket.isConnected, false);
+  assert.equal(connections.length, count);
+
+  // An unavailable API must not look like a valid, empty server list.
+  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('offline'); });
+  assert.equal(await fetchServersAll(), null);
+});

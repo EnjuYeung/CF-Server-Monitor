@@ -1666,8 +1666,10 @@ html[lang="ja"] .stat-key {
 
 .three-net-head {
     display: flex;
+    height: 18px;
+    line-height: 1;
     min-width: 0;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 6px;
 }
@@ -1720,13 +1722,10 @@ html[lang="ja"] .stat-key {
 .three-net-bucket-fill {
     display: block;
     width: 100%;
-    min-height: 2px;
+    height: 10px;
     border-radius: 2px;
-    transform-origin: bottom center;
     transition:
-        height .28s cubic-bezier(.2, .8, .2, 1),
         opacity .28s cubic-bezier(.2, .8, .2, 1),
-        transform .28s cubic-bezier(.2, .8, .2, 1),
         filter .28s cubic-bezier(.2, .8, .2, 1),
         box-shadow .28s cubic-bezier(.2, .8, .2, 1);
 }
@@ -1737,7 +1736,6 @@ html[lang="ja"] .stat-key {
 
 .three-net-bucket:hover .three-net-bucket-fill {
     opacity: 1 !important;
-    transform: scaleY(1.28);
     filter: saturate(1.2) brightness(1.08);
     box-shadow: 0 0 8px currentColor;
 }
@@ -1843,6 +1841,34 @@ html[lang="ja"] .stat-key {
 
 .terminal-table tr:hover {
     background: var(--bg-hover);
+}
+
+.admin-server-table th,
+.admin-server-table td {
+    vertical-align: middle;
+    line-height: 20px;
+}
+
+.admin-server-table .table-center-cell {
+    text-align: center;
+}
+
+.admin-server-table input[type="checkbox"] {
+    display: block;
+    margin: 0 auto;
+}
+
+.admin-server-table .note-text,
+.admin-server-table .spec-text {
+    display: block;
+}
+
+.admin-server-table .server-ip-list {
+    display: flex;
+}
+
+.admin-server-table .country-os-icons {
+    flex-shrink: 0;
 }
 
 .table-stat {

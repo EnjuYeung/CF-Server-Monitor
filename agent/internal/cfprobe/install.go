@@ -20,7 +20,7 @@ func Install(opts InstallOptions, version string) error {
 	}
 
 	if !paths.UserMode {
-		if cleaned, residuals := cleanupLegacyInstall(paths); len(cleaned) > 0 || len(residuals) > 0 {
+		if cleaned, residuals := cleanupLegacyInstall(legacyServicePaths(paths)); len(cleaned) > 0 || len(residuals) > 0 {
 			if len(cleaned) > 0 {
 				fmt.Printf("[INFO] Cleaned legacy shell probe artifacts: %s\n", strings.Join(cleaned, ", "))
 			}
@@ -63,6 +63,25 @@ func Install(opts InstallOptions, version string) error {
 	fmt.Printf("[INFO] Config file: %s\n", paths.ConfigFile)
 	printWindowsAutoUpdateWarning(paths, opts)
 
+	migrating := hasLegacyService(paths)
+	installed := false
+	if migrating {
+		legacy := legacyServicePaths(paths)
+		previousConfig, _ := os.ReadFile(paths.ConfigFile)
+		fmt.Printf("[INFO] Migrating service %s -> %s; preserving configuration and traffic\n", legacy.ServiceName, paths.ServiceName)
+		stopService(legacy)
+		defer func() {
+			if !installed {
+				stopService(paths)
+				if previousConfig != nil {
+					_ = os.WriteFile(paths.ConfigFile, previousConfig, 0o600)
+				}
+				if err := startService(legacy, opts.Debug); err != nil {
+					fmt.Printf("[WARN] Restarting previous service failed: %v\n", err)
+				}
+			}
+		}()
+	}
 	stopService(paths)
 	stopCurrentUserProbeInstances()
 	if err := copySelfTo(paths.BinaryFile); err != nil {
@@ -90,6 +109,12 @@ func Install(opts InstallOptions, version string) error {
 	}
 	if !opts.NoStart {
 		if err := startService(paths, opts.Debug); err != nil {
+			return err
+		}
+	}
+	installed = true
+	if migrating {
+		if err := retireLegacyService(paths); err != nil {
 			return err
 		}
 	}
@@ -163,6 +188,10 @@ func Uninstall(version string) error {
 	}
 	fmt.Printf("[INFO] 开始卸载 %s\n", paths.ServiceName)
 	residuals := deepUninstall(paths)
+	residuals = append(residuals, deepUninstall(legacyServicePaths(paths))...)
+	if paths.UserMode {
+		_ = os.Remove(userMigrationServiceFile(paths))
+	}
 	if len(residuals) > 0 {
 		for _, item := range residuals {
 			fmt.Printf("[WARN] 卸载残留: %s\n", item)
@@ -239,7 +268,7 @@ func printBanner(version string) {
 		version = legacyAgentVersion
 	}
 	fmt.Println("===========================================")
-	fmt.Println("    CF-Server-Monitor Go Probe")
+	fmt.Println("    Jan Monitor Probe")
 	fmt.Printf("    Version: %s\n", version)
 	fmt.Println("===========================================")
 }
@@ -493,7 +522,7 @@ func writeSystemdService(paths Paths, debug bool) error {
 		debugArg = "1"
 	}
 	content := fmt.Sprintf(`[Unit]
-Description=CF Server Monitor Probe Agent
+Description=Jan Monitor Probe Agent
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -524,7 +553,7 @@ func writeSystemdUserService(paths Paths, debug bool) error {
 		debugArg = "1"
 	}
 	content := fmt.Sprintf(`[Unit]
-Description=CF Server Monitor Probe Agent
+Description=Jan Monitor Probe Agent
 After=default.target
 
 [Service]
@@ -545,8 +574,8 @@ WantedBy=default.target
 func writeOpenRCService(paths Paths, debug bool) error {
 	return writeFileExecutable("/etc/init.d/"+paths.ServiceName, fmt.Sprintf(`#!/sbin/openrc-run
 
-name="CF Server Monitor Probe Agent"
-description="CF Server Monitor Probe Agent"
+name="Jan Monitor Probe Agent"
+description="Jan Monitor Probe Agent"
 command="%s"
 command_args="run -debug=%s"
 pidfile="/run/%s.pid"
@@ -625,7 +654,7 @@ func writeLaunchdService(paths Paths, debug bool) error {
 }
 
 func writeUpstartService(paths Paths, debug bool) error {
-	return writeFileExecutable("/etc/init/"+paths.ServiceName+".conf", fmt.Sprintf(`description "CF Server Monitor Probe Agent"
+	return writeFileExecutable("/etc/init/"+paths.ServiceName+".conf", fmt.Sprintf(`description "Jan Monitor Probe Agent"
 
 start on filesystem or runlevel [2345]
 stop on runlevel [!2345]

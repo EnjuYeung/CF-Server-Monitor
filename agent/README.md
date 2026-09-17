@@ -1,12 +1,12 @@
 # Native Agent
 
 本目录直接纳入上游 **cfsm-agent v1.0.16** 的 Go 源码和测试，原始提交与许可见
-[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.1.1**。
+[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.2.0**。
 `UPSTREAM_README.md` 只保留上游功能说明和来源，安装与更新请使用本文。
 
 ## 运行结构与功能
 
-Agent 以 `cf-probe` 原生进程运行在被监控机器上；主控在 Docker 内运行 Node.js、Vue 和 SQLite。
+Agent 以 `jan-probe` 原生进程和服务运行在被监控机器上；主控在 Docker 内运行 Node.js、Vue 和 SQLite。
 二者通过主控的 `/update` HTTP/WebSocket 接口通信，同机时可使用 `http://127.0.0.1:8080/update`。
 Agent 不需要 Go、Node.js、Docker、Workers 账号或 GitHub 访问权限；编译工具只用于构建阶段。
 
@@ -16,11 +16,11 @@ Agent 不需要 Go、Node.js、Docker、Workers 账号或 GitHub 访问权限；
 当前仅发布 Linux 和 FreeBSD 的 amd64/arm64 程序；Linux user service、systemd、OpenRC、procd、
 Synology、FreeBSD 的安装方式和路径保持兼容。上游其他平台源码保留用于来源追踪和兼容性测试，不作为发布目标。
 
-原生适配只改变分发来源、版本构建与主控命名：
+独立版本的主要调整：
 
 - `CONTROLLER_URL` 为新的配置名称，仍接受旧 `WORKER_URL`，写配置时同时保留两个名称。
 - 主控在 WebSocket 握手中补充标准 `Date` 响应头，保留仅使用 WS 时的 Agent 时间校准能力。
-- 自动更新默认关闭；启用后仍在启动时和每 6 小时检查，版本选择保留稳定版与 Snapshot 通道规则。
+- 自动更新默认关闭；安装时启用 `AUTO_UPDATE=1` 后，在启动时和每 24 小时检查并安装较新版本，版本选择保留稳定版与 Snapshot 通道规则。未启用时不启动更新任务，仍使用手动安装/更新；后台勾选不会远程改变本地开关。
 - 安装、版本检查、更新下载都访问主控 `/agent`，可配置具有相同目录/API 的下载镜像。
 - 安装与自动更新均要求 SHA-256 校验通过；缺失或不匹配时不执行下载文件。
 - 旧 `UPDATE_PROXY` / `--install-ghproxy` 仍可读取，但不再构造 GitHub 下载地址；下载镜像请使用 `--download-url`。
@@ -62,11 +62,11 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 
 脚本自动识别 OS/CPU，确认属于上述四个目标后才下载并校验程序，再调用原生安装器。
 Linux 专用 cfsm 用户的准备步骤继续由后台生成，其他受支持系统的权限要求沿用原版。
-`--install-version=v1.1.1` 指定主控已提供的版本；留空选最新稳定版。
+`--install-version=v1.2.0` 指定主控已提供的版本；留空选最新稳定版。
 `--download-url=https://mirror.example.com/agent` 覆盖下载源并保存到本地 `DOWNLOAD_URL`，用于后续自动更新，
-不会改变指标上报目的地。直接执行二进制 `cf-probe install ...` 也受支持。
+不会改变指标上报目的地。直接执行二进制 `jan-probe install ...` 也受支持。
 
-卸载继续调用 `cf-probe uninstall`，后台也提供下载临时卸载器的命令：
+卸载调用 `jan-probe uninstall`，同时清理当前账户的新旧服务；后台也提供下载临时卸载器的命令：
 
 ```sh
 curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- uninstall \
@@ -77,6 +77,10 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- uninstall \
 上游旧二进制中的自动更新地址不会因主控升级而自行改变。
 
 ## 更新和历史版本
+
+v1.2.0 将服务名、安装后的程序名、PID 和日志名改为 `jan-probe`。系统安装可用 `systemctl restart jan-probe`，用户安装由安装用户执行 `systemctl --user restart jan-probe`；其他服务管理器沿用安装输出中的命令。
+升级安装会停止旧 `cf-probe` 服务，使用原配置及月流量启动新服务，再删除旧程序和旧服务定义。旧版用户服务自替换程序后，由新版通过独立的 systemd 用户单次任务完成改名，避免迁移进程被旧服务停止操作终止。
+为保留兼容，配置/流量目录继续使用 `/etc/config/cf-probe`（系统安装）或 `~/.cf-probe`（用户安装），下载文件名仍为 `cf-probe-<os>-<arch>`，旧 Agent 可继续发现并校验新版；不需要重新添加节点。
 
 修改 Agent 时更新 `agent/release.json` 的独立版本号及日期，重新构建、部署主控。
 主控启动时校验并归档随镜像提供的版本到 `data/agent-releases/<version>/`，后续镜像替换会保留旧版本。

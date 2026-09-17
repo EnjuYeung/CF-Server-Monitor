@@ -1,5 +1,139 @@
 # 最近一次测试报告
 
+## 延迟、丢包柱统一固定 10px（2026-09-17）
+
+**已完成并重新部署正式站点。** 延迟和丢包的所有柱子固定为 10px，悬停、不同颜色和实时数值变化都不改变高度；颜色、透明度、数字和提示沿用原逻辑。此改动只影响主控前端，Agent 仍为 v1.2.0，现有 VPS 无需升级即可看到新样式。
+
+### 环境和验收
+
+开发前使用 Node.js v24.21.0 / Go 1.26.8 执行 `npm ci`、`npm run geoip:download`、`npm run build`；修改后执行前端构建、`npm run test:all`、`npm run test:acceptance` 和 Docker 镜像构建。浏览器和主控验收使用提前准备的隔离数据库；生产数据副本预检容器使用 `--network none`。
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| FH01 | 修改前通过正式 HTTPS 页面测量黄色柱 | 以现有黄色视觉高度确定固定值 | `yellow-before.json`：黄色柱约 9.406–10.766px，统一取 10px | 通过 |
+| FH02 | 隔离主控预置绿/蓝/黄/红、缺测和超时，Chromium 打开 1440px/390px 条形与环形卡片 | 所有柱子等高，颜色和提示继续区分实际数据 | `browser-cards.json`：4 种组合共 240 对柱（480 根）实测全部 10px，左右基线差 0px；五种延迟颜色、丢包变化、100% 和缺测提示正确；`cards-*.png` | 通过 |
+| FH03 | 四种布局分别悬停；通过 HTTP 上报将 306ms/0% 改为 65ms/25%，等待 WS 更新 | 高度保持 10px，颜色和提示更新 | `browser-cards.json`：全部 hoverKeepsFixedHeight=true；CARD-LIVE 两侧颜色实际改变、高度不变，无浏览器异常 | 通过 |
+| FH04 | 执行完整回归与主控/原生验收 | 已有主控和 Agent 功能保持 | `test-all.log`：87/87、配置和 Go vet/test 通过；`controller-acceptance.json` 19/19，`native-acceptance.json` 6/6 | 通过 |
+| FH05 | 新镜像以生产数据副本启动，检查页面、资产及归档 | 兼容原数据，前端来自测试构建，Agent 产物不变 | `candidate-smoke.json`：健康及页面/API 正常，8 个静态资源哈希匹配，v1.2.0 manifest 与原生产备份一致；隔离预检容器已清理 | 通过 |
+| FH06 | 备份后重建现有 Compose 服务并比对数据 | 新容器健康，原环境/端口/卷/节点/设置/历史与 Agent 文件保留 | `deployment.json`、`persistence-final.json`：healthy、RestartCount=0，SQLite integrity=ok；2 节点与设置逐行一致，861 条旧历史全部保留，30 个 Agent 归档文件哈希不变 | 通过 |
+| FH07 | 公网 HTTPS 访问和 Chromium 桌面/手机复验，等待真实 Agent 推送 | 已部署固定高度，实时更新和登录页面正常 | `production-smoke.json`：桌面/手机各 120 对柱实测全部 10px，最大高度差/基线差 0px；收到 WSS hello/subscribed 和 2 批新数据，无页面异常或请求失败；`production-homepage.png`、`production-mobile.png` 已检查 | 通过 |
+
+### 部署和边界
+
+- 最终镜像 `server-monitor:local`，ID `sha256:fd267309af971a17cc763297c711a5699207b624ccfa3bd3f7af904528be4c64`；容器 `cf0a7825e1ac`，部署时间 `2026-09-17T12:50:27.003397+08:00`。沿用 `/opt/1panel/apps/jan_monitor/.env`、`127.0.0.1:26129` 和原数据目录。
+- 回滚镜像 `server-monitor:rollback-fixed-bars-20260917-124908`；备份 `/opt/1panel/apps/jan_monitor/backups/fixed-bars-20260917-124908/`，包含环境、SQLite 一致性快照、GeoIP 和原 Agent 归档；切换前再次备份数据库。切换期间 200ms 探针观察到 5 次失败，首末失败间隔 0.803 秒，非精确停机时长。
+- 删除前端动态柱高计算、内联高度及悬停纵向缩放，仅由 `.three-net-bucket-fill` 设置固定高度；颜色判定、窗口采样、阈值和提示未改变。修改现有回归测试的颜色/数值断言，未新增重复实现的单元测试。
+- 此轮没有 Agent 安装、更新或分发逻辑变更，未重复运行 Docker Agent 部署套件；v1.2.0 归档逐文件验证不变，完整原生验收仍已执行。
+- 证据位于 `output/test-results/fixed-bars-20260917/`（Git 忽略）；未提交密钥、配置副本、构建产物或测试文件。`git diff --check` 通过。
+
+## 柱图对齐、每日 Agent 更新和 jan-probe 服务（2026-09-17）
+
+**已修复三个问题并部署至 `https://jm.zedy.cc`，主控分发 Agent `v1.2.0`。** 87/87 项 Node 回归、Agent 配置与 Go vet/test、19/19 项主控验收、6/6 项原生 Agent 验收、6/6 项隔离 Docker 部署验收通过；Chromium 验证桌面/手机、条形/环形卡片，以及公网 HTTPS/WSS。旧 `v1.1.1` 原生程序实际自动升级到 `v1.2.0`，安装后的程序改为 `jan-probe`，配置和流量保留。
+
+### 环境与实现
+
+- 使用 Node.js v24.21.0、Go 1.26.8，开发前完成 `npm ci`、`npm run geoip:download`、`npm run build`。修改后完整构建四个受支持目标，再完成最终前端及 Docker 构建；依赖、前端、Agent 和候选镜像均经过实际验证。
+- 丢包图每个时间桶使用对应延迟桶的高度，颜色、数值及提示仍来自真实丢包数据；两侧标题行统一为 18px，消除混合字号带来的逐行偏移。
+- 仅安装本地配置 `AUTO_UPDATE=1` 启动检查器：启动时检查，此后每 24 小时检查并安装较新版本；关闭时不创建任务，后台配置推送仍不能远程打开本地开关。周期相对 Agent 启动计算，不是固定每天零点。
+- 服务、已安装程序、PID/日志改为 `jan-probe`；安装迁移停止旧服务并保留配置、流量，再移除旧程序和旧服务。旧版用户服务自替换后通过独立 oneshot 用户单元运行迁移，避免停止旧服务时杀死迁移本身。旧、新进程共用实例锁。
+- 为兼容旧客户端自动下载及既有状态，发布文件名继续使用 `cf-probe-<os>-<arch>`，配置/流量继续在 `/etc/config/cf-probe` 或 `~/.cf-probe`。升级失败时安装器尝试恢复原配置及旧服务。
+
+### 验收项
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| JP01 | 准备工具链、依赖与地区库，构建并执行完整回归 | 四目标和前端构建成功，现有功能保持 | `npm-ci.log`、`geoip-download.log`、`build.log`、`build-frontend-final.log`、`test-all.log`；87/87，Agent 配置、Go vet/test 通过；`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6 | 通过 |
+| JP02 | 在隔离真实主控写入不同延迟、0/非零丢包、超时和空缺；Chromium 打开 1440px/390px 条形与环形卡片 | 每个丢包柱与延迟柱高度及基线对齐，原始语义保留 | `browser-cards.json`：4 种组合共 240 对柱，最大高度差/基线差均 0px；多种颜色、100% 和空缺提示断言通过；`cards-*.png` | 通过 |
+| JP03 | 页面保持打开时上报延迟从 306ms 改为 65ms、丢包从 0% 改为 25% | 实时推送使两侧柱高一起改变，丢包颜色/提示独立更新 | `browser-cards.json` 的 CARD-LIVE，实际 HTTP → WS → Chromium；无页面异常 | 通过 |
+| JP04 | 启动检查、推进虚拟时钟到 24h/48h、取消后继续推进；关闭开关推进 72h | 启动及每日检查，关闭与取消后零检查 | `update_schedule_test.go` 使用 Go `testing/synctest` 执行真实计时循环；三个测试通过，时间未实际等待数天 | 通过 |
+| JP05 | 隔离 TLS 主控及 Linux amd64 容器安装保留的真实 v1.1.1，等待自动升级 | 新程序/上报版本为 v1.2.0，旧程序清除，状态保留 | `agent-deployment.json` ND01–ND03：约 60 秒完成自动升级，进程名 jan-probe、AUTO_UPDATE=1、配置和流量文件保留，启动日志声明 24h 周期 | 通过 |
+| JP06 | 重建隔离主控；覆盖安装显式关闭更新，再从后台勾选并推送其他配置，最后卸载 | 重连、版本归档和数据保留；本地开关仍为 0；卸载清理新旧程序 | `agent-deployment.json` ND04–ND06 全部通过；远程 collect_interval 更新实际生效，本地 AUTO_UPDATE 保持 0，当前运行日志无更新任务；无存活探针进程 | 通过 |
+| JP07 | 非 root 真实旧 Agent 自替换、重启、迁移和卸载；用户服务管理器由隔离进程组监督器模拟 | 单独迁移任务不随旧服务退出，新单元和程序生效，旧单元移除 | `user-service-fixture/deployment.json` 四项通过，约 63 秒完成迁移；真实 TLS 下载、SHA-256、Agent 进程及上报，模拟部分明确标记 SIMULATED；新旧 unit 内容另有 Go 测试 | 通过（用户管理器模拟） |
+| JP08 | 最终候选镜像在 network=none 容器读取生产备份副本 | 原数据库可读，新前端与三代 Agent 目录可用 | `candidate-smoke.json`：页面/API 正常、节点数 1，8 个静态文件哈希与已测试本地构建一致；Agent manifest 与 ND 测试产物完全一致 | 通过 |
+| JP09 | 备份后替换生产 Compose 容器，核对健康、环境及持久化 | 新镜像健康，端口/挂载/环境/原始数据和旧归档保留 | `deployment.json`、`persistence-final.json`：healthy，RestartCount=0；SQLite integrity=ok，1 节点和设置逐行一致，755 条旧历史全部保留；旧归档 24 个文件哈希不变，新增 v1.2.0 四程序 | 通过 |
+| JP10 | 公网 HTTPS 页面、后台登录表单、静态资源、Agent 目录及 Chromium WSS | 新版本实际生效，实时样本持续到达，线上柱高对齐 | `production-smoke.json`：8 资源哈希匹配，latest=v1.2.0；WSS hello/subscribed 和 3 批新样本，无页面异常/失败请求；桌面/手机共 120 对柱差值均 0px；`production-homepage.png`、`production-mobile.png` | 通过 |
+
+### 部署记录与验证边界
+
+- 镜像：`server-monitor:local`，ID `sha256:c0ef348a70ef23c24cfe789cfc27d3f0413bbdc2763088952999c394ea6acbbc`；容器 `6e5753424fcb`，2026-09-17 12:07:29（Asia/Shanghai）部署完成。沿用 `/opt/1panel/apps/jan_monitor/.env`、`127.0.0.1:26129` 和原数据卷，未改动环境配置。
+- 回滚镜像：`server-monitor:rollback-jan-probe-20260917-120512`。备份位于 `/opt/1panel/apps/jan_monitor/backups/jan-probe-20260917-120512/`，包含当前环境、数据库在线一致性快照、GeoIP 与完整旧 Agent 归档；目录 0700，环境文件 0600。切换前另做 `monitor-pre-switch.sqlite`。
+- 200ms 健康探测观察到 5 次切换失败采样，首末失败间隔约 0.804 秒；这是采样观测范围，并非精确停机时长。
+- 浏览器初测发现两侧标题行造成 0.5px 基线差，修复后重新构建并复测为 0px；没有放宽验收容差。前端实时值变化、0 丢包、超时和缺测均验证。
+- ND 为真实 Linux amd64 容器、后台进程模式；非 root 迁移补充验收使用真实 Agent 和进程组，**不等同于真实 systemd 用户管理器验收**。本轮未在 FreeBSD、ARM64、OpenRC 等环境运行服务；四种发布产物均已交叉编译和验证分发。
+- 24h/48h/72h 使用 Go 虚拟时钟验证；真实容器验证了启动检查与完整下载、安装、重启链路，没有实际等待一天。
+- 生产复核时节点上报版本为 v1.1.1，未声称 VPS 已升级到 v1.2.0。已有开启更新的旧 Agent 按自身原周期发现新版；未开启的 Agent 仍需手动覆盖安装。新服务名和每日周期在 VPS 升级后生效。
+- 日志、JSON 和截图位于 `output/test-results/jan-probe-20260917/`（Git 忽略）；隔离测试容器和网络已清理，未修改宿主或生产 VPS 的探针服务，也未提交密钥、二进制或测试产物。
+
+## 生产镜像重建与重新部署（2026-09-17）
+
+**已将当前工作区构建并部署至 `https://jm.zedy.cc`。最终容器 healthy，87/87 项 Node 回归、Agent 配置与 Go vet/test、19/19 项主控验收、6/6 项原生 Agent 验收、5/5 项 Docker 部署验收全部通过。** 公网 Chromium 实测 HTTPS 页面及 WSS 实时推送正常；原节点、设置、历史数据和 Agent 归档保留。
+
+### 环境、构建与部署
+
+- Linux amd64，使用 `/tmp/jan-monitor-tools/env.sh` 的 Node.js v24.21.0、Go 1.26.8；执行 `npm ci`、`npm run geoip:download`、`npm run build`，完整构建四个 Agent 程序及前端。依赖审计 0 vulnerabilities。
+- 执行 `npm run test:all`、`npm run test:acceptance`；执行 `docker build --pull --progress=plain -t server-monitor:redeploy-20260917-111530 -t server-monitor:agent-native .` 后运行 `npm run test:agent-deployment`。测试使用隔离目录、容器和网络。
+- 将候选镜像标记为 `server-monitor:local`，通过 `docker compose --env-file /opt/1panel/apps/jan_monitor/.env -p jan_monitor -f /opt/1panel/jan_monitor/compose.yaml up -d --no-build --force-recreate --wait --wait-timeout 120 monitor` 更新既有服务。
+- 最终镜像 ID：`sha256:02a50cc38cf076c8f33d37e7ff733fc8496dfcbac504ec0d10c98c6d0934cc45`；容器 `8530f0492469`。保留 `127.0.0.1:26129 -> 8080`、原 bridge 网络和 `/opt/1panel/apps/jan_monitor/data` 挂载。
+- 部署前保留回滚镜像 `server-monitor:rollback-20260917-111530`，并在 `/opt/1panel/apps/jan_monitor/backups/redeploy-20260917-111530/` 保存原 `.env`、SQLite 在线一致性快照、GeoIP 库和历史 Agent 归档。切换前再次创建 `monitor-pre-switch.sqlite`，完整性检查为 `ok`；备份目录权限 0700。
+
+### 验收项
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| RD01 | 安装依赖、下载地区库、完整构建、执行回归及主控/原生验收 | 构建成功，既有功能通过 | `npm-ci.log`、`geoip-download.log`、`build.log`、`test-all.log`、`acceptance.log`：87/87、19/19、6/6，Agent 配置与 Go vet/test 通过 | 通过 |
+| RD02 | 隔离 Docker bridge 内实际安装、自动更新、主控重建和卸载 | HTTPS/WSS、配置、流量及归档保留 | `agent-deployment.json`：ND01–ND05 全部 PASS；测试容器和网络已清理 | 通过 |
+| RD03 | 新镜像在 `--network none` 容器读取生产备份副本 | 兼容原数据及 v1.1.0 归档，提供新前端和 v1.1.1 | `candidate-smoke.json`：健康、首页、后台、服务器 API 均 200，节点数 1；全部 8 个 JS/CSS 的 SHA-256 与本地构建一致 | 通过 |
+| RD04 | 替换生产容器并等待 Docker 健康检查 | 新镜像启动，沿用端口及数据挂载 | `deployment.json`、`compose-up.log`、`proxy-config-recreate.log`：最终 healthy、RestartCount=0；端口及挂载未变 | 通过 |
+| RD05 | 比对切换前快照、最终数据库及历史 Agent 文件 | 节点、设置和原历史记录全部保留 | `persistence-final.json`：SQLite integrity=ok，servers/settings 逐行一致；原 671 条历史全部保留，检查时增至 679 条；v1.1.0 原 16 个程序 SHA-256 全部一致，并新增 v1.1.1 归档 | 通过 |
+| RD06 | 通过回环地址和正式 HTTPS 域名访问页面、API、静态文件及 Agent 目录 | 响应成功且新构建完整生效 | `production-smoke.json`：首页、后台入口、健康检查均 200；本地及公网全部 8 个前端资源哈希匹配，Agent 最新版 v1.1.1，两代版本均公开四个受支持目标 | 通过 |
+| RD07 | Chromium 访问正式站点，订阅 WSS 并等待真实节点上报 | 页面正常渲染，连接建立并持续收到新样本 | `production-smoke.json`、`production-homepage.png`：TLS 校验开启，首页和后台登录表单正常；单条 WSS 收到 hello/subscribed 及 2 批实时更新，样本时间晚于页面打开时间；无页面异常或请求失败 | 通过 |
+
+### 部署中发现并修复
+
+- 初次公网浏览器检查发现 WSS 握手返回 403；回环 WS 正常，公网省略 Origin 或使用 HTTP Origin 可连接。原 `.env` 的 `TRUSTED_PROXIES` 为空，导致应用忽略 HTTPS 转发头，浏览器的 HTTPS Origin 与应用判断的 HTTP Origin 不一致。
+- 通过容器网络命名空间的实际连接确认代理来源为 `172.20.0.1`，仅将 `.env` 的 `TRUSTED_PROXIES` 设为 `172.20.0.1/32`，保持其余环境配置不变并重建容器。旧镜像与新镜像的 `src/server.js`、`src/runtime/http.js` 哈希一致，属于原部署配置缺失；未修改应用代码、反代配置或放宽 Origin 校验。
+- 配置修复后重新执行全部生产页面、资源、WSS 和持久化检查通过。初次失败证据保留为 `production-smoke-initial.log`、`wss-diagnostic.json`、`browser-diagnostic.json`，不计作通过。
+
+### 证据与范围
+
+- 本轮日志、脚本、JSON 和截图位于 Git 忽略目录 `output/test-results/redeploy-20260917-111530/`；备份及凭证未纳入源码。生产检查只读取页面、订阅实时数据并核对存储，没有创建测试节点或修改生产数据库内容。
+- 生产后台检查到登录表单；登录、管理操作、安装/更新/卸载等有写入的操作在隔离环境执行。没有在生产主机手动安装或升级 Agent，也未执行 FreeBSD/arm64 真机测试或长时间负载测试。
+- 旧镜像及原数据备份保留用于回滚；此次没有执行破坏性数据恢复或 Git 提交。下文保留之前各次测试记录。
+
+## 首页持续刷新、后台列表对齐与安装弹窗验收（2026-09-17）
+
+**最终 87/87 项 Node 回归、Agent 配置测试、Go vet/test、19/19 项主控验收、6/6 项原生 Agent 验收、5/5 项 Docker 部署验收通过。** Chromium 151 实际验证隐藏标签页持续收数、切回、冻结/解冻、断网恢复、旧响应竞争及运行超过原连接时限；桌面/手机列表、命令选项和实际剪贴板复制通过。生产容器和生产数据库未改动。
+
+### 环境与执行
+
+- Linux amd64 / Debian 13，独立 Node.js v24.21.0、Go 1.26.8，Chromium 151.0.7922.34、Xvfb、Docker 29.7.2。Node 与 Go 官方归档校验 SHA-256 后解压到 `/tmp/jan-monitor-tools/`；未替换系统工具链。Playwright 仅安装到 `/tmp/jan-monitor-browser/`，不新增项目依赖。
+- 开发前执行 `npm ci`、地区库下载和完整 `npm run build`。首次依赖安装使用系统 Node 26，出现 engine 警告；后续构建和测试全部使用 Node 24。受限环境中的 npm/Go/GeoIP 网络下载与回环监听失败后，通过已获批准的命令重试成功。基线构建生成四个 Agent 产物。
+- 浏览器测试前准备独立临时 SQLite、测试节点、回环 HTTP 主控、自签名 HTTPS/WSS 反代及测试证书。测试数据为可控 HTTP 上报，未操作真实服务器、生产凭证或外部通知渠道。
+- 最终执行 `npm run test:all`、`npm run test:acceptance`、`npm run build:frontend`、`docker build -t server-monitor:agent-native .`、`npm run test:agent-deployment`。最后的前端恢复补充再次构建镜像，并在 `--network none` 临时容器启动主控，确认健康接口和首页 200、全部 8 个 JS/CSS 资源 SHA-256 与浏览器验收的本地构建完全一致。
+- 浏览器第一次尝试发现 Playwright 默认强制焦点导致页面始终可见，因此改用独立启动的 Chromium，经 `connectOverCDP` 的 `noDefaults` 接入，实际确认 `document.hidden === true`。旧响应竞争测试从同一隔离主控的回环 HTTP 获取真实响应并延迟交付，避免测试请求上下文拒绝自签名证书。上述测试环境问题已解决，以下只记录最终结果。
+
+### 验收项
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| BR01 | 首页切到另一标签页，隐藏期间上报 CPU 42，再快速切换五次并上报 55 | 后台更新，普通切换保持同一连接，继续按上报刷新 | `after.json`：hidden=true、后台 CPU=42.00%、WS 未关闭；返回仍只有一个 WS，后续 CPU=55.00% | 通过 |
+| BR02 | 用 Chromium CDP 实际冻结后台页面，上报 73，再解冻并切回 | 恢复后获取最新完整状态并恢复实时连接 | `after.json`：CPU=73.00%；执行 `Page.setWebLifecycleState`，不是手动派发假的可见性事件 | 通过 |
+| BR03 | 浏览器断网并关闭测试页面连接，上报 81 后恢复网络 | 自动重连并补取最新值 | `after.json`：CPU=81.00%；新增单元回归模拟 12 次失败仍持续重连，卸载后停止；API 失败返回 null 而非空列表 | 通过 |
+| BR04 | 拦住旧 REST 响应，WS 先上报 94，再释放旧响应 | 较旧快照不覆盖新指标，历史仍可补齐 | `after.json`：释放响应后仍为 94.00%；4 项快照回归覆盖元数据刷新、持久历史、新样本和已清空历史 | 通过 |
+| BR05 | 配置连接时限为 1 分钟，首页实际运行 65 秒后上报 37 | 首页持续更新，不出现自动暂停 | `after.json`：65,028ms、CPU=37.00%、无页面异常；原有详情页超时单元回归保留通过 | 通过 |
+| BA01 | 查看含双 IP、长备注、多标签、在线/离线节点的服务器列表，缩至 390px | 字段垂直居中，长表在容器内横向滚动 | `layout.json`：双 IP 行 14 个单元格内容中心偏差均为 0px；手机页面无整体横向溢出，截图已人工查看 | 通过 |
+| BA02 | 打开安装弹窗，选择 Linux/其他 Linux/FreeBSD 和专用用户，再实际点击复制 | 无下载源/版本输入；固定主控源和默认版本，复制内容正确 | `after.json` 的表单仅系统、安装用户和命令；校验命令无 `--install-version`；`layout.json`：实际剪贴板与显示命令完全相等 | 通过 |
+| RG01 | 执行完整回归及主控、原生 Agent 验收 | 历史、协议、配置、数据持久化等既有功能保持 | `test-all.log`：87/87、Agent 配置、Go vet/test；`acceptance.log`：主控 19/19、原生 6/6 | 通过 |
+| DP01 | 隔离 Docker bridge 中实际安装旧版、自动更新、重建主控和卸载 | HTTPS/WSS、配置和流量保留、历史归档与清理正常 | `agent-deployment.log`、`deployment.json`：ND01–ND05 全部 PASS；临时容器/网络由套件清理 | 通过 |
+| DP02 | 启动最后重建的镜像，获取全部前端资源并比较 SHA-256 | 最终镜像提供的前端与已验收构建一致 | `docker-smoke.log`：health=200、homepage=200、finalAssetHashesMatch=true | 通过 |
+
+### 证据与边界
+
+- 本轮证据为 Git 忽略的 `output/test-results/dashboard-admin/`：`test-all.log`、`acceptance.log`、`frontend-build.log`、`docker-build.log`、`agent-deployment.log`、`docker-smoke.log`、`browser.log`、`after.json`、`layout.json`，以及修复前后列表、弹窗、手机和首页截图。主控、原生和部署详细结果另外保存在 `output/test-results/acceptance.json` 和 `output/test-results/agent-integration/`。
+- 页面不再主动按可见性断连或按时限暂停。Chrome 自身的后台计时器调度、页面冻结及操作系统休眠不能由网页取消；本轮已验证真实隐藏和 CDP 冻结恢复，未声称在系统休眠时仍能运行脚本或经过数小时节流实测。
+- 安装器、Agent 采集协议和版本未改动；此次原生执行平台为 Linux amd64，不将交叉编译或 UI 选项检查等同于 FreeBSD/arm64 真机验收。没有把生成的一键安装命令在宿主机执行。
+- 测试凭证、证书、数据库、日志、截图、下载工具链和构建产物均未纳入源码。此前验收记录保留如下。
+
 ## Agent 四目标构建与分发验收（2026-09-17）
 
 当前 Agent **v1.1.1** 仅构建和分发 **Linux amd64/arm64、FreeBSD amd64/arm64**，共 4 个目标。使用新版本号避免与已有 v1.1.0 十六目标归档冲突；旧磁盘归档保持原样，公开接口只提供受支持的四类程序。

@@ -171,6 +171,11 @@ func Run(configFile string, debug bool, version string) error {
 		return errors.New("配置缺失: SERVER_ID/SECRET/CONTROLLER_URL 不能为空")
 	}
 	normalizeConfigIntervals(&cfg)
+	if scheduled, err := scheduleLegacyUserServiceMigration(defaultPaths(), configFile, debug); err != nil {
+		fmt.Printf("[WARN] Service name migration could not be scheduled: %v\n", err)
+	} else if scheduled {
+		fmt.Println("[INFO] Service migration cf-probe -> jan-probe scheduled")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
@@ -190,7 +195,7 @@ func Run(configFile string, debug bool, version string) error {
 	a.basic = collectBasicStats()
 	a.basicAt = time.Now()
 
-	a.log.info("CF-Server-Monitor Go Probe started version=%s platform=%s config=%s", version, platformName(), paths.ConfigFile)
+	a.log.info("Jan Monitor Probe started version=%s platform=%s config=%s", version, platformName(), paths.ConfigFile)
 	a.log.debugf("config id=%s url=%s report_interval=%ds collect_interval=%ds reset_day=%d connection_mode=%s ping_mode=%s interface=%s auto_update=%v",
 		cfg.ServerID, cfg.ControllerURL, cfg.ReportInterval, cfg.CollectInterval, cfg.ResetDay, cfg.ConnectionMode, cfg.PingMode, firstNonEmpty(cfg.Interface, "auto"), cfg.AutoUpdate)
 
@@ -201,6 +206,7 @@ func Run(configFile string, debug bool, version string) error {
 		a.log.info("WSS disabled connection_mode=http")
 	}
 	if cfg.AutoUpdate {
+		a.log.info("auto update enabled: startup check and every 24h")
 		go a.autoUpdateWorker(ctx)
 	} else {
 		a.log.info("auto update disabled: local AUTO_UPDATE=0")

@@ -354,13 +354,6 @@
       </div>
     </div>
 
-    <LiveConnectionTimeoutModal
-      :show="showLiveTimeoutModal"
-      :trans="trans"
-      @close="closeLiveConnection"
-      @continue="continueLiveConnection"
-    />
-
     <Footer />
   </div>
 </template>
@@ -374,8 +367,7 @@ import ServerBarCard from '../components/ServerBarCard.vue'
 import ServerRingCard from '../components/ServerRingCard.vue'
 import Footer from '../components/Footer.vue'
 import OsIcon from '../components/OsIcon.vue'
-import LiveConnectionTimeoutModal from '../components/LiveConnectionTimeoutModal.vue'
-import { fetchConfig, fetchServersAll, fetchServersAllWithProgress, formatBytes, createLiveSocket, getFlagRegionCode, getApiBases, isServerOnline, normalizeLiveSocketTimeoutMinutes } from '../utils/api.js'
+import { fetchConfig, fetchServersAll, fetchServersAllWithProgress, formatBytes, createLiveSocket, getFlagRegionCode, getApiBases, isServerOnline } from '../utils/api.js'
 import { calcTrafficUsagePercent, getUsageColor } from '../composables/useServerCardData'
 import { getTitle, hasMultipleApiBases, getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n.js'
@@ -384,6 +376,7 @@ import { normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js
 import { normalizeDashboardView, normalizeDisplayMode, resolveDisplayMode } from '../utils/displayMode.js'
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
 import { refreshLatencyWindow, updateLatencyWindow } from '../utils/latencyWindow.js'
+import { reconcileDashboardSnapshot } from '../utils/dashboardSnapshot.js'
 import { getMikusAssetUrl, isMikusThemeEnabled, normalizeThemeOptions, setMikusThemeClass } from '../utils/themeOptions.js'
 import {
   CURRENCY_SYMBOLS,
@@ -411,7 +404,6 @@ const sysConfig = ref({
   custom_cu_name: appConfig?.custom_cu_name || '联通',
   custom_cm_name: appConfig?.custom_cm_name || '移动',
   custom_bd_name: appConfig?.custom_bd_name || 'BGP',
-  frontend_ws_timeout_minutes: normalizeLiveSocketTimeoutMinutes(appConfig?.frontend_ws_timeout_minutes),
   display_mode: 'bar',
   site_title: DEFAULT_SITE_TITLE,
   theme_options: normalizeThemeOptions(appConfig?.theme_options),
@@ -434,7 +426,6 @@ const isLoading = ref(true)
 const sitesRemaining = ref(0)
 const hasCorsError = ref(null)
 const financeModalOpen = ref(false)
-const showLiveTimeoutModal = ref(false)
 const financeCurrency = ref('CNY')
 const exchangeRates = ref(DEFAULT_EXCHANGE_RATES)
 const exchangeRateSource = ref('default')
@@ -730,6 +721,7 @@ const getUpdateTime = (lastUpdated) => {
 const PLAYBACK_TICK_MS = 1000
 const MAX_BUFFER_SAMPLES_PER_SERVER = 600
 const playbackBuffers = new Map()
+const latestAppliedSamples = new Map()
 
 const getServerReportTimestamp = (server, fallback = null) => {
   return normalizeMetricTimestamp(server?.report_timestamp ?? server?.last_updated, fallback)
@@ -845,10 +837,10 @@ const queueLiveMessage = (msg, { replayCachedReport = false } = {}) => {
   }
 }
 
-const replayLatestReportUpdates = (data) => {
+const replayLatestReportUpdates = (data, { preserveLive = false } = {}) => {
   const updates = Array.isArray(data?.latestReportUpdates) ? data.latestReportUpdates : []
   if (updates.length === 0) return
-  queueLiveMessage({ type: 'batchUpdate', ts: Date.now(), updates }, { replayCachedReport: true })
+  queueLiveMessage({ type: 'batchUpdate', ts: Date.now(), updates }, { replayCachedReport: !preserveLive })
 }
 
 const applyServerSample = (serverId, data, sampleTs, displayTs, reportTs = null) => {
@@ -865,6 +857,7 @@ const applyServerSample = (serverId, data, sampleTs, displayTs, reportTs = null)
     sample_timestamp: sampleTs,
     timestamp: sampleTs
   }, displayTs, now.value)
+  latestAppliedSamples.set(serverId, merged)
 
   if (idx >= 0) {
     servers.value[idx] = {
@@ -889,7 +882,7 @@ const applyPlaybackSamplesForServer = (serverId, displayTs = null) => {
   while (samples.length > 0 && samples[0].ts <= ownTs) {
     selected = samples.shift()
   }
-  if (selected) {
+  if (selected && selected.ts >= (getServerSampleTimestamp(server) || 0)) {
     applyServerSample(serverId, selected.data, selected.ts, ownTs, selected.reportTs)
   }
   if (samples.length === 0) playbackBuffers.delete(serverId)
@@ -958,10 +951,18 @@ const runDashboardTick = () => {
   recomputeStats(now.value)
 }
 
-const mergeServersIntoList = (rawServers) => {
+const mergeServersIntoList = (rawServers, { preserveLive = false } = {}) => {
   const existingById = new Map(servers.value.map(s => [s.id, s]))
+  const visibleIds = new Set(rawServers.map(s => s.id))
+  for (const id of latestAppliedSamples.keys()) {
+    if (!visibleIds.has(id)) latestAppliedSamples.delete(id)
+  }
   return rawServers.map(s => {
     const prev = existingById.get(s.id)
+    if (preserveLive) {
+      const merged = reconcileDashboardSnapshot(s, prev, latestAppliedSamples.get(s.id), sysConfig.value.latency_window, now.value)
+      return withDisplayTiming(merged, merged.display_timestamp, now.value)
+    }
     const sampleTs = normalizeMetricTimestamp(s.sample_timestamp ?? s.timestamp ?? s.last_updated, getServerSampleTimestamp(prev))
     const reportTs = normalizeMetricTimestamp(s.report_timestamp ?? s.last_updated, getServerReportTimestamp(prev, null))
     return withDisplayTiming({ ...prev, ...s, sample_timestamp: sampleTs, report_timestamp: reportTs }, sampleTs, now.value)
@@ -977,7 +978,6 @@ const loadDashboardConfig = async () => {
       ...sysConfig.value,
       site_title: hasMultipleApiBases() && localTitle ? localTitle : (siteTitle || sysConfig.value.site_title),
       display_mode: resolveDisplayMode(config),
-      frontend_ws_timeout_minutes: normalizeLiveSocketTimeoutMinutes(config?.frontend_ws_timeout_minutes),
       theme_options: normalizeThemeOptions(config?.theme_options),
       latency_window: config?.latency_window || sysConfig.value.latency_window
     }
@@ -986,7 +986,7 @@ const loadDashboardConfig = async () => {
   }
 }
 
-const refreshData = async () => {
+const loadDashboardData = async (options = {}) => {
   const bases = getApiBases()
   const isMultiSite = bases.length > 1
   playbackBuffers.clear()
@@ -997,11 +997,12 @@ const refreshData = async () => {
 
     try {
       const data = await fetchServersAllWithProgress((data) => {
+        if (!dashboardActive) return
         const rawServers = Array.isArray(data.servers)
           ? data.servers
           : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
 
-        servers.value = mergeServersIntoList(rawServers)
+        servers.value = mergeServersIntoList(rawServers, options)
         recomputeStats(now.value)
 
         sysConfig.value = {
@@ -1013,7 +1014,6 @@ const refreshData = async () => {
           custom_cu_name: data.sysConfig?.custom_cu_name || sysConfig.value.custom_cu_name,
           custom_cm_name: data.sysConfig?.custom_cm_name || sysConfig.value.custom_cm_name,
           custom_bd_name: data.sysConfig?.custom_bd_name || sysConfig.value.custom_bd_name,
-          frontend_ws_timeout_minutes: sysConfig.value.frontend_ws_timeout_minutes,
           display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
           site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
           theme_options: sysConfig.value.theme_options,
@@ -1024,7 +1024,7 @@ const refreshData = async () => {
         if (isLoading.value) isLoading.value = false
         sitesRemaining.value = Math.max(0, sitesRemaining.value - 1)
       })
-      replayLatestReportUpdates(data)
+      if (dashboardActive) replayLatestReportUpdates(data, options)
     } catch (e) {
       console.log('[INFO] Multi-site refresh error:', e)
     }
@@ -1036,14 +1036,18 @@ const refreshData = async () => {
   // Single-site fallback
   try {
     const data = await fetchServersAll()
-    if (!data) return
+    if (!data || !dashboardActive) {
+      isLoading.value = false
+      return
+    }
 
     const rawServers = Array.isArray(data.servers)
       ? data.servers
       : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
 
-    servers.value = mergeServersIntoList(rawServers)
-    replayLatestReportUpdates(data)
+    now.value = Date.now()
+    servers.value = mergeServersIntoList(rawServers, options)
+    replayLatestReportUpdates(data, options)
     recomputeStats(now.value)
 
     sysConfig.value = {
@@ -1055,7 +1059,6 @@ const refreshData = async () => {
       custom_cu_name: data.sysConfig?.custom_cu_name || sysConfig.value.custom_cu_name,
       custom_cm_name: data.sysConfig?.custom_cm_name || sysConfig.value.custom_cm_name,
       custom_bd_name: data.sysConfig?.custom_bd_name || sysConfig.value.custom_bd_name,
-      frontend_ws_timeout_minutes: sysConfig.value.frontend_ws_timeout_minutes,
       display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
       site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
       theme_options: sysConfig.value.theme_options,
@@ -1069,10 +1072,20 @@ const refreshData = async () => {
   }
 }
 
+let dashboardRefreshPending = null
+const refreshData = (options = {}) => {
+  if (!dashboardRefreshPending) {
+    dashboardRefreshPending = loadDashboardData(options).then(() => {
+      if (options.preserveLive && dashboardActive && getLiveSubscriptionKey() !== liveSubscriptionKey) startLiveSocket()
+    }).finally(() => { dashboardRefreshPending = null })
+  }
+  return dashboardRefreshPending
+}
+
 let latencyRefreshPending = false
 let dashboardActive = true
 const refreshLatencyHistory = async () => {
-  if (latencyRefreshPending || document.hidden || !sysConfig.value.show_three_net_details || liveConnectionClosedByUser || showLiveTimeoutModal.value) return
+  if (latencyRefreshPending || !sysConfig.value.show_three_net_details) return
   latencyRefreshPending = true
   try {
     const data = await fetchServersAll()
@@ -1095,7 +1108,8 @@ const refreshLatencyHistory = async () => {
 //   - 订阅 "all"，收到任何服务器的更新都会合并对应 server 的指标
 // -------------------------------------------------------------------------
 let liveSockets = []
-let liveConnectionClosedByUser = false
+let liveSubscriptionKey = ''
+const getLiveSubscriptionKey = () => JSON.stringify([getApiBases(), servers.value.map(server => `${server.source || ''}:${server.id}`).sort()])
 let timeUpdateInterval = null
 let latencyUpdateInterval = null
 
@@ -1109,12 +1123,8 @@ const stopLiveSockets = () => {
 }
 
 const startLiveSocket = () => {
-  if (typeof document !== 'undefined' && document.hidden) {
-    stopLiveSockets()
-    return
-  }
-
   stopLiveSockets()
+  liveSubscriptionKey = getLiveSubscriptionKey()
   const bases = getApiBases()
 
   // 按 source 分组，每个 apiBase 只传自己的 server IDs
@@ -1132,14 +1142,12 @@ const startLiveSocket = () => {
     const allIds = servers.value.map(s => s.id).filter(Boolean)
     liveSockets = [createLiveSocket('all', {
       replay: false,
-      timeoutMinutes: sysConfig.value.frontend_ws_timeout_minutes,
+      timeoutMinutes: 0,
+      reconnectForever: true,
       onMessage: queueLiveMessage,
-      onTimeout: () => {
-        showLiveTimeoutModal.value = true
-      },
       onStatus: ({ connected }) => {
         liveConnected.value = !!connected
-        if (connected) refreshLatencyHistory()
+        if (connected) refreshData({ preserveLive: true })
       }
     }, 0, allIds)]
     return
@@ -1151,48 +1159,36 @@ const startLiveSocket = () => {
     if (!ids || ids.length === 0) return null
     return createLiveSocket('all', {
       replay: false,
-      timeoutMinutes: sysConfig.value.frontend_ws_timeout_minutes,
+      timeoutMinutes: 0,
+      reconnectForever: true,
       onMessage: queueLiveMessage,
-      onTimeout: () => {
-        showLiveTimeoutModal.value = true
-      },
       onStatus: ({ connected }) => {
         const anyConnected = liveSockets.some(s => s && s.isConnected)
         liveConnected.value = anyConnected
-        if (connected) refreshLatencyHistory()
+        if (connected) refreshData({ preserveLive: true })
       }
     }, index, ids)
   }).filter(Boolean)
 }
 
-const closeLiveConnection = () => {
-  showLiveTimeoutModal.value = false
-  liveConnectionClosedByUser = true
-  stopLiveSockets()
-}
-
-const continueLiveConnection = () => {
-  showLiveTimeoutModal.value = false
-  liveConnectionClosedByUser = false
-  if (liveSockets.length === 0) {
-    startLiveSocket()
-    return
+let reconnectAfterResume = false
+const restoreDashboard = (event) => {
+  if (event?.type === 'resume' || event?.type === 'online' || (event?.type === 'pageshow' && event.persisted)) {
+    reconnectAfterResume = true
   }
-  liveSockets.forEach(socket => socket?.reconnect())
-}
-
-const handleVisibility = () => {
-  if (document.hidden) {
-    stopLiveSockets()
-  } else if (showLiveTimeoutModal.value || liveConnectionClosedByUser) {
-    return
-  } else if (liveSockets.length === 0) {
+  // Hidden tabs keep their subscription and sample cadence. Browser-managed
+  // freezing may still suspend callbacks, so catch up when the page returns.
+  if (!dashboardActive || document.hidden) return
+  runDashboardTick()
+  if (liveSockets.length === 0) {
     startLiveSocket()
   } else {
     liveSockets.forEach(socket => {
-      if (socket) socket.reconnect()
+      if (socket && (reconnectAfterResume || (!socket.isConnected && !socket.isConnecting))) socket.reconnect()
     })
   }
+  reconnectAfterResume = false
+  refreshData({ preserveLive: true })
 }
 
 const getServerLink = (server) => {
@@ -1221,6 +1217,7 @@ onMounted(async () => {
     localStorage.setItem(STORAGE.VIEW_PREFERENCE, savedView)
   }
   await refreshData()
+  if (!dashboardActive) return
   await nextTick()
   scheduleFilterMeasurement()
   if (window.ResizeObserver && filterWrap.value) {
@@ -1231,7 +1228,11 @@ onMounted(async () => {
   }
   document.addEventListener('click', closeFilterMoreOnOutsideClick)
   startLiveSocket()
-  document.addEventListener('visibilitychange', handleVisibility)
+  document.addEventListener('visibilitychange', restoreDashboard)
+  document.addEventListener('resume', restoreDashboard)
+  window.addEventListener('focus', restoreDashboard)
+  window.addEventListener('online', restoreDashboard)
+  window.addEventListener('pageshow', restoreDashboard)
 
   // 每秒更新 now 变量，使相对时间实时刷新
   runDashboardTick()
@@ -1241,7 +1242,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   dashboardActive = false
-  document.removeEventListener('visibilitychange', handleVisibility)
+  document.removeEventListener('visibilitychange', restoreDashboard)
+  document.removeEventListener('resume', restoreDashboard)
+  window.removeEventListener('focus', restoreDashboard)
+  window.removeEventListener('online', restoreDashboard)
+  window.removeEventListener('pageshow', restoreDashboard)
   document.removeEventListener('click', closeFilterMoreOnOutsideClick)
   window.removeEventListener('resize', scheduleFilterMeasurement)
   if (filterMeasureTimer) clearTimeout(filterMeasureTimer)
@@ -1249,5 +1254,7 @@ onUnmounted(() => {
   if (timeUpdateInterval) clearInterval(timeUpdateInterval)
   if (latencyUpdateInterval) clearInterval(latencyUpdateInterval)
   stopLiveSockets()
+  playbackBuffers.clear()
+  latestAppliedSamples.clear()
 })
 </script>

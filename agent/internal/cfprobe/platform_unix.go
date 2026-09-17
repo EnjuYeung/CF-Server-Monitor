@@ -467,6 +467,9 @@ func systemInstallConflicts() []string {
 	if runtime.GOOS == "darwin" {
 		checks = append(checks, paths.LaunchdRootFile, legacyDarwinLaunchdFile)
 	}
+	legacy := legacyServicePaths(paths)
+	checks = append(checks, legacy.BinaryFile, legacy.ServiceFile,
+		filepath.Join("/etc/init.d", legacy.ServiceName), filepath.Join("/etc/init", legacy.ServiceName+".conf"))
 	conflicts := existingPaths(checks...)
 	if runtime.GOOS == "darwin" {
 		if launchdLabelLoaded("system", paths.LaunchdLabel) {
@@ -488,7 +491,9 @@ func userInstallConflicts() []string {
 		service := filepath.Join(home, ".config", "systemd", "user", serviceNameDefault+".service")
 		binary := filepath.Join(home, ".cf-probe", "bin", serviceNameDefault)
 		config := filepath.Join(home, ".cf-probe", "config.conf")
-		if hits := existingPaths(service, binary, config); len(hits) > 0 {
+		oldService := filepath.Join(home, ".config", "systemd", "user", legacyServiceName+".service")
+		oldBinary := filepath.Join(home, ".cf-probe", "bin", legacyServiceName)
+		if hits := existingPaths(service, binary, config, oldService, oldBinary); len(hits) > 0 {
 			conflicts = append(conflicts, home+":"+strings.Join(hits, "|"))
 		}
 	}
@@ -663,7 +668,8 @@ func isProbeRunCommand(exe string, cmdline []string) bool {
 	if base == "" || base == "." {
 		base = filepath.Base(cmdline[0])
 	}
-	if !strings.HasPrefix(base, serviceNameDefault) && !strings.Contains(cmdline[0], serviceNameDefault) {
+	if !strings.HasPrefix(base, serviceNameDefault) && !strings.Contains(cmdline[0], serviceNameDefault) &&
+		!strings.HasPrefix(base, legacyServiceName) && !strings.Contains(cmdline[0], legacyServiceName) {
 		return false
 	}
 	for _, arg := range cmdline[1:] {
@@ -679,7 +685,11 @@ func isLegacyShellCommand(cmdline []string) bool {
 }
 
 func acquireInstanceLock(paths Paths) (func(), error) {
-	lockPath := filepath.Join(os.TempDir(), paths.ServiceName+".lock")
+	lockName := paths.ServiceName
+	if lockName == serviceNameDefault {
+		lockName = legacyServiceName // Coordinate with Agents that still use the old service.
+	}
+	lockPath := filepath.Join(os.TempDir(), lockName+".lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		return nil, fmt.Errorf("检查运行实例失败 %s: %w", lockPath, err)

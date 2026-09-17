@@ -14,7 +14,7 @@
               class="three-net-bucket"
               :data-tooltip="point.pingTooltip"
             >
-              <span class="three-net-bucket-fill" :style="{ height: point.pingHeight + '%', background: point.pingColor, opacity: point.pingOpacity }"></span>
+              <span class="three-net-bucket-fill" :style="{ background: point.pingColor, opacity: point.pingOpacity }"></span>
             </span>
           </div>
         </div>
@@ -31,7 +31,7 @@
               class="three-net-bucket"
               :data-tooltip="point.lossTooltip"
             >
-              <span class="three-net-bucket-fill" :style="{ height: point.lossHeight + '%', background: point.lossColor, opacity: point.lossOpacity }"></span>
+              <span class="three-net-bucket-fill" :style="{ background: point.lossColor, opacity: point.lossOpacity }"></span>
             </span>
           </div>
         </div>

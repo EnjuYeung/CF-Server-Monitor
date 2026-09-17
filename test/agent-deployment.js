@@ -17,7 +17,11 @@ const edgeNetwork=prefix+'-edge';
 const names={controller:prefix+'-controller',proxy:prefix+'-proxy',agent:prefix+'-agent'};
 const cli=async args=>(await exec(docker,args,{maxBuffer:8*1024*1024,timeout:240000})).stdout.trim();
 const version=JSON.parse(await readFile('agent/release.json','utf8')).version;
-const oldVersion='v1.0.99';
+// Optional immutable release built before the change, to exercise real cf-probe migration.
+const legacyDirectory=process.env.AGENT_LEGACY_DIST ? resolve(process.env.AGENT_LEGACY_DIST) : null;
+const oldVersion=legacyDirectory ? JSON.parse(await readFile(join(legacyDirectory,'manifest.json'),'utf8')).version : 'v1.0.99';
+const oldService=legacyDirectory ? 'cf-probe' : 'jan-probe';
+assert.notEqual(oldVersion,version,'Legacy fixture must precede the candidate release');
 const key='agent-deployment-fixture-secret';
 const adminPath='native-Agent-Deployment-92';
 let token='',id,base,controllerArgs;const created=[];const results=[];
@@ -35,9 +39,9 @@ async function step(id,feature,operation,expected,callback){
 
 // Prepare images, old version, certificate, proxy, archive and empty data directory first.
 const architecture=await cli(['version','--format','{{.Server.Arch}}']);
-await exec(process.execPath,['scripts/agent.js','build','-targets',`linux/${architecture}`,'-version',oldVersion,'-out',join(root,'old-agent')],{timeout:180000,maxBuffer:8*1024*1024});
+if(!legacyDirectory) await exec(process.execPath,['scripts/agent.js','build','-targets',`linux/${architecture}`,'-version',oldVersion,'-out',join(root,'old-agent')],{timeout:180000,maxBuffer:8*1024*1024});
 await mkdir(join(root,'data','agent-releases'),{recursive:true});
-await cp(join(root,'old-agent',oldVersion),join(root,'data','agent-releases',oldVersion),{recursive:true});
+await cp(legacyDirectory||join(root,'old-agent',oldVersion),join(root,'data','agent-releases',oldVersion),{recursive:true});
 await exec('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(root,'key.pem'),'-out',join(root,'cert.pem'),'-days','2','-subj','/CN=proxy','-addext','subjectAltName=DNS:proxy,DNS:localhost,IP:127.0.0.1'],{timeout:30000});
 const certificate=await readFile(join(root,'cert.pem'));
 await writeFile(join(root,'proxy.mjs'),`import https from 'node:https';import http from 'node:http';import net from 'node:net';import fs from 'node:fs';
@@ -81,20 +85,23 @@ try{
   await step('ND02','一键安装及 HTTPS/WSS 上报','在独立 Linux 环境从主控安装旧版测试程序并开启自动更新','原生服务启动，正确连接 TLS 主控，等待更新',async()=>{
     const installed=await cli(['exec',names.agent,'sh','-c','curl -fsSL https://proxy:8443/agent/install.sh -o /tmp/install.sh && sh /tmp/install.sh install --install-version='+oldVersion+' -id='+id+' -secret='+key+' -url=https://proxy:8443/update -auto_update=1 -debug=1']);
     await writeFile(join(evidence,'linux-install.log'),installed);
-    assert.ok((await cli(['exec',names.agent,'/usr/local/bin/cf-probe','version'])).includes(oldVersion));
+    assert.ok((await cli(['exec',names.agent,'/usr/local/bin/'+oldService,'version'])).includes(oldVersion));
     await until(async()=> (await request('/api/server?id='+id)).body.agent_version===oldVersion,'native TLS report',45000);
-    await until(async()=> (await cli(['exec',names.agent,'cat','/var/log/cf-probe.log'])).includes('WSS connected'),'native WSS',45000);
+    await until(async()=> (await cli(['exec',names.agent,'cat','/var/log/'+oldService+'.log'])).includes('WSS connected'),'native WSS',45000);
     return {installedVersion:oldVersion,tlsAgent:true,wssConnected:true};
   });
   await step('ND03','实际自动更新与配置保留','等待旧版从主控下载新版并由原生服务更新重启','安装文件和上报版本变为当前版本，配置及流量文件保留',async()=>{
-    await until(async()=> (await cli(['exec',names.agent,'/usr/local/bin/cf-probe','version'])).includes(version),'binary self update');
+    await until(async()=> (await cli(['exec',names.agent,'/usr/local/bin/jan-probe','version'])).includes(version),'binary self update');
     await until(async()=> (await request('/api/server?id='+id)).body.agent_version===version,'report after self update');
     const cfg=await cli(['exec',names.agent,'cat','/etc/config/cf-probe/config.conf']);
     assert.ok(cfg.includes(id));assert.ok(cfg.includes('AUTO_UPDATE="1"'));assert.ok(cfg.includes('CONTROLLER_URL="https://proxy:8443/update"'));
     await cli(['exec',names.agent,'test','-s','/etc/config/cf-probe/traffic.dat']);
-    const log=await cli(['exec',names.agent,'cat','/var/log/cf-probe.log']);assert.ok(log.includes('auto update scheduled target='+version));
-    await writeFile(join(evidence,'linux-update.log'),log);
-    return {from:oldVersion,to:version,configPreserved:true,trafficPreserved:true};
+    const log=await cli(['exec',names.agent,'cat','/var/log/'+oldService+'.log']);assert.ok(log.includes('auto update scheduled target='+version));
+    const currentLog=await cli(['exec',names.agent,'cat','/var/log/jan-probe.log']);assert.ok(currentLog.includes('startup check and every 24h'));
+    if(legacyDirectory) await cli(['exec',names.agent,'test','!','-e','/usr/local/bin/cf-probe']);
+    await cli(['exec',names.agent,'sh','-c','test "$(cat /proc/$(cat /run/jan-probe.pid)/comm)" = jan-probe']);
+    await writeFile(join(evidence,'linux-update.log'),log+'\n'+currentLog);
+    return {from:oldVersion,to:version,service:'jan-probe',legacyServiceMigrated:!!legacyDirectory,configPreserved:true,trafficPreserved:true,dailyChecks:true};
   });
   await step('ND04','主控重建持久化','删除测试主控容器并使用原数据卷重新创建','历史及两个 Agent 版本保留，探针恢复连接',async()=>{
     const before=(await request('/api/server?id='+id)).body;
@@ -105,10 +112,23 @@ try{
     await until(async()=> Number((await request('/api/server?id='+id)).body.last_updated)>Number(before.last_updated),'fresh report after controller restart',180000);
     return {dataRetained:true,oldVersionRetained:true,reconnected:true};
   });
-  await step('ND05','原生卸载','从主控下载临时卸载器并执行 uninstall','已安装程序、配置和服务进程清除',async()=>{
+  await step('ND05','未启用自动更新的安装','覆盖安装显式关闭 AUTO_UPDATE，再通过主控下发配置','本地开关保持关闭，进程不上报自动更新任务，配置与流量保留',async()=>{
+    await cli(['exec',names.agent,'/usr/local/bin/jan-probe','install','-auto_update=0','-debug=1']);
+    const server=(await admin({action:'list'})).body.servers.find(s=>s.id===id);
+    assert.equal((await admin({...server,action:'edit',auto_update:'1',collect_interval:2,report_interval:30})).status,200);
+    await until(async()=> (await cli(['exec',names.agent,'cat','/etc/config/cf-probe/config.conf'])).includes('COLLECT_INTERVAL="2"'),'remote configuration after manual update');
+    const cfg=await cli(['exec',names.agent,'cat','/etc/config/cf-probe/config.conf']);assert.ok(cfg.includes('AUTO_UPDATE="0"'));assert.ok(cfg.includes(id));
+    const log=await cli(['exec',names.agent,'cat','/var/log/jan-probe.log']);
+    const recent=log.slice(log.lastIndexOf('Jan Monitor Probe started'));
+    assert.ok(recent.includes('auto update disabled: local AUTO_UPDATE=0'));
+    assert.ok(!recent.includes('auto update enabled:')&&!recent.includes('auto update scheduled'));
+    await cli(['exec',names.agent,'test','-s','/etc/config/cf-probe/traffic.dat']);
+    return {autoUpdate:false,remoteCheckboxDoesNotEnable:true,configPreserved:true,trafficPreserved:true};
+  });
+  await step('ND06','原生卸载','从主控下载临时卸载器并执行 uninstall','新旧程序、配置和服务进程清除',async()=>{
     const result=await cli(['exec',names.agent,'sh','-c','sh /tmp/install.sh uninstall --download-url=https://proxy:8443/agent']);await writeFile(join(evidence,'linux-uninstall.log'),result);
-    await cli(['exec',names.agent,'sh','-c','test ! -e /usr/local/bin/cf-probe && test ! -e /etc/config/cf-probe/config.conf']);
-    await cli(['exec',names.agent,'sh','-c',"ps -eo comm=,stat= | awk '$1 == \"cf-probe\" && $2 !~ /^Z/ { found=1 } END { exit found }'"]);
+    await cli(['exec',names.agent,'sh','-c','test ! -e /usr/local/bin/jan-probe && test ! -e /usr/local/bin/cf-probe && test ! -e /etc/config/cf-probe/config.conf']);
+    await cli(['exec',names.agent,'sh','-c',"ps -eo comm=,stat= | awk '($1 == \"cf-probe\" || $1 == \"jan-probe\") && $2 !~ /^Z/ { found=1 } END { exit found }'"]);
     return {binaryRemoved:true,configRemoved:true};
   });
 }finally{

@@ -75,7 +75,7 @@ test('REST backfill keeps pending live reports and honors cleared persisted hist
   assert.strictEqual(nextTick.ping, refreshed.ping, 'unchanged time buckets need not be recreated every second');
 });
 
-test('Vue latency cards react to new values, height changes, failures and absent samples', async t => {
+test('Vue latency cards preserve colors, values, gaps and failures during live updates', async t => {
   const originalStorage = globalThis.localStorage;
   globalThis.localStorage = { getItem: () => 'en' };
   const vite = await createServer({ configFile: false, appType: 'custom', logLevel: 'silent', server: { middlewareMode: true } });
@@ -91,12 +91,19 @@ test('Vue latency cards react to new values, height changes, failures and absent
   props.server = { ...props.server, ...updateLatencyWindow(props.server, { ping_ct: 306, loss_ct: 0 }, now, {}, now) };
   const high = card.threeNetDetails.value[0].points.at(-1);
   assert.match(high.pingTooltip, /306 ms/);
+  assert.equal(high.pingColor, 'var(--accent-red)');
+  assert.match(high.lossTooltip, /0%/);
+  assert.equal(high.lossColor, 'var(--accent-green)');
   props.server = { ...props.server, ping_ct: 65, ...updateLatencyWindow(props.server, { ping_ct: 65, loss_ct: 25 }, now + 1000, {}, now + 1000) };
   const lower = card.threeNetDetails.value[0].points.at(-1);
   assert.equal(card.threeNetDetails.value[0].latestPing, 65);
-  assert.ok(lower.pingHeight < high.pingHeight);
-  assert.ok(lower.lossHeight > high.lossHeight);
+  assert.equal(lower.pingColor, 'var(--accent-green)');
+  assert.match(lower.lossTooltip, /25%/);
+  assert.equal(lower.lossColor, 'var(--accent-red)');
   props.server = { ...props.server, ping_ct: null, ...updateLatencyWindow(props.server, { ping_ct: null, loss_ct: 100 }, now + 2000, {}, now + 2000) };
   assert.equal(card.formatPingValue(card.threeNetDetails.value[0].latestPing), 'TIMEOUT');
   assert.match(card.threeNetDetails.value[0].points.at(-1).pingTooltip, /TIMEOUT/);
+  const timeout = card.threeNetDetails.value[0].points.at(-1);
+  assert.equal(timeout.pingColor, 'var(--accent-red)');
+  assert.match(timeout.lossTooltip, /100%/);
 });

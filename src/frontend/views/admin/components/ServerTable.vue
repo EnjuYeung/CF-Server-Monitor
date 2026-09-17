@@ -35,7 +35,7 @@
     </div>
 
     <div class="table-wrapper">
-      <table class="terminal-table">
+      <table class="terminal-table admin-server-table">
         <thead>
           <tr>
             <th class="table-center-cell col-width-35">

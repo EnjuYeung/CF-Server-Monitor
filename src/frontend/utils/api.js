@@ -24,6 +24,7 @@ export const createLiveSocket = (subscribe, handlers = {}, apiIndex = 0, serverI
   const timeoutMinutes = normalizeLiveSocketTimeoutMinutes(handlers.timeoutMinutes)
   const maxConnectionDurationMs = timeoutMinutes * 60 * 1000
   const shouldReplay = handlers.replay !== false
+  const maxReconnectAttempts = handlers.reconnectForever ? Infinity : TIME.MAX_RECONNECT_ATTEMPTS
   const scope = (subscribe || 'all').toLowerCase()
   let ws = null
   let manualClose = false
@@ -223,7 +224,7 @@ export const createLiveSocket = (subscribe, handlers = {}, apiIndex = 0, serverI
   const scheduleReconnect = () => {
     if (manualClose) return
     if (reconnectTimer) return
-    if (reconnectAttempts >= TIME.MAX_RECONNECT_ATTEMPTS) {
+    if (reconnectAttempts >= maxReconnectAttempts) {
       setStatus(false, 'max reconnect attempts reached')
       return
     }
@@ -260,6 +261,9 @@ export const createLiveSocket = (subscribe, handlers = {}, apiIndex = 0, serverI
     },
     get isConnected() {
       return isConnected
+    },
+    get isConnecting() {
+      return ws?.readyState === 0
     }
   }
 }
@@ -293,6 +297,7 @@ export const fetchServers = async () => {
 
 export const fetchServersAll = async () => {
   const results = await http.getAll('/api/servers')
+  if (!results.some(result => !result.error && result.data)) return null
   const multiSite = hasMultipleApiBases()
   const localTitle = getTitle() || DEFAULT_SITE_TITLE
 

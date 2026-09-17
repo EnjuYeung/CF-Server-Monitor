@@ -29,36 +29,6 @@
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group flex-1">
-          <label class="form-label">
-            {{ trans.agentDownloadSource }}
-            <HelpTooltip :text="trans.agentDownloadTip" />
-          </label>
-          <input
-            type="text"
-            :value="installDownloadUrl"
-            class="form-input mt-2"
-            :placeholder="trans.agentDownloadPlaceholder"
-            @input="$emit('update:install-download-url', $event.target.value)"
-          >
-        </div>
-
-        <div class="form-group flex-1">
-          <label class="form-label">
-            Agent {{ trans.version }}
-            <HelpTooltip :text="trans.installVersionTip" />
-          </label>
-          <input
-            type="text"
-            :value="installVersion"
-            class="form-input"
-            :placeholder="trans.installVersionPlaceholder"
-            @input="$emit('update:install-version', $event.target.value)"
-          >
-        </div>
-      </div>
-
       <div class="config-list">
         <div class="config-row">
           <span class="config-label">{{ trans.collectInterval }}</span>
@@ -154,8 +124,6 @@ const props = defineProps({
   currentServerName: { type: String, default: '' },
   targetOs: { type: String, default: 'linux' },
   installMode: { type: String, default: 'current-user' },
-  installDownloadUrl: { type: String, default: '' },
-  installVersion: { type: String, default: '' },
   collectInterval: { type: [Number, String], default: 0 },
   reportInterval: { type: [Number, String], default: 60 },
   wssReportInterval: { type: [Number, String], default: 2 },
@@ -180,9 +148,7 @@ const emit = defineEmits([
   'copy-cmd',
   'open-edit-from-copy',
   'update:target-os',
-  'update:install-mode',
-  'update:install-download-url',
-  'update:install-version'
+  'update:install-mode'
 ])
 
 const effectivePingMode = computed(() => (

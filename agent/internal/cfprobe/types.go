@@ -3,8 +3,9 @@ package cfprobe
 import "time"
 
 const (
-	serviceNameDefault          = "cf-probe"
-	legacyAgentVersion          = "1.1.0"
+	serviceNameDefault          = "jan-probe"
+	legacyServiceName           = "cf-probe"
+	legacyAgentVersion          = "1.2.0"
 	maxTrafficCorrectionGB      = 1000000
 	autoUpdateDelay             = 60 * time.Second
 	configSchemaVersion         = "7"

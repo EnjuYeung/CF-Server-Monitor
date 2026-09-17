@@ -12,10 +12,12 @@
 | 2FA 绑定、动态码与恢复码 | src/services/twoFactor.js、src/handlers/twoFactor.js | TwoFactorPanel.vue、AdminLogin.vue；test/admin-security.test.js S02–S06 |
 | 服务器增删改、排序、导入导出 | src/handlers/admin.js | src/utils/serverBilling.js、cache.js；A03、A03b、A13 |
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
+| 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js | test/dashboard-snapshot.test.js、frontend-live-socket.test.js；BR01–BR05 |
+| 后台服务器列表对齐、一键安装命令 | src/frontend/views/admin/components/ServerTable.vue、CopyCommandModal.vue、admin/index.vue | src/frontend/styles/main.css；BA01–BA02；安装/更新/卸载 ND01–ND05 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、单选分组与地区交集；src/frontend/styles/main.css；G01–G08 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue、SettingsPanel.vue；test/frontend-i18n.test.js、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | src/utils/historyFields.js、metrics.js；A07、A14 |
-| 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
+| 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期通知 | src/services/notification.js | src/services/outbox.js、scheduler.js；A09、A10 |
@@ -27,6 +29,7 @@
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |
+| Agent 每日更新与 jan-probe 服务迁移 | agent/internal/cfprobe/update.go、service_migration.go、install.go、platform_unix.go | 本地 AUTO_UPDATE 开关、24 小时调度、新旧服务互斥与配置保留；update_schedule_test.go、service_migration_test.go、test/agent-deployment.js |
 | Agent 多平台构建 | agent/tools/build/main.go、scripts/agent.js | Linux/FreeBSD 各 amd64/arm64 共 4 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |
 | 构建 | scripts/build.js、vite.config.js | npm run build、Dockerfile、.github/workflows/test.yml |
 

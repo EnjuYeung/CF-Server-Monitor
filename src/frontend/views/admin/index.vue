@@ -241,8 +241,6 @@
         :current-server-name="currentServerName"
         :target-os="targetOs"
         :install-mode="installMode"
-        :install-download-url="installDownloadUrl"
-        :install-version="installVersion"
         :collect-interval="collectInterval"
         :report-interval="reportInterval"
         :wss-report-interval="wssReportInterval"
@@ -267,8 +265,6 @@
         @copy-cmd="copyCustomCmd"
         @update:target-os="targetOs = $event"
         @update:install-mode="installMode = $event"
-        @update:install-download-url="installDownloadUrl = $event"
-        @update:install-version="installVersion = $event"
         @open-edit-from-copy="openEditModalFromCopy"
       />
 
@@ -841,8 +837,6 @@ const copyServerId = ref('')
 const currentServerName = ref('')
 const targetOs = ref('linux')
 const installMode = ref('current-user')
-const installDownloadUrl = ref('')
-const installVersion = ref('')
 const collectInterval = ref(0)
 const reportInterval = ref(60)
 const wssReportInterval = ref(2)
@@ -1400,8 +1394,6 @@ const copyCmd = (serverId) => {
   currentServerName.value = server?.name || ''
   targetOs.value = 'linux'
   installMode.value = 'current-user'
-  installDownloadUrl.value = ''
-  installVersion.value = ''
   collectInterval.value = server?.collect_interval ?? 0
   reportInterval.value = server?.report_interval || 60
   wssReportInterval.value = server?.wss_report_interval || 2
@@ -1502,8 +1494,7 @@ const buildInstallAsCfsmCommand = (command, runStep) => {
 
 const getCustomInstallCommand = () => {
   const HOST = selectedApiBase.value
-  const downloadBase = installDownloadUrl.value.trim() || `${HOST}/agent`
-  const version = installVersion.value.trim()
+  const downloadBase = `${HOST}/agent`
   const isDedicatedUserInstall = targetOs.value === 'linux' && installMode.value === 'cfsm-user'
   const params = [
     'install',
@@ -1518,7 +1509,6 @@ const getCustomInstallCommand = () => {
     `-reset_day=${resetDay.value ?? 1}`,
     `-auto_update=${autoUpdate.value ? 1 : 0}`
   ]
-  if (version) params.push(`--install-version=${version}`)
   const nodes = [
     ['ct', 'custom_ct', customCt.value], ['cu', 'custom_cu', customCu.value],
     ['cm', 'custom_cm', customCm.value], ['bd', 'custom_bd', customBd.value],
