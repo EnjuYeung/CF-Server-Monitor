@@ -1,5 +1,31 @@
 # 最近一次测试报告
 
+## 审查修复正式部署（2026-09-19）
+
+已于 **2026-09-19 17:13:56（Asia/Shanghai）** 将修复提交 `cc0b315` 部署到 `https://jm.zedy.cc`。容器 healthy、RestartCount=0；15 台节点均恢复上报，公网 HTTPS/WSS、月流量字段和桌面/手机页面实测通过。切换前的 47,922 条历史、全部节点与设置、30 个 Agent 归档文件完整保留。已按用户要求提交 Git，未创建 PR；下方“未部署生产”的内容为本次发布前的历史验证记录。
+
+### 发布验收
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| RD01 | 暂存并检查改动，提交修复，重新构建候选镜像并运行全套验收 | 提交、镜像、已测源码一致，无密钥或测试产物入库 | `cc0b315`；Node 99/99、Agent 配置和 Go vet/test、主控 19/19、原生 6/6、Docker 6/6；`source-integrity.json` 核对 105 个源码/清单及 312 个构建文件 | 通过 |
+| RD02 | 备份生产环境文件、Compose、在线一致性 SQLite、GeoIP 和 Agent 归档，保留旧镜像 | 数据与配置可恢复，旧镜像可回滚 | `prepare-deploy.log`、`deployment.json`：备份 SQLite integrity=ok，目录 0700、环境文件 0600；切换前再次在线备份 | 通过 |
+| RD03 | 将生产数据副本挂载到断网候选容器启动 | 新 schema 可创建，节点/设置不变，静态资源及原生归档匹配 | `candidate-smoke.json`：network=none、15 节点、server_presence 创建成功、8 个 JS/CSS 与浏览器已测构建一致；旧脚本 8 个 URL 均 404，原生安装器可用 | 通过 |
+| RD04 | 用原 Compose 项目替换 monitor 服务 | 新容器健康，原环境、端口和数据挂载保持 | `compose-up.log`、`deployment.json`：容器 `0f35b22760bc` healthy，原配置逐项相同；200 ms 健康采样 33 次，失败 5 次，首末失败间隔 0.81 秒 | 通过 |
+| RD05 | 等待 Agent 重连，再逐行对比节点/设置、历史和归档哈希 | 原数据完整保留，真实上报写入新增 presence 并继续增加历史 | `reconnection.json`、`persistence-final.json`：15/15 presence，15 节点及 3 条设置相同，47,922 条旧历史全部保留，核验时历史增至 47,991；30 个归档哈希相同，SQLite integrity=ok | 通过 |
+| RD06 | 从回环和公网读取页面/资源/下载目录；Chromium 查看桌面、手机并滚动到最后节点 | HTTPS/WSS 可用，所有节点显示，旧入口下线，新版本及历史 Agent 目录正常 | `production-smoke.json`：两入口 8 个 JS/CSS 哈希匹配；15 张卡片，WSS hello/subscribed 和 50 批更新，46 个新样本含月流量；手机无横向溢出、末尾卡片渲染、后台登录页正常，pageerror/requestfailed=[] | 通过 |
+| RD07 | 关闭测试浏览器后继续检查回环/公网健康及近期上报 | 健康检查持续成功，全部 Agent 继续上报，无新增运行错误 | `steady-state.json`：30 秒、7 轮共 14 次 HTTP 200；每轮 15 台近期上报；无新增 HTTP/WS 错误日志 | 通过 |
+
+运行镜像 `server-monitor:local`，候选保留标签 `server-monitor:review-fixes-20260919`，ID `sha256:3b29b116f2833db264da25e10d638f73cfbc01fc05d55e40d7d87e33e8a9a629`。沿用 `/opt/1panel/apps/jan_monitor/.env`、`127.0.0.1:26129` 和原数据卷。回滚镜像为 `server-monitor:rollback-review-fixes-20260919t090906z`；备份目录 `/opt/1panel/apps/jan_monitor/backups/review-fixes-20260919T090906Z/`，最终切换前快照为其中的 `monitor-pre-switch.sqlite`。
+
+本轮证据目录为 `output/test-results/review-fixes-deploy-20260919/`（Git 忽略）。提交前暂存区检查补清理了两个新文件中的 5 处行尾空格，因此重新构建并对最终提交重跑全部回归和 Docker 验收；未改变业务逻辑。镜像锁文件仅有 npm prune 去除的 4 个 peer 元数据标记与本地不同，依赖版本和完整性信息一致，且与原生产镜像锁文件一致。浏览器沿用上一轮已测前端，核对全部构建文件哈希后再在生产实测。
+
+首轮 presence 检查在重启后过早执行，仅 5/15 节点已重新上报；没有修改 Agent 或生产配置，等待正常重连/上报周期后为 15/15，并完整重跑持久化核验。手机末尾卡片使用既有 `content-visibility: auto` 延迟绘制，初次脚本在滚动后立即读取文字过早；增加等待实际渲染的断言后通过，未修改页面样式或降低断言。原失败日志分别保留为 `presence-first-check.log`、`mobile-first-check.log`。
+
+测试浏览器运行期间，主控出现若干 `[http] Premature close` 日志；公网请求断言及浏览器 pageerror/requestfailed 检查均通过。关闭浏览器后的 30 秒复查无新增 HTTP/WS 错误，不将整段发布日志描述为完全无警告。
+
+公网验证未登录生产后台、修改账号/2FA、添加或删除节点；这些写操作已在隔离环境验收。本次只更新主控，未向 VPS 执行 Agent 安装/升级/卸载；原生版本仍为 v1.2.0，历史版本保留。测试容器和浏览器已关闭，桌面及手机首屏/底部截图已查看。探针失败跨度不是精确停机时长，短时验证不代表长期稳定性保证。
+
 ## 审查问题修复、去重与职责拆分（2026-09-19，未部署生产）
 
 已修复下方审查记录中的 F01–F09，并完成 S01–S03 对应的无效代码清理、重复实现合并和职责拆分。最终版本 Node 回归 99/99、Agent 配置与 Go vet/test、主控验收 19/19、原生 Agent 验收 6/6、Docker 部署验收 6/6 全部通过；Chromium 实际等待一分钟验证首页刷新，并验证详情月流量及密码修改后重新登录。50 Agent / 10 看板连接持续 60 秒负载复验通过。旧审查中的失败记录保留为修复前证据，不代表当前状态。
