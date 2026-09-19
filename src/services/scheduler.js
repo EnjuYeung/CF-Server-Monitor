@@ -1,4 +1,7 @@
-import { checkOfflineNodes, checkResourceAlerts, checkTrafficReports, checkExpiringServers } from './notification.js';
+import { checkOfflineNodes } from './notifications/offline.js';
+import { checkResourceAlerts } from './notifications/resource.js';
+import { checkTrafficReports } from './notifications/traffic.js';
+import { checkExpiringServers } from './notifications/expiry.js';
 import { drainNotifications } from './outbox.js';
 import { cleanupHistory } from '../database/schema.js';
 
@@ -14,7 +17,7 @@ export function startScheduler(env) {
   };
   const tick = () => {
     const now = Date.now();
-    run('offline', () => checkOfflineNodes(env.DB));
+    run('offline', () => checkOfflineNodes(env));
     run('resource', () => checkResourceAlerts(env));
     run('traffic', () => checkTrafficReports(env.DB, { scheduled: true, now }));
     run('expiry', () => checkExpiringServers(env.DB, { scheduled: true, now }));

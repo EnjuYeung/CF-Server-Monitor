@@ -29,16 +29,9 @@
           </select>
         </div>
 
-        <div class="form-group flex-1 mb-3">
-          <label class="form-label">{{ trans.agentVersionSelect }}</label>
-          <select :value="deleteVersion" class="form-select" @change="$emit('update:delete-version', $event.target.value)">
-            <option value="go">{{ trans.agentVersionGo }}</option>
-            <option value="shell">{{ trans.agentVersionShell }}</option>
-          </select>
-        </div>
       </div>
 
-      <div v-if="deleteTargetOs === 'linux' && deleteVersion === 'go'" class="form-row">
+      <div v-if="deleteTargetOs === 'linux'" class="form-row">
         <div class="form-group flex-1 mb-3">
           <label class="form-label">
             {{ trans.uninstallMode }}
@@ -54,7 +47,7 @@
       <div class="cmd-input-wrapper mb-3" :class="{ copied: uninstallCopied }">
         <span class="cmd-prompt">$</span>
         <textarea
-          v-if="deleteTargetOs === 'linux' && deleteVersion === 'go' && deleteInstallMode === 'cfsm-user'"
+          v-if="deleteTargetOs === 'linux' && deleteInstallMode === 'cfsm-user'"
           readonly
           :value="uninstallCommand"
           class="cmd-input flex-1"
@@ -79,7 +72,6 @@ const props = defineProps({
   deleteServerId: { type: [String, Number], default: '' },
   currentServerName: { type: String, default: '' },
   deleteTargetOs: { type: String, default: 'linux' },
-  deleteVersion: { type: String, default: 'go' },
   deleteInstallMode: { type: String, default: 'current-user' },
   uninstallCommand: { type: String, default: '' },
   uninstallCopied: { type: Boolean, default: false }
@@ -90,7 +82,6 @@ const emit = defineEmits([
   'confirm-delete',
   'copy-uninstall',
   'update:delete-target-os',
-  'update:delete-version',
   'update:delete-install-mode'
 ])
 

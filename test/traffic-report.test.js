@@ -1,15 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  buildTrafficReportContent,
-  buildTrafficReportPayloads,
-  calculateTrafficDelta,
-  getDueTrafficReportTypes,
-  getTrafficPeriodKeys,
-  normalizeTrafficSnapshots,
-  updateTrafficSnapshots
-} from '../src/services/notification.js';
+import { buildTrafficReportContent, buildTrafficReportPayloads, calculateTrafficDelta, getDueTrafficReportTypes, getTrafficPeriodKeys, normalizeTrafficSnapshots, updateTrafficSnapshots } from '../src/services/notifications/traffic.js';
 
 const timezone = 'Asia/Shanghai';
 const server = { id: 'server-1', name: 'Tokyo' };

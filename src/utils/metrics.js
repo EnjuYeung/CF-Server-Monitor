@@ -1,3 +1,5 @@
+import { isDisabledProbeMetric } from '../shared/metrics.js';
+export { isDisabledProbeMetric } from '../shared/metrics.js';
 import {
   NUMERIC_METRIC_FIELDS,
   PROBE_METRIC_FIELDS
@@ -105,10 +107,6 @@ export function attachDiskMetricsObject(metrics) {
   };
 }
 
-export function isDisabledProbeMetric(value) {
-  return value === false || value === 'false';
-}
-
 // 将探针上报的指标字段统一转换为数字类型，与 /api/servers 的 servers[] 字段类型保持一致。
 // SQLite 对 REAL/INTEGER 列返回 JS number，而探针 POST 的原始字段可能是字符串，
 // latestReportUpdates 和 WebSocket 推送直接透传探针数据，需要在此统一类型。
@@ -164,7 +162,7 @@ export function normalizeProbeMetricRow(metrics) {
   return normalized;
 }
 
-export function mergeMetricsIntoServer(server, metrics) {
+export function mergeMetricsIntoServer(server, metrics, lastSeen = metrics?.timestamp) {
   if (!metrics) return;
 
   server.cpu = metrics.cpu || 0;
@@ -216,5 +214,6 @@ export function mergeMetricsIntoServer(server, metrics) {
   server.ip_v4 = metrics.ip_v4 || '0';
   server.ip_v6 = metrics.ip_v6 || '0';
   server.boot_time = metrics.boot_time || '';
-  server.last_updated = metrics.timestamp || 0;
+  server.sample_timestamp = metrics.timestamp || 0;
+  server.last_updated = lastSeen || 0;
 }

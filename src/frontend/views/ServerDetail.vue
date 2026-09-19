@@ -347,6 +347,7 @@
 </template>
 
 <script setup>
+import { SERVER_METADATA_FIELDS } from '../../shared/metrics.js'
 import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TerminalHeader from '../components/TerminalHeader.vue'
@@ -1416,7 +1417,7 @@ const appendDataToChart = (chart, datasetIndex, timestamp, value, isPing = false
   chart.update('none')
 }
 
-const STATIC_FIELDS = ['id', 'name', 'region', 'arch', 'os', 'kernel_version', 'cpu_info', 'cpu_cores', 'gpu_info', 'expire_date', 'server_group', 'traffic_limit', 'net_rx_monthly', 'net_tx_monthly', 'boot_time', 'timestamp', 'ip_v4', 'ip_v6']
+const STATIC_FIELDS = [...SERVER_METADATA_FIELDS, 'gpu_info']
 const REALTIME_SAMPLE_FIELDS = new Set([
   'cpu', 'ram_total', 'ram_used', 'swap_total', 'swap_used',
   'net_in_speed', 'net_out_speed', 'disk'

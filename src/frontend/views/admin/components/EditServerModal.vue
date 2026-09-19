@@ -264,7 +264,7 @@
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
-import { PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
+import { PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
 import { currentLang } from '../../../utils/i18n.js'
 import { BILLING_CYCLES, CURRENCY_OPTIONS, normalizePrice, renewExpireDateIfNeeded } from '../../../utils/server.js'
 

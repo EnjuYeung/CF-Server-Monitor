@@ -721,7 +721,8 @@ export async function loadSettings(db) {
   return { ...defaults, ...siteSettings, ...appearanceOptions };
 }
 
-export async function saveSiteOptions(db, updates) {
+// SQLite writes are synchronous so callers can include settings in a transaction.
+export function saveSiteOptions(db, updates) {
   const siteRow = db.prepare(
     "SELECT value FROM settings WHERE key = 'site_options'"
   ).first();
@@ -750,7 +751,7 @@ export async function saveSiteOptions(db, updates) {
   siteOptions.expire_notification_time = normalizeExpireNotificationTime(siteOptions.expire_notification_time);
   siteOptions.traffic_report_enabled = normalizeBooleanSetting(siteOptions.traffic_report_enabled);
   
-  await db.prepare(
+  db.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).bind('site_options', JSON.stringify(siteOptions)).run();
   

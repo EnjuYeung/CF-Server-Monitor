@@ -1,5 +1,6 @@
+import { SERVER_METADATA_FIELDS } from '../shared/metrics.js';
 import { DISK_IO_FIELD_TO_COLUMN, DISK_IO_METRIC_FIELDS, mergeMetricsIntoServer, coerceNumericMetricFields } from '../utils/metrics.js';
-import { BROADCAST_DELETE_FIELDS, HISTORY_METRIC_AGGREGATION_POLICY } from '../utils/historyFields.js';
+import { HISTORY_METRIC_AGGREGATION_POLICY } from '../utils/historyFields.js';
 import { UPDATE_MAX_BATCH_SAMPLES } from '../utils/config.js';
 import { isValidTrafficCorrection } from '../utils/agentConfig.js';
 // 将最新一次上报打包成前端可直接消费的 "当前状态" 对象
@@ -211,7 +212,7 @@ export function getHistoryMetrics(data, samples, latestSample) {
 
 function buildSamplePayloadForBroadcast(metrics = {}, timestamp = Date.now()) {
   const payload = metrics && typeof metrics === 'object' ? { ...metrics } : {};
-  BROADCAST_DELETE_FIELDS.forEach(field => delete payload[field]);
+  SERVER_METADATA_FIELDS.forEach(field => delete payload[field]);
   payload.last_updated = timestamp;
   payload.sample_timestamp = timestamp;
   return coerceNumericMetricFields(payload);
@@ -233,7 +234,7 @@ export function toBroadcastSamples(id, samples, regionCode, agentVersion = '', r
       timestamp: sample.ts
     });
     const filtered = Object.assign({}, payload);
-    BROADCAST_DELETE_FIELDS.forEach(field => delete filtered[field]);
+    SERVER_METADATA_FIELDS.forEach(field => delete filtered[field]);
     filtered.sample_timestamp = sample.ts;
     return { ts: sample.ts, payload: filtered };
   });

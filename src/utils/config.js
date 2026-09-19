@@ -11,10 +11,8 @@ export const DASHBOARD_LATENCY_WINDOW_POINTS = 20;
 export const DASHBOARD_LATENCY_WINDOW_HOURS = 2;
 export const DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS = 5 * 60 * 1000;
 
-// 首页从 实时中心 批量读取最新上报回放时，每次请求携带的服务器 ID 数量。
-export const DASHBOARD_LATEST_REPORT_ID_CHUNK_SIZE = 500;
 
-// 最新上报回放缓存：请求缓存与实时中心 使用同一组保留时长/容量。
+// 单主控最新上报回放缓存的保留时长和容量。
 export const LATEST_REPORT_CACHE_TTL_MS = 5 * 60 * 1000;
 export const LATEST_REPORT_CACHE_MAX_SERVERS = 1000;
 

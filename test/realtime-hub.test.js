@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RealtimeHub } from '../src/realtime/RealtimeHub.js';
 import { getHistoryMetrics } from '../src/services/ingestion.js';
-import { buildResourceAlertNotificationPayloads } from '../src/services/notification.js';
+import { buildResourceAlertNotificationPayloads } from '../src/services/notifications/resource.js';
 import { clearSiteSettingsCache, DEFAULT_NOTIFICATION_TEMPLATE, normalizeNotificationTemplate, normalizeResourceAlertRules } from '../src/utils/settings.js';
 import { SQLiteDatabase } from '../src/database/sqlite.js';
 function makeBroadcaster(webSockets = [], env = {}) {
   const db = new SQLiteDatabase();
-  db.exec('CREATE TABLE runtime_state(key TEXT PRIMARY KEY, value TEXT); CREATE TABLE servers(id TEXT PRIMARY KEY, is_hidden TEXT)');
+  db.exec('CREATE TABLE server_presence(server_id TEXT PRIMARY KEY, last_seen INTEGER); CREATE TABLE runtime_state(key TEXT PRIMARY KEY, value TEXT); CREATE TABLE servers(id TEXT PRIMARY KEY, is_hidden TEXT)');
   const hub = new RealtimeHub({ DB: db, GEOLOCATION: {lookup:()=>''}, ...env });
   for (const ws of webSockets) {
     if(ws.getContext()?.kind === 'agent-report') hub.standardAgentWebSockets.add(ws);
@@ -373,11 +373,7 @@ test('agent report mode change closes existing Agent WSS when disabled', async (
     DB: makeSettingsDb({ wss_report_enabled: 'false' })
   });
 
-  const response = await broadcaster._handleAgentConfigChanged(new Request('http://internal/agent-config-changed', {
-    method: 'POST',
-    body: JSON.stringify({ agentReportModeChanged: true })
-  }));
-  const body = await response.json();
+  const body = await broadcaster.agentReportModeChanged();
 
   assert.deepEqual(body, {
     ok: true,
@@ -438,41 +434,14 @@ test('Agent WSS closes on the first report after entering a disabled UTC hour', 
   }]);
 });
 
-test('batch push latestReportOnly keeps latest report updates without subscribers', async () => {
+test('ingestion retains complete replay packets without subscribers', async () => {
   const broadcaster = makeBroadcaster([]);
-  const response = await broadcaster.fetch(new Request('http://internal/batch-push', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      latestReportOnly: true,
-      updates: [{
-        serverId: 'server-1',
-        samples: [
-          { ts: 1_000, payload: { cpu: 10, net_in_speed: 100 } },
-          { ts: 2_000, payload: { cpu: 20, net_in_speed: 200 } }
-        ]
-      }]
-    })
-  }));
-  const body = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(body.latestReportOnly, true);
-  assert.equal(body.subscribers, 0);
-
-  const latestResponse = await broadcaster.fetch(new Request('http://internal/latest-report-updates', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serverIds: ['server-1'] })
-  }));
-  const latest = await latestResponse.json();
-
-  assert.equal(latestResponse.status, 200);
-  assert.equal(latest.updates.length, 1);
-  assert.equal(latest.updates[0].serverId, 'server-1');
-  assert.equal(latest.updates[0].samples.length, 2);
-  assert.deepEqual(latest.updates[0].samples.map(sample => sample.data.cpu), [10, 20]);
-  assert.equal(Number.isFinite(latest.updates[0].reportAgeMs), true);
+  await broadcaster.ingest('server-1', [{ ts: 1000, data: { cpu: 10 } }, { ts: 2000, data: { cpu: 20 } }]);
+  const updates = broadcaster.latestReports.getMany(['server-1']);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].serverId, 'server-1');
+  assert.deepEqual(updates[0].samples.map(sample => sample.data.cpu), [10, 20]);
+  assert.equal(Number.isFinite(updates[0].reportAgeMs), true);
 });
 
 test('resource alert rule batches are capped at 20 rules', () => {
@@ -486,11 +455,11 @@ test('resource alert rule batches are capped at 20 rules', () => {
   });
 
   assert.equal(
-    broadcaster._normalizeResourceAlertEvaluationRules(Array.from({ length: 20 }, (_, index) => makeRule(index))).ok,
+    broadcaster.resourceAlerts.normalizeRules(Array.from({ length: 20 }, (_, index) => makeRule(index))).ok,
     true
   );
   assert.equal(
-    broadcaster._normalizeResourceAlertEvaluationRules(Array.from({ length: 21 }, (_, index) => makeRule(index))).ok,
+    broadcaster.resourceAlerts.normalizeRules(Array.from({ length: 21 }, (_, index) => makeRule(index))).ok,
     false
   );
 });
@@ -513,9 +482,9 @@ test('resource alert batch evaluation returns results per rule', async () => {
       netTotal: 0
     });
   }
-  broadcaster.resourceAlertWindows.set('server-1', { samples });
+  broadcaster.resourceAlerts.windows.set('server-1', { samples });
 
-  const result = await broadcaster._evaluateResourceAlertRules([
+  const result = await broadcaster.resourceAlerts.evaluateRules([
     {
       ruleId: 'cpu-rule',
       serverIds: ['server-1'],
@@ -611,7 +580,7 @@ test('resource alert cache accepts payload samples from WSS broadcasts', async (
   const now = Date.now();
   const currentMinute = Math.floor(now / 60_000) * 60_000;
 
-  await broadcaster._cacheResourceAlertSamples([{
+  await broadcaster.resourceAlerts.ingest([{
     serverId: 'server-1',
     samples: [
       {
@@ -641,7 +610,7 @@ test('resource alert cache accepts payload samples from WSS broadcasts', async (
     ]
   }], now);
 
-  const result = broadcaster._evaluateResourceAlertRule({
+  const result = broadcaster.resourceAlerts.evaluateRule({
     ruleId: 'cpu-ram-rule',
     serverIds: ['server-1'],
     mode: 'average',

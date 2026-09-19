@@ -1,18 +1,14 @@
+import { maskPublicIpFields, toPublicIpReachability } from '../utils/publicMetrics.js';
 import { checkAuth, simpleAuthResponse } from '../middleware/auth.js';
+import { getServerLastSeen, isServerOffline } from '../services/serverPresence.js';
 import { getDashboardLatencyHistory, getLatestMetrics, getLatestMetricsForAllServers } from '../database/schema.js';
 import { getAllServers, getServerDetail } from '../utils/cache.js';
 import { mergeMetricsIntoServer, coerceNumericMetricFields } from '../utils/metrics.js';
 import { normalizeLongHistoryPoints } from '../utils/settings.js';
 import { createSuccessResponse, createBadRequestResponse, createNotFoundResponse } from '../utils/errors.js';
 import {
-  cacheLatestReportUpdate,
-  getLatestReportSampleTimestamp,
-  getCachedLatestReportUpdates
-} from '../utils/latestReportCache.js';
-import {
   DASHBOARD_LATENCY_WINDOW_HOURS,
   DASHBOARD_LATENCY_WINDOW_POINTS,
-  DASHBOARD_LATEST_REPORT_ID_CHUNK_SIZE
 } from '../utils/config.js';
 
 const PROBE_FIELDS = ['ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4'];
@@ -34,22 +30,11 @@ function createEmptyLatencyWindow() {
   return { ping: [], loss: [] };
 }
 
-function toPublicIpReachability(value) {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized && normalized !== '0' && normalized !== 'false' ? '1' : '0';
-}
-
 function normalizePublicIpFields(item, ensureFields = true) {
-  if (ensureFields || Object.prototype.hasOwnProperty.call(item, 'ip_v4')) {
+  Object.assign(item, maskPublicIpFields(item));
+  if (ensureFields) {
     item.ip_v4 = toPublicIpReachability(item.ip_v4);
-  }
-  if (ensureFields || Object.prototype.hasOwnProperty.call(item, 'ip_v6')) {
     item.ip_v6 = toPublicIpReachability(item.ip_v6);
-  }
-  for (const field of ['data', 'payload', 'metrics']) {
-    if (item[field] && typeof item[field] === 'object' && !Array.isArray(item[field])) {
-      item[field] = normalizePublicIpFields({ ...item[field] }, false);
-    }
   }
   return item;
 }
@@ -95,86 +80,8 @@ function attachLatencyHistoryToServers(servers, latencyHistory) {
   }
 }
 
-async function getHubRealtimeState(env, serverIds) {
-  const empty = { latestReportUpdates: [] };
-  if (!env.REALTIME_HUB || !Array.isArray(serverIds) || serverIds.length === 0) return empty;
-
-  try {
-    const stub = env.REALTIME_HUB;
-    const updates = [];
-
-    for (let offset = 0; offset < serverIds.length; offset += DASHBOARD_LATEST_REPORT_ID_CHUNK_SIZE) {
-      const chunk = serverIds.slice(offset, offset + DASHBOARD_LATEST_REPORT_ID_CHUNK_SIZE);
-      const response = await stub.fetch('http://internal/latest-report-updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverIds: chunk })
-      });
-      if (!response.ok) continue;
-      const data = await response.json();
-      if (Array.isArray(data?.updates)) updates.push(...data.updates);
-    }
-
-    return { latestReportUpdates: updates };
-  } catch (e) {
-    console.warn('[Dashboard] Failed to read realtime state:', e?.message || e);
-    return empty;
-  }
-}
-
-function mergeLatestReportUpdates(serverIds, hubUpdates, cachedUpdates) {
-  const merged = new Map();
-
-  for (const update of hubUpdates) {
-    if (!update?.serverId || !Array.isArray(update.samples)) continue;
-    merged.set(String(update.serverId), update);
-  }
-
-  // 合并上报缓存：优先最新样本，同一包使用请求接收时间。
-  for (const update of cachedUpdates) {
-    if (!update?.serverId || !Array.isArray(update.samples)) continue;
-    const serverId = String(update.serverId);
-    const existing = merged.get(serverId);
-    if (!existing || getLatestReportSampleTimestamp(update) >= getLatestReportSampleTimestamp(existing)) {
-      merged.set(serverId, update);
-    }
-  }
-
-  const now = Date.now();
-  return serverIds.map(serverId => merged.get(String(serverId)))
-    .filter(Boolean)
-    .map(update => normalizeLatestReportUpdate({
-      ...update,
-      reportAgeMs: Math.max(0, now - Number(update.reportTs || now))
-    }))
-    .filter(Boolean);
-}
-
-async function getRealtimeStateForServers(env, serverIds) {
-  const normalizedServerIds = Array.from(new Set(
-    (Array.isArray(serverIds) ? serverIds : [])
-      .map(serverId => String(serverId || '').trim())
-      .filter(Boolean)
-  ));
-  if (normalizedServerIds.length === 0) {
-    return { latestReportUpdates: [] };
-  }
-
-  const hubState = await getHubRealtimeState(env, normalizedServerIds);
-  const hubLatestReportUpdates = hubState.latestReportUpdates;
-
-  // 同步实时中心与请求缓存中的最新样本。
-  for (const update of hubLatestReportUpdates) {
-    cacheLatestReportUpdate(update.serverId, update.samples, update.reportTs);
-  }
-
-  return {
-    latestReportUpdates: mergeLatestReportUpdates(
-      normalizedServerIds,
-      hubLatestReportUpdates,
-      getCachedLatestReportUpdates(normalizedServerIds)
-    )
-  };
+function getRealtimeStateForServers(env, serverIds) {
+  return { latestReportUpdates: (env.REALTIME_HUB?.latestReports.getMany(serverIds) || []).map(normalizeLatestReportUpdate).filter(Boolean) };
 }
 
 export async function handleServerAPI(request, env, sys) {
@@ -196,7 +103,7 @@ export async function handleServerAPI(request, env, sys) {
     getLatestMetrics(env.DB, id, server),
     getRealtimeStateForServers(env, [id])
   ]);
-  mergeMetricsIntoServer(server, latestMetrics);
+  mergeMetricsIntoServer(server, latestMetrics, getServerLastSeen(env, id, latestMetrics));
   server.latestReportUpdates = realtimeState.latestReportUpdates;
   server.sysConfig = {
     long_history_points: Number(normalizeLongHistoryPoints(sys.long_history_points))
@@ -236,8 +143,9 @@ export async function handleServersAPI(request, env, sys) {
     let isOnline = false;
     
     if (latestMetrics) {
-      isOnline = (now - latestMetrics.timestamp) < 300000;
-      mergeMetricsIntoServer(server, latestMetrics);
+      const lastSeen = getServerLastSeen(env, server.id, latestMetrics);
+      isOnline = !isServerOffline(server, lastSeen, 300000, now);
+      mergeMetricsIntoServer(server, latestMetrics, lastSeen);
     }
     normalizePublicIpFields(server);
     

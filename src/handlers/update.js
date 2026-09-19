@@ -2,7 +2,6 @@ import { saveMetricsHistory } from '../database/schema.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
 import { createErrorResponse, createUnauthorizedResponse, createNotFoundResponse, createBadRequestResponse } from '../utils/errors.js';
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
-import { cacheLatestReportUpdate } from '../utils/latestReportCache.js';
 import { AGENT_CONFIG_MD5_HEADER, AGENT_CONFIG_SCHEMA_HEADER, describeAgentConfig, normalizeAgentConfigSchemaVersion, serializeCorrection } from '../utils/agentConfig.js';
 import { scheduleAgentConfigChanged } from '../utils/agentConfigNotify.js';
 import { normalizeAgentVersion, normalizeCorrectionValue, normalizeMetricSamples, getReportMetrics, getHistoryMetrics, toBroadcastSamples } from '../services/ingestion.js';
@@ -89,7 +88,6 @@ export async function handleUpdate(request, env, ctx) {
     );
 
     const broadcastSamples = toBroadcastSamples(id, samples, regionCode, agentVersion, latestMetrics);
-    cacheLatestReportUpdate(id, broadcastSamples, Date.now());
     await env.REALTIME_HUB.ingest(id, broadcastSamples);
 
     const clientConfigSchema = normalizeAgentConfigSchemaVersion(request.headers.get(AGENT_CONFIG_SCHEMA_HEADER));

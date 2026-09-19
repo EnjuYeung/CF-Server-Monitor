@@ -65,26 +65,6 @@ export const HISTORY_METRIC_AGGREGATION_POLICY = Object.freeze({
   ...Object.fromEntries(HISTORY_AGGREGATION_AVG_FIELDS.map(field => [field, 'avg']))
 });
 
-export const BROADCAST_DELETE_FIELDS = Object.freeze([
-  'id',
-  'name',
-  'region',
-  'arch',
-  'os',
-  'kernel_version',
-  'cpu_info',
-  'cpu_cores',
-  'expire_date',
-  'server_group',
-  'traffic_limit',
-  'net_rx_monthly',
-  'net_tx_monthly',
-  'boot_time',
-  'timestamp',
-  'ip_v4',
-  'ip_v6'
-]);
-
 export const HISTORY_TABLE_COLUMNS = Object.freeze([
   ['id', 'INTEGER PRIMARY KEY'],
   ['server_id', 'TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE'],

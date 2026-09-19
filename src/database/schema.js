@@ -1,4 +1,4 @@
-import { clearAllCaches, getMetricsHistoryCache, setMetricsHistoryCache, getCacheDuration, clearLatestMetricsCache } from '../utils/cache.js';
+import { clearAllCaches, getMetricsHistoryCache, setMetricsHistoryCache, getCacheDuration } from '../utils/cache.js';
 import { normalizeLongHistoryPoints, DEFAULT_LONG_HISTORY_POINTS } from '../utils/settings.js';
 import { attachDiskMetricsObject, flattenDiskMetrics, isDisabledProbeMetric, normalizeProbeMetricRow } from '../utils/metrics.js';
 import { createHistoryTableSql, HISTORY_INSERT_COLUMNS, HISTORY_TABLE_COLUMNS } from '../utils/historyFields.js';
@@ -6,7 +6,10 @@ import { DASHBOARD_LATENCY_WINDOW_POINTS, DASHBOARD_LATENCY_WINDOW_HOURS, DASHBO
 const DAY_MS = 86400000;
 const LATENCY_NODE_FIELDS = ['ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4'];
 const dashboardLatencyHistoryCache = new Map();
-export function clearDashboardLatencyHistoryCache() { dashboardLatencyHistoryCache.clear(); }
+export function clearDashboardLatencyHistoryCache(serverId) {
+  if (serverId) dashboardLatencyHistoryCache.delete(String(serverId));
+  else dashboardLatencyHistoryCache.clear();
+}
 
 export async function initDatabase(db) {
   db.transaction(() => {
@@ -57,6 +60,10 @@ export async function initDatabase(db) {
       CREATE TABLE IF NOT EXISTS server_latest (
         server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
         timestamp INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS server_presence (
+        server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+        last_seen INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS runtime_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -278,7 +285,6 @@ export async function saveMetricsHistory(db, serverId, metrics, regionCode = '',
       ON CONFLICT(server_id) DO UPDATE SET timestamp=excluded.timestamp, data=excluded.data
       WHERE excluded.timestamp >= server_latest.timestamp`).bind(serverId, now, JSON.stringify(row))
   ]);
-  clearLatestMetricsCache();
   dashboardLatencyHistoryCache.delete(serverId);
 }
 

@@ -624,7 +624,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
-import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
+import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
 
 const props = defineProps({
   trans: { type: Object, required: true },

@@ -3,7 +3,6 @@
  * 集中管理所有内存缓存，包括：
  * - 服务器列表缓存
  * - 服务器详情（复用服务器列表缓存）
- * - 最新指标缓存
  * - 历史指标缓存
  * - 站点设置缓存
  */
@@ -12,10 +11,6 @@ import { clearAppearanceSettingsCache, clearSiteSettingsCache, debug } from './s
 
 const SERVERS_LIST_TTL = 120 * 1000;
 let serversListCache = null;
-
-const LATEST_ALL_TTL = 30 * 1000;
-let latestAllCache = null;
-let latestAllCacheTime = 0;
 
 const metricsHistoryCache = new Map();
 
@@ -112,29 +107,6 @@ export async function getServerDetail(db, id, includeHidden = false) {
   return { ...server };
 }
 
-export async function checkServerExists(db, id) {
-  const server = await getServerDetail(db, id, true);
-  return !!server;
-}
-
-/**
- * 获取最新指标缓存信息
- * @returns {object} 包含 cache、time、ttl 字段的对象
- */
-export function getLatestMetricsCache() {
-  return { cache: latestAllCache, time: latestAllCacheTime, ttl: LATEST_ALL_TTL };
-}
-
-export function setLatestMetricsCache(data) {
-  latestAllCache = data;
-  latestAllCacheTime = Date.now();
-}
-
-export function clearLatestMetricsCache() {
-  latestAllCache = null;
-  latestAllCacheTime = 0;
-}
-
 function getCacheKey(serverId, hours, columns, samplePoints = null) {
   const sortedColumns = columns.split(',').sort().join(',');
   const sampleSuffix = samplePoints ? `:points=${samplePoints}` : '';
@@ -161,7 +133,6 @@ export function clearMetricsHistoryCache(serverId) {
 
 export function clearAllCaches() {
   clearServersListCache();
-  clearLatestMetricsCache();
   metricsHistoryCache.clear();
   clearSiteSettingsCache();
   clearAppearanceSettingsCache();

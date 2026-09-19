@@ -74,6 +74,7 @@ try{
     await until(async()=> (await request('/healthz')).status===200,'controller startup');
     const login=await admin({action:'login',username:'admin',password:key});assert.equal(login.status,200);token=login.body.token;
     assert.match(login.headers['set-cookie'][0],/Secure/);
+    for (const path of ['/install.sh', '/install-alpine.sh', '/install-openwrt.sh', '/install-synology.sh', '/install-mac.sh', '/cf-server-monitor.ps1', '/uninstall.sh', '/uninstall.ps1']) assert.equal((await request(path)).status,404,path);
     const versions=await request('/agent/releases.json');assert.equal(versions.status,200);
     const expected = ['cf-probe-linux-amd64','cf-probe-linux-arm64','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64'].sort();
     assert.deepEqual(versions.body.find(v=>v.version===version).assets.map(a=>a.name).sort(),expected);

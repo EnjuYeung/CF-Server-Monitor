@@ -162,41 +162,6 @@ export function buildClearAuthCookie(request) {
   return `${AUTH_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 
-export async function validateCredentials(request, env, sys) {
-  try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader) {
-      return { valid: false, needsPasswordUpgrade: false };
-    }
-
-    const parts = authHeader.trim().split(/\s+/);
-    const scheme = parts[0];
-    const encoded = parts[1];
-
-    if (scheme !== 'Basic' || !encoded) {
-      return { valid: false, needsPasswordUpgrade: false };
-    }
-
-    let decoded;
-    try {
-      decoded = atob(encoded);
-    } catch (e) {
-      return { valid: false, needsPasswordUpgrade: false };
-    }
-
-    const idx = decoded.indexOf(':');
-    if (idx === -1) {
-      return { valid: false, needsPasswordUpgrade: false };
-    }
-
-    const username = decoded.slice(0, idx);
-    const password = decoded.slice(idx + 1);
-    return validatePasswordCredentials(username, password, env, sys);
-  } catch (_) {
-    return { valid: false, needsPasswordUpgrade: false };
-  }
-}
-
 export async function validatePasswordCredentials(username, password, env, sys) {
   try {
     if (typeof username !== 'string' || typeof password !== 'string' || !username || !password || username.length > 256 || password.length > 4096) {

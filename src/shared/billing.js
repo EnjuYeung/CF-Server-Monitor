@@ -1,54 +1,54 @@
 const BILLING_CYCLES = Object.freeze([
-  { value: 'month', months: 1, labelZh: '月', labelEn: 'Monthly', shortLabelZh: '月', shortLabelEn: 'M' },
-  { value: 'quarter', months: 3, labelZh: '季', labelEn: 'Quarterly', shortLabelZh: '季', shortLabelEn: 'Q' },
-  { value: 'half_year', months: 6, labelZh: '半年', labelEn: 'Half-yearly', shortLabelZh: '半年', shortLabelEn: 'HY' },
-  { value: 'year', months: 12, labelZh: '年', labelEn: 'Yearly', shortLabelZh: '年', shortLabelEn: 'Y' },
-  { value: 'two_years', months: 24, labelZh: '两年', labelEn: 'Two years', shortLabelZh: '2年', shortLabelEn: '2Y' },
-  { value: 'three_years', months: 36, labelZh: '三年', labelEn: 'Three years', shortLabelZh: '3年', shortLabelEn: '3Y' },
-  { value: 'four_years', months: 48, labelZh: '四年', labelEn: 'Four years', shortLabelZh: '4年', shortLabelEn: '4Y' },
-  { value: 'five_years', months: 60, labelZh: '五年', labelEn: 'Five years', shortLabelZh: '5年', shortLabelEn: '5Y' }
+  { value: 'month', months: 1 },
+  { value: 'quarter', months: 3 },
+  { value: 'half_year', months: 6 },
+  { value: 'year', months: 12 },
+  { value: 'two_years', months: 24 },
+  { value: 'three_years', months: 36 },
+  { value: 'four_years', months: 48 },
+  { value: 'five_years', months: 60 }
 ]);
 
 const CURRENCY_OPTIONS = Object.freeze([
   // 主流货币
-  { symbol: '$', nameZh: '美元', nameEn: 'US Dollar' },
-  { symbol: '¥', nameZh: '人民币', nameEn: 'Chinese Yuan' },
-  { symbol: '€', nameZh: '欧元', nameEn: 'Euro' },
-  { symbol: '£', nameZh: '英镑', nameEn: 'British Pound' },
-  { symbol: '¥JPY', nameZh: '日元', nameEn: 'Japanese Yen' },
-  { symbol: 'HK$', nameZh: '港币', nameEn: 'Hong Kong Dollar' },
-  { symbol: 'A$', nameZh: '澳元', nameEn: 'Australian Dollar' },
-  { symbol: 'C$', nameZh: '加拿大元', nameEn: 'Canadian Dollar' },
-  { symbol: 'S$', nameZh: '新加坡元', nameEn: 'Singapore Dollar' },
-  { symbol: 'NZ$', nameZh: '新西兰元', nameEn: 'New Zealand Dollar' },
-  { symbol: '₣', nameZh: '瑞士法郎', nameEn: 'Swiss Franc' },
-  { symbol: '₩', nameZh: '韩元', nameEn: 'Korean Won' },
-  { symbol: '₹', nameZh: '印度卢比', nameEn: 'Indian Rupee' },
+  { symbol: '$' },
+  { symbol: '¥' },
+  { symbol: '€' },
+  { symbol: '£' },
+  { symbol: '¥JPY' },
+  { symbol: 'HK$' },
+  { symbol: 'A$' },
+  { symbol: 'C$' },
+  { symbol: 'S$' },
+  { symbol: 'NZ$' },
+  { symbol: '₣' },
+  { symbol: '₩' },
+  { symbol: '₹' },
   // 亚太货币
-  { symbol: '฿', nameZh: '泰铢', nameEn: 'Thai Baht' },
-  { symbol: '₫', nameZh: '越南盾', nameEn: 'Vietnamese Dong' },
-  { symbol: '₱', nameZh: '菲律宾比索', nameEn: 'Philippine Peso' },
-  { symbol: 'Rp', nameZh: '印尼盾', nameEn: 'Indonesian Rupiah' },
-  { symbol: 'RM', nameZh: '马来西亚林吉特', nameEn: 'Malaysian Ringgit' },
-  { symbol: '₺', nameZh: '土耳其里拉', nameEn: 'Turkish Lira' },
-  { symbol: '₪', nameZh: '以色列新谢克尔', nameEn: 'Israeli Shekel' },
-  { symbol: '৳', nameZh: '孟加拉塔卡', nameEn: 'Bangladeshi Taka' },
-  { symbol: '₨', nameZh: '巴基斯坦卢比', nameEn: 'Pakistani Rupee' },
-  { symbol: 'LKR', nameZh: '斯里兰卡卢比', nameEn: 'Sri Lankan Rupee' },
-  { symbol: '₮', nameZh: '蒙古图格里克', nameEn: 'Mongolian Tugrik' },
+  { symbol: '฿' },
+  { symbol: '₫' },
+  { symbol: '₱' },
+  { symbol: 'Rp' },
+  { symbol: 'RM' },
+  { symbol: '₺' },
+  { symbol: '₪' },
+  { symbol: '৳' },
+  { symbol: '₨' },
+  { symbol: 'LKR' },
+  { symbol: '₮' },
   // 其他地区
-  { symbol: '₽', nameZh: '卢布', nameEn: 'Russian Ruble' },
-  { symbol: 'R$', nameZh: '巴西雷亚尔', nameEn: 'Brazilian Real' },
-  { symbol: 'kr', nameZh: '克朗', nameEn: 'Krona (SEK/NOK/DKK)' },
-  { symbol: 'zł', nameZh: '波兰兹罗提', nameEn: 'Polish Zloty' },
-  { symbol: '₴', nameZh: '乌克兰格里夫纳', nameEn: 'Ukrainian Hryvnia' },
-  { symbol: '₸', nameZh: '哈萨克坦戈', nameEn: 'Kazakhstani Tenge' },
-  { symbol: 'R', nameZh: '南非兰特', nameEn: 'South African Rand' },
-  { symbol: '₦', nameZh: '尼日利亚奈拉', nameEn: 'Nigerian Naira' },
-  { symbol: 'EGP', nameZh: '埃及镑', nameEn: 'Egyptian Pound' },
-  { symbol: 'د.إ', nameZh: '阿联酋迪拉姆', nameEn: 'UAE Dirham' },
-  { symbol: '﷼', nameZh: '沙特里亚尔', nameEn: 'Saudi Riyal' },
-  { symbol: 'Q', nameZh: '危地马拉格查尔', nameEn: 'Guatemalan Quetzal' }
+  { symbol: '₽' },
+  { symbol: 'R$' },
+  { symbol: 'kr' },
+  { symbol: 'zł' },
+  { symbol: '₴' },
+  { symbol: '₸' },
+  { symbol: 'R' },
+  { symbol: '₦' },
+  { symbol: 'EGP' },
+  { symbol: 'د.إ' },
+  { symbol: '﷼' },
+  { symbol: 'Q' }
 ]);
 
 const CYCLE_ALIASES = new Map([
@@ -170,7 +170,7 @@ function getBillingCycleOption(value) {
   return BILLING_CYCLES.find(item => item.value === normalized) || BILLING_CYCLES[0];
 }
 
-function isEnabledFlag(value) {
+export function isEnabledFlag(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 

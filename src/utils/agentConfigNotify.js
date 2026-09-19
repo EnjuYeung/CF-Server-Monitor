@@ -2,23 +2,13 @@ export async function notifyAgentConfigChanged(env, serverId) {
   const normalizedServerId = String(serverId || '').trim();
   if (!normalizedServerId || !env?.REALTIME_HUB) return null;
 
-  const stub = env.REALTIME_HUB;
-  return stub.fetch('http://internal/agent-config-changed', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serverId: normalizedServerId })
-  });
+  return env.REALTIME_HUB.agentConfigChanged(normalizedServerId);
 }
 
 export async function notifyAgentReportModeChanged(env) {
   if (!env?.REALTIME_HUB) return null;
 
-  const stub = env.REALTIME_HUB;
-  return stub.fetch('http://internal/agent-config-changed', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentReportModeChanged: true })
-  });
+  return env.REALTIME_HUB.agentReportModeChanged();
 }
 
 export function scheduleAgentConfigChanged(env, ctx, serverId) {

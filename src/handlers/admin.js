@@ -1,58 +1,21 @@
+import { handleServerAction, SERVER_ACTIONS } from './servers.js';
+import { PING_NODE_FIELDS, normalizePingNodeFields } from '../services/serverInput.js';
+import { getServerLastSeen, isServerOffline } from '../services/serverPresence.js';
 import { buildAuthCookie, buildClearAuthCookie, checkAuth, simpleAuthResponse, validatePasswordCredentials, generateToken } from '../middleware/auth.js';
 import { consumeFactor, readSecurity } from '../services/twoFactor.js';
+import { commitAdminSettings, upgradePasswordHash } from '../services/adminSettings.js';
 import { handleTwoFactorAction } from './twoFactor.js';
 import { getLatestMetricsForAllServers } from '../database/schema.js';
-import { getAllServers, clearServersListCache } from '../utils/cache.js';
-import { clearAppearanceSettingsCache, isValidThemeOptions, isWssReportConfigured, isWssReportEnabled, normalizeBooleanSetting, normalizeDefaultLanguage, normalizeDisplayMode, normalizeExpireNotificationTime, normalizeExpireReminder, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, normalizeNotificationTemplate, normalizeNotificationTimezone, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod, normalizePreferredTheme, normalizeResourceAlertRules, normalizeTgNotify, normalizeWssReportHours, saveSiteOptions, saveThemeOptions, SITE_FIELDS, APPEARANCE_FIELDS } from '../utils/settings.js';
+import { getAllServers } from '../utils/cache.js';
+import { isValidThemeOptions, isWssReportEnabled, normalizeBooleanSetting, normalizeDefaultLanguage, normalizeDisplayMode, normalizeExpireNotificationTime, normalizeExpireReminder, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, normalizeNotificationTemplate, normalizeNotificationTimezone, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod, normalizePreferredTheme, normalizeResourceAlertRules, normalizeTgNotify, normalizeWssReportHours, saveThemeOptions, SITE_FIELDS, APPEARANCE_FIELDS } from '../utils/settings.js';
 import { mergeMetricsIntoServer } from '../utils/metrics.js';
 import { hashPassword } from '../utils/common.js';
-import { AppError, createSuccessResponse, createBadRequestResponse, createUnauthorizedResponse, createErrorResponse } from '../utils/errors.js';
-import { clearResourceAlertState, sendNotification } from '../services/notification.js';
-import { isValidTrafficCorrection, normalizeConnectionMode, normalizePingMode, normalizeWssReportInterval, validateAgentConfigInput, validatePingNode, validateNetworkInterfaces } from '../utils/agentConfig.js';
-import { scheduleAgentConfigChanged, scheduleAgentReportModeChanged } from '../utils/agentConfigNotify.js';
-import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../utils/serverBilling.js';
+import { createSuccessResponse, createBadRequestResponse, createUnauthorizedResponse, createErrorResponse } from '../utils/errors.js';
+import { sendNotification } from '../services/notifications/delivery.js';
+import { scheduleAgentReportModeChanged } from '../utils/agentConfigNotify.js';
 import { THEME_PREVIEW_AUTH_TTL_SECONDS } from '../utils/config.js';
 
-const PING_NODE_FIELDS = ['custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4'];
 const THEME_PREVIEW_AUTH_COOKIE = 'cfsm_theme_preview_auth';
-function normalizeBooleanFlag(value) {
-  return value === true || value === 1 || value === '1' || value === 'true' ? '1' : '0';
-}
-
-function normalizeServerRegion(value) {
-  return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16);
-}
-
-function normalizeServerBillingData(data = {}) {
-  const billingCycle = normalizeBillingCycle(data.billing_cycle || detectBillingCycle(data.price));
-  const autoRenewal = normalizeBooleanFlag(data.auto_renewal);
-
-  return {
-    price: normalizePrice(data.price),
-    billing_cycle: billingCycle,
-    auto_renewal: autoRenewal,
-    currency: normalizeCurrency(data.currency || detectCurrencySymbol(data.price) || '¥'),
-    expire_date: renewExpireDateIfNeeded(
-      data.expire_date || '',
-      billingCycle,
-      autoRenewal
-    ).expire_date
-  };
-}
-
-function isValidUUID(id) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-}
-
-function isValidName(name) {
-  return name && typeof name === 'string' && name.trim().length > 0 && name.length <= 100;
-}
-
-async function handleServerMutationError(db, error, fallbackMessage) {
-  console.error('[Admin] server mutation failed:', error.message);
-  return createBadRequestResponse(/50 servers/.test(error.message) ? 'Maximum 50 servers supported' : fallbackMessage);
-}
-
 function sanitizeCspDomains(input) {
   if (!input || typeof input !== 'string') return '';
   return input
@@ -76,32 +39,6 @@ function normalizeCspOrigin(value) {
   } catch (_) {
     return '';
   }
-}
-
-function normalizePingNodeFields(source, fields = PING_NODE_FIELDS) {
-  const values = {};
-  for (const field of fields) {
-    if (source?.[field] === undefined) continue;
-    const result = validatePingNode(source[field]);
-    if (!result.valid) {
-      return { valid: false, field };
-    }
-    // Keep the disabled-node sentinel as text so SQLite does not coerce it to 0.0 in TEXT columns.
-    values[field] = source[field] === 0 || source[field] === '0' ? '0' : result.value;
-  }
-  return { valid: true, values };
-}
-
-function normalizeImportedPingNodeValue(value) {
-  return value === null || value === undefined ? '' : value;
-}
-
-function normalizeNetworkInterfaceField(value) {
-  const result = validateNetworkInterfaces(value);
-  if (!result.valid) {
-    return { valid: false, value: '' };
-  }
-  return { valid: true, value: result.value };
 }
 
 function hasAppearanceInput(settings) {
@@ -203,10 +140,6 @@ async function validateThemeUrlAvailable(themeUrl) {
   }
 }
 
-async function deleteServer(db, id) {
-  db.prepare('DELETE FROM servers WHERE id = ?').bind(id).run();
-}
-
 async function handleLoginAction({ request, env, sys, data }) {
   const { username, password } = data;
 
@@ -215,6 +148,7 @@ async function handleLoginAction({ request, env, sys, data }) {
   }
 
   const securityVersion = readSecurity(env.DB).version;
+  const passwordHash = sys?.password;
   const credentialResult = await validatePasswordCredentials(username, password, env, sys);
 
   if (!credentialResult.valid) {
@@ -231,7 +165,9 @@ async function handleLoginAction({ request, env, sys, data }) {
   if (credentialResult.needsPasswordUpgrade) {
     try {
       const upgradedPasswordHash = await hashPassword(password);
-      await saveSiteOptions(env.DB, { password: upgradedPasswordHash });
+      if (!upgradePasswordHash(env.DB, securityVersion, passwordHash, upgradedPasswordHash)) {
+        return createUnauthorizedResponse('invalidCredentials');
+      }
       if (sys) {
         sys.password = upgradedPasswordHash;
       }
@@ -350,8 +286,9 @@ async function handleListAction({ env }) {
     let isOnline = false;
 
     if (latestMetrics) {
-      isOnline = (now - latestMetrics.timestamp) < ONLINE_THRESHOLD;
-      mergeMetricsIntoServer(item, latestMetrics);
+      const lastSeen = getServerLastSeen(env, server.id, latestMetrics);
+      isOnline = !isServerOffline(server, lastSeen, ONLINE_THRESHOLD, now);
+      mergeMetricsIntoServer(item, latestMetrics, lastSeen);
     } else {
       item.last_updated = 0;
       item.is_online = false;
@@ -435,7 +372,7 @@ async function handleSendTestNotificationAction({ data }) {
       count: 1,
       message: '这是一条来自 CF Server Monitor 的测试消息。'
     });
-    if(result) {
+    if (result.status !== 'delivered') {
       console.warn('Test notification failed:', result);
       return createBadRequestResponse('testNotificationFailed');
     }
@@ -475,8 +412,15 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       return authenticatedActionHandler({ request, env, sys, data, loadFullSettings, ctx });
     }
 
+    if (SERVER_ACTIONS.has(data.action)) return handleServerAction({ env, sys, data, ctx });
+
     if (data.action === 'save_settings') {
+      const securityVersion = readSecurity(env.DB).version;
       const settings = data.settings || {};
+      if ((settings.username !== undefined && (typeof settings.username !== 'string' || settings.username.length > 256)) ||
+          (settings.password !== undefined && (typeof settings.password !== 'string' || settings.password.length > 4096))) {
+        return createBadRequestResponse('invalidCredentials');
+      }
       const normalizedThemeUrl = normalizeThemeUrl(settings.theme_url);
       if (normalizedThemeUrl === null) {
         return createBadRequestResponse('invalidThemeUrl');
@@ -536,8 +480,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       }
 
       const shouldSaveAppearanceOptions = hasAppearanceInput(settings);
-      const appearanceRow = env.DB.prepare("SELECT value FROM settings WHERE key = 'appearance_options'").first();
-      const appearanceOptions = appearanceRow ? JSON.parse(appearanceRow.value) : {};
+      const appearanceOptions = {};
 
       if (shouldSaveAppearanceOptions) {
         const nestedAppearanceOptions = settings.appearance_options || {};
@@ -563,10 +506,6 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
             }
           }
         }
-        await env.DB.prepare(
-          'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-        ).bind('appearance_options', JSON.stringify(appearanceOptions)).run();
-        clearAppearanceSettingsCache();
       }
 
       const siteOptions = {};
@@ -619,14 +558,11 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
           }
         }
       }
-      await saveSiteOptions(env.DB, siteOptions);
+      if (!await checkAuth(request, env, sys)) return simpleAuthResponse();
+      const committed = commitAdminSettings(env, securityVersion, siteOptions, shouldSaveAppearanceOptions ? appearanceOptions : null, hasResourceAlertRulesInput && !resourceAlertEnabled);
+      if (!committed) return simpleAuthResponse();
       env.REALTIME_HUB?.revokeFrontendSessions();
       const shouldCloseAgentWssReports = !isWssReportEnabled({ ...sys, ...siteOptions });
-      // Keep existing states on rule edits so threshold increases can emit recovery notifications.
-      // checkResourceAlerts prunes states for removed rules or servers on the next evaluation.
-      if (hasResourceAlertRulesInput && !resourceAlertEnabled) {
-        await clearResourceAlertState(env.DB);
-      }
       Object.assign(sys, shouldSaveAppearanceOptions ? appearanceOptions : {}, siteOptions);
       if (shouldCloseAgentWssReports && (
         settings.wss_report_enabled !== undefined ||
@@ -634,323 +570,12 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       )) {
         scheduleAgentReportModeChanged(env, ctx);
       }
-      return createSuccessResponse({
+      return createSuccessResponseWithCookies({
         success: true,
+        requiresLogin: committed.credentialsChanged,
         message: 'updateSuccess'
-      });
+      }, committed.credentialsChanged ? [buildClearAuthCookie(request), buildClearThemePreviewAuthCookie(request)] : []);
     } 
-    else if (data.action === 'add') {
-      const name = data.name || 'New Server';
-      if (!isValidName(name)) {
-        return createBadRequestResponse('invalidServerName');
-      }
-      const networkInterfaces = normalizeNetworkInterfaceField(data.interface);
-      if (!networkInterfaces.valid) {
-        return createBadRequestResponse('invalidNetworkInterface');
-      }
-      
-      const id = crypto.randomUUID();
-      const group = data.server_group || 'Default';
-      const region = normalizeServerRegion(data.region);
-
-      try {
-        const { max_order } = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM servers').first();
-        const sortOrder = (max_order || 0) + 1;
-
-
-        await env.DB.prepare(`
-          INSERT INTO servers
-          (id, name, server_group, region, "interface", sort_order, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(id, name, group, region, networkInterfaces.value, sortOrder, Date.now()).run();
-      } catch (e) {
-        return handleServerMutationError(env.DB, e, 'serverAddFailed');
-      }
-      
-      clearServersListCache();
-      
-      return createSuccessResponse({ 
-        success: true, 
-        id: id,
-        message: 'serverAdded'
-      });
-    } 
-    else if (data.action === 'delete') {
-      const { id } = data;
-      if (!id || !isValidUUID(id)) {
-        return createBadRequestResponse('invalidServerId');
-      }
-      
-      await deleteServer(env.DB, id);
-      env.REALTIME_HUB?.removeServer(id);
-      
-      clearServersListCache();
-      
-      return createSuccessResponse({ 
-        success: true, 
-        message: 'serverDeleted'
-      });
-    } 
-    else if (data.action === 'save_order') {
-      const { orders } = data;
-      if (!orders || !Array.isArray(orders) || orders.length === 0) {
-        return createBadRequestResponse('missingSortData');
-      }
-      
-      for (let i = 0; i < orders.length; i++) {
-        if (!isValidUUID(orders[i])) {
-          return createBadRequestResponse('invalidSortId');
-        }
-        await env.DB.prepare('UPDATE servers SET sort_order = ? WHERE id = ?').bind(i, orders[i]).run();
-      }
-      
-      clearServersListCache();
-      
-      return createSuccessResponse({ 
-        success: true, 
-        message: 'sortOrderSaved'
-      });
-    }
-    else if (data.action === 'edit') {
-      const { id, name, server_group, region, tags, note, price, billing_cycle, auto_renewal, currency, expire_date, traffic_limit, traffic_calc_type, interface: networkInterfaceInput, reset_day, collect_interval, report_interval, wss_report_interval, connection_mode, ping_mode, auto_update, custom_ct, custom_cu, custom_cm, custom_bd, node_1, node_2, node_3, node_4, rx_correction, tx_correction, offline_notify_disabled, is_hidden } = data;
-      if (!id || !isValidUUID(id)) {
-        return createBadRequestResponse('invalidServerId');
-      }
-      if (!isValidName(name)) return createBadRequestResponse('invalidServerName');
-      const effectiveConnectionMode = isWssReportConfigured(sys) ? connection_mode : 'http';
-      const agentConfigResult = validateAgentConfigInput({
-        collect_interval,
-        report_interval,
-        wss_report_interval,
-        reset_day,
-        connection_mode: effectiveConnectionMode,
-        ping_mode
-      });
-      if (!agentConfigResult.valid) {
-        return createBadRequestResponse(agentConfigResult.error);
-      }
-      const normalizedAgentConfig = agentConfigResult.config;
-
-      const pingNodes = normalizePingNodeFields({ custom_ct, custom_cu, custom_cm, custom_bd, node_1, node_2, node_3, node_4 });
-      if (!pingNodes.valid) {
-        return createBadRequestResponse('invalidPingNodeFormat');
-      }
-      const networkInterfaces = normalizeNetworkInterfaceField(networkInterfaceInput);
-      if (!networkInterfaces.valid) {
-        return createBadRequestResponse('invalidNetworkInterface');
-      }
-      const safeTags = String(tags || '')
-        .split(',')
-        .map(tag => tag.trim().replace(/[^\p{L}\p{N} ._\-]/gu, '').slice(0, 32))
-        .filter(Boolean)
-        .slice(0, 12)
-        .join(',');
-      const safeNote = String(note || '').trim().slice(0, 500);
-
-      const toNullCorrection = (v) => {
-        if (v === null || v === undefined || v === '') return null;
-        return isValidTrafficCorrection(v) ? Number(v) : undefined;
-      };
-      const safeRx = toNullCorrection(rx_correction);
-      const safeTx = toNullCorrection(tx_correction);
-      if (safeRx === undefined || safeTx === undefined) {
-        return createBadRequestResponse('invalidTrafficCorrection');
-      }
-
-      const billingData = normalizeServerBillingData({
-        price,
-        billing_cycle,
-        auto_renewal,
-        currency,
-        expire_date
-      });
-      
-      try {
-        await env.DB.prepare(`
-          UPDATE servers
-          SET name = ?, server_group = ?, region = ?, tags = ?, note = ?, price = ?, billing_cycle = ?, auto_renewal = ?, currency = ?, expire_date = ?, traffic_limit = ?, traffic_calc_type = ?, "interface" = ?, reset_day = ?, collect_interval = ?, report_interval = ?, wss_report_interval = ?, connection_mode = ?, ping_mode = ?, auto_update = ?, custom_ct = ?, custom_cu = ?, custom_cm = ?, custom_bd = ?, node_1 = ?, node_2 = ?, node_3 = ?, node_4 = ?, rx_correction = ?, tx_correction = ?, offline_notify_disabled = ?, is_hidden = ?
-          WHERE id = ?
-        `).bind(
-          name || '',
-          server_group || 'Default',
-          normalizeServerRegion(region),
-          safeTags,
-          safeNote,
-          billingData.price,
-          billingData.billing_cycle,
-          billingData.auto_renewal,
-          billingData.currency,
-          billingData.expire_date,
-          traffic_limit || '',
-          traffic_calc_type || 'total',
-          networkInterfaces.value,
-          normalizedAgentConfig.reset_day,
-          normalizedAgentConfig.collect_interval,
-          normalizedAgentConfig.report_interval,
-          normalizedAgentConfig.wss_report_interval,
-          normalizedAgentConfig.connection_mode,
-          normalizedAgentConfig.ping_mode,
-          normalizeBooleanFlag(auto_update),
-          pingNodes.values.custom_ct ?? null,
-          pingNodes.values.custom_cu ?? null,
-          pingNodes.values.custom_cm ?? null,
-          pingNodes.values.custom_bd ?? null,
-          pingNodes.values.node_1 ?? null,
-          pingNodes.values.node_2 ?? null,
-          pingNodes.values.node_3 ?? null,
-          pingNodes.values.node_4 ?? null,
-          safeRx,
-          safeTx,
-          normalizeBooleanFlag(offline_notify_disabled),
-          normalizeBooleanFlag(is_hidden),
-          id
-        ).run();
-      } catch (e) {
-        return handleServerMutationError(env.DB, e, 'serverUpdateFailed');
-      }
-      
-      clearServersListCache();
-      env.REALTIME_HUB?.revokeFrontendSessions();
-      scheduleAgentConfigChanged(env, ctx, id);
-      
-      return createSuccessResponse({ 
-        success: true, 
-        message: 'serverUpdated'
-      });
-    }
-    else if (data.action === 'batch_delete') {
-      const { ids } = data;
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return createBadRequestResponse('selectServersToDelete');
-      }
-      
-      for (const id of ids) {
-        if (!isValidUUID(id)) {
-          return createBadRequestResponse('invalidServerIdInList');
-        }
-      }
-      
-      for (const id of ids) {
-        await deleteServer(env.DB, id);
-      env.REALTIME_HUB?.removeServer(id);
-      }
-      
-      clearServersListCache();
-      
-      return createSuccessResponse({ 
-        success: true, 
-        message: 'batchDeleted'
-      });
-    }
-    
-    else if (data.action === 'export_servers') {
-      try {
-        const servers = await env.DB.prepare('SELECT * FROM servers ORDER BY sort_order ASC').all();
-        return createSuccessResponse({
-          success: true,
-          servers: servers.results || [],
-          message: 'serversExported'
-        });
-      } catch (e) {
-        return createBadRequestResponse('serversExportFailed');
-      }
-    }
-    else if (data.action === 'import_servers') {
-      const { servers: importData } = data;
-      if (!importData || !Array.isArray(importData) || importData.length === 0) {
-        return createBadRequestResponse('noServersToImport');
-      }
-
-      const existingServers = await env.DB.prepare('SELECT id FROM servers').all();
-      const existingIds = new Set((existingServers.results || []).map(s => s.id));
-
-      let imported = 0;
-      let skipped = 0;
-      const skippedIds = [];
-
-      for (const server of importData) {
-        if (!server.id || !isValidUUID(server.id)) {
-          skipped++;
-          skippedIds.push(server.id || '(invalid)');
-          continue;
-        }
-
-        if (existingIds.has(server.id)) {
-          skipped++;
-          skippedIds.push(server.id);
-          continue;
-        }
-
-        const billingData = normalizeServerBillingData(server);
-        const networkInterfaces = normalizeNetworkInterfaceField(server.interface);
-        if (!networkInterfaces.valid) {
-          skipped++;
-          skippedIds.push(server.id);
-          continue;
-        }
-
-        try {
-          await env.DB.prepare(`
-            INSERT INTO servers (id, name, server_group, region, tags, note, price, billing_cycle, auto_renewal,
-              currency, expire_date,
-              traffic_limit, traffic_calc_type, "interface", reset_day, collect_interval, report_interval, wss_report_interval, connection_mode, ping_mode,
-              auto_update, custom_ct, custom_cu, custom_cm, custom_bd, node_1, node_2, node_3, node_4, rx_correction, tx_correction,
-              offline_notify_disabled, is_hidden, sort_order, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            server.id,
-            server.name || '',
-            server.server_group || 'Default',
-            normalizeServerRegion(server.region),
-            server.tags || '',
-            server.note || '',
-            billingData.price,
-            billingData.billing_cycle,
-            billingData.auto_renewal,
-            billingData.currency,
-            billingData.expire_date,
-            server.traffic_limit || '',
-            server.traffic_calc_type || 'total',
-            networkInterfaces.value,
-            server.reset_day ?? 1,
-            server.collect_interval ?? 0,
-            server.report_interval ?? 60,
-            normalizeWssReportInterval(server.wss_report_interval),
-            normalizeConnectionMode(server.connection_mode) || 'auto',
-            normalizePingMode(server.ping_mode) || 'tcp',
-            normalizeBooleanFlag(server.auto_update),
-            normalizeImportedPingNodeValue(server.custom_ct),
-            normalizeImportedPingNodeValue(server.custom_cu),
-            normalizeImportedPingNodeValue(server.custom_cm),
-            normalizeImportedPingNodeValue(server.custom_bd),
-            normalizeImportedPingNodeValue(server.node_1), normalizeImportedPingNodeValue(server.node_2),
-            normalizeImportedPingNodeValue(server.node_3), normalizeImportedPingNodeValue(server.node_4),
-            server.rx_correction ?? null,
-            server.tx_correction ?? null,
-            normalizeBooleanFlag(server.offline_notify_disabled),
-            normalizeBooleanFlag(server.is_hidden),
-            server.sort_order ?? 0,
-            server.timestamp || Date.now()
-          ).run();
-          existingIds.add(server.id);
-          imported++;
-        } catch (e) {
-          skipped++;
-          skippedIds.push(server.id);
-        }
-      }
-
-      clearServersListCache();
-
-      return createSuccessResponse({
-        success: true,
-        imported,
-        skipped,
-        skippedIds,
-        message: imported > 0 ? 'serversImported' : 'noServersImported'
-      });
-    }
-    
     return createBadRequestResponse('unknownAction');
     
   } catch (e) {

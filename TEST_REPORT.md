@@ -1,5 +1,68 @@
 # 最近一次测试报告
 
+## 审查问题修复、去重与职责拆分（2026-09-19，未部署生产）
+
+已修复下方审查记录中的 F01–F09，并完成 S01–S03 对应的无效代码清理、重复实现合并和职责拆分。最终版本 Node 回归 99/99、Agent 配置与 Go vet/test、主控验收 19/19、原生 Agent 验收 6/6、Docker 部署验收 6/6 全部通过；Chromium 实际等待一分钟验证首页刷新，并验证详情月流量及密码修改后重新登录。50 Agent / 10 看板连接持续 60 秒负载复验通过。旧审查中的失败记录保留为修复前证据，不代表当前状态。
+
+### 环境与执行
+
+- Linux amd64；Node.js v24.21.0、Go 1.26.8、Docker 29.7.2。主机命令显式加载 `/tmp/jan-monitor-tools/env.sh`，未使用系统默认 Node 26。
+- 开发前执行 `npm ci`、`npm run geoip:download`、`npm run build`；修改后重新完整构建前端和 Linux/FreeBSD 各 amd64/arm64 四个 Agent 程序。地区库为 2026-09，原生 Agent 版本仍为 v1.2.0，未修改其采集实现或发布版本。
+- HTTP/WS、浏览器和负载验证使用先行创建的临时 SQLite、回环随机端口及测试凭证；Docker 使用隔离 internal bridge 和独立 TLS 反代。未读取生产数据、重启生产服务或向真实通知渠道发送消息。
+- 最终构建完成后依次运行 `npm run test:all`、`npm run test:acceptance`。构建 `server-monitor:agent-native` 后运行 `npm run test:agent-deployment`；浏览器及负载程序分别为证据目录下的 `browser.mjs`、`load.mjs`。
+
+### 验收项
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| RF01 | 准备依赖、地区库并完整构建最终代码 | 前端和四目标产物可用 | `npm-ci.log`、`geoip-download.log`、`build.log`；Docker 构建见 `docker-build.log` | 通过 |
+| RF02 | 真实登录、修改账号/密码，复用旧 Bearer/Cookie/WS 凭证；制造设置并发、哈希升级竞争和事务写入失败 | 凭证与会话版本原子变化，旧会话不可复用；已启用 2FA、恢复码状态及并发外观增量保留；失败无部分提交 | `test/credential-change.test.js`、`test-all.log`；浏览器 `passwordChangeRequiresLogin=true`、`newPasswordLogin=true`；另完成独立鉴权复核 | 通过 |
+| RF03 | 无通知渠道、发送失败、发送成功时分别处理待发事件 | 无渠道保留待发且不增加尝试；失败退避；仅明确送达才写 delivered_at | `test/review-regressions.test.js` F02；真实 HTTP 验收中的本地 Webhook；无真实外部渠道调用 | 通过 |
+| RF04 | 预置旧历史、设置 180 秒间隔和两分钟离线阈值，再真实 WS 上报并检测离线 | 即使 ACK 为 persisted=false，也记录新接收时间且不产生离线告警 | F03：持久 presence 新、历史仍旧；共用在线判断；旧历史时间由夹具预置，非等待 150 秒 | 通过 |
+| RF05 | 分别单删和批删节点后导入相同 UUID，再查询历史、快照和资源窗口 | SQLite 及内存状态均清理，不恢复旧样本或告警窗口 | F04 真实 HTTP/WS/SQLite 生命周期；每种删除方式使用独立节点 ID，避免读缓存掩盖问题 | 通过 |
+| RF06 | 经新增、编辑、导入提交非法间隔、重置日、探测地址、流量校正，以及合法配置 | 入口遵循同一校验，非法数据不入库，导入提供逐条错误 | F07；`test/agent-commands.test.js` 共享表单、计费和探测规则检查 | 通过 |
+| RF07 | 提交后半段非法、重复、不存在的排序 ID，以及非法批量编辑；注入 SQLite 写入故障 | 提交前完整校验；写入故障整体回滚，无部分排序或编辑 | F08 真实 API 与数据库故障触发器 | 通过 |
+| RF08 | 关闭三网详情，保持首页打开；月流量 10→30 GB、CPU 11→44%；新增节点并等待实际一分钟；进入详情再上报 40 GB | 月流量实时变化，周期刷新发现新节点并订阅，详情动态更新 | `browser.json`：30 GB/30%、两节点、详情 40 GB；程序断言新节点后续 WS CPU=66、详情 CPU=55；两张截图已查看，pageerror=[] | 通过 |
+| RF09 | 请求 8 个旧根路径脚本和原生安装入口；检查安装/卸载命令 | 旧脚本全部 404，原生 `/agent/install.sh` 可用，保留四平台分发和协议 | F09 真实 HTTP；Docker ND01 同样校验旧 URL；命令 shell 语法及引用检查 | 通过 |
+| RF10 | 运行完整主控/Agent 回归和真实程序验收 | 既有鉴权、协议、采集、历史、地区识别及备份恢复行为保持 | `test-all.log`：Node 99/99、配置及 Go 测试；`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6 | 通过 |
+| RF11 | 隔离 Docker 中安装、HTTPS/WSS 上报、自动更新、重建主控、禁用自动更新及卸载 | 四目标可下载，更新保留配置与流量，重建保留历史和版本归档，卸载完成 | `agent-deployment.log`、`deployment.json` ND01–ND06；合成旧版本 v1.0.99→v1.2.0，非真实旧服务迁移测试 | 通过 |
+| RF12 | 搜索调用点、解析后端静态导入、比较共用规则及检查删除清单 | 消除已确认重复所有权和循环依赖，旧公开脚本不存在 | `structure.json`：backendCycles=[]、unusedImports=[]、legacyPublicScripts=[]；无用导入检查为启发式，不等于证明全项目无死代码 | 通过（静态检查） |
+| RF13 | 50 条 Agent WS 每两秒上报，10 条看板 WS 接收，持续实际 60 秒；结束后检查 presence | 全部确认、广播且主控健康，所有节点接收时间持久化 | `load.json`、`load.log`：1500 reports、15000 deliveredUpdates、health P95=34.2 ms、errors=[]，50 条近期 presence | 通过 |
+
+F01 按 `codex-security:fix-finding` 要求完成独立边界分析及修复后只读复核，补查真实 HTTP/Cookie/WS 入口、2FA/恢复码消费和受控异步竞争；发现的外观覆盖、事务外告警状态清理及并行旧密码哈希升级问题已纳入修复和回归。没有变更 Agent 的 `API_SECRET` 或把 Agent 鉴权与管理员会话混用。
+
+本轮证据目录：`output/test-results/review-fixes-20260919/`（Git 忽略）。测试主控、Agent、浏览器及本轮 Docker 测试容器已结束，保留隔离测试证据供复核；未提交凭证或测试产物。源码改动见 changelog.md、architecture.md、code_map.md；发现与处理映射见 CODE_REVIEW.md。
+
+过程中曾修正新增测试夹具的字段/调用匹配及浏览器按钮大小写定位。另有一次全套回归与前端构建并行运行，构建清理 dist 导致首页暂时 503、相关用例失败；原日志保留为 `test-all-build-race.log`。之后先完成构建、再串行运行完整回归及验收，得到上表最终通过结果，未降低业务断言。
+
+限制：未部署生产；未在 FreeBSD 或 arm64 真机运行，四目标仅完成构建、下载和校验，原生执行为 Linux amd64。Docker 使用合成旧版本夹具，`legacyServiceMigrated=false`，不宣称本轮复验了真实旧 `cf-probe` 服务迁移。未测试真实外部通知服务或长时间稳定性；一分钟负载结果不外推为长期容量保证，Go 测试复用了工具链缓存。
+
+## 项目代码审查与缺陷复现（2026-09-19）
+
+基线 `2a2694c`；本轮仅审查和验证，未修改业务代码或部署。现有回归全部通过，另以 HTTP/WS、SQLite 和 Chromium 确认 9 项行为问题；完整分析及结构问题见 [CODE_REVIEW.md](CODE_REVIEW.md)。下表中的“失败（已复现）”表示实际行为不满足该验收项，不表示既有测试命令失败。
+
+环境：使用 `/tmp/jan-monitor-tools/env.sh` 中的 Node.js v24.21.0、Go 1.26.8；先执行 `npm ci`、`npm run geoip:download`、`npm run build`，四个 Agent 目标及前端构建成功。测试主控使用提前创建的全新临时数据目录、回环地址随机端口与测试凭证，调度关闭；没有读取生产数据或发送真实渠道通知。Chromium 使用既有本地工具，浏览器外部请求被阻止。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| RV01 | 安装依赖、下载地区库、完整构建 | 环境与四平台产物准备完成 | `npm-ci.log`、`geoip-download.log`、`build.log`；GeoIP 2026-09，4 目标构建完成 | 通过 |
+| RV02 | 运行 `npm run test:all` | 既有主控与 Agent 回归通过 | `test-all.log`：Node 87/87、Agent 配置及 Go vet/test 通过 | 通过 |
+| RV03 | 运行 `npm run test:acceptance` | 真实主控和本机 Agent 流程通过 | `acceptance.log`、`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6 | 通过 |
+| RV04 | 删除节点后重新导入同一 UUID，再读取历史及实时快照 | 已删除历史和最新状态不再返回 | `reproduction.json` R01：SQLite history/latest 均 0 行，API 历史仍 1 条、旧上报仍 1 包，CPU=73 | 失败（已复现） |
+| RV05 | 提交先合法后非法的排序 ID 数组 | 返回失败时不改变原顺序 | R02：HTTP 400，但 sort_order 从 1 变 0，后台缓存仍返回 1 | 失败（已复现） |
+| RV06 | 导入非法间隔、重置日、地址和校正值，再原样编辑 | 导入与编辑遵循相同校验 | R03：导入 1 条非法记录，原样编辑返回 400 | 失败（已复现） |
+| RV07 | 从完整构建的主控读取新旧安装脚本 URL | 发布内容符合原生四平台分发边界 | R04：旧 Linux/macOS/Windows 安装器及 Windows 卸载器仍 HTTP 200；只读取，未执行 | 失败（已复现） |
+| RV08 | 设置 180 秒落库间隔和两分钟离线阈值，预置 150 秒前落库状态，再真实 WS 上报并运行离线检测 | 新上报的节点不产生离线告警 | R05：socket 正常，实时包约 24 ms，persisted=false，却产生离线事件；旧时刻由夹具预置，未等待 150 秒 | 失败（已复现） |
+| RV09 | 关闭通知渠道后处理已有待发队列 | 未发送的消息不应标为已送达 | R06：无发送请求却写入 delivered_at、attempts=1、last_error=null | 失败（已复现） |
+| RV10 | 修改管理员密码后继续使用旧 JWT | 旧凭证对应会话撤销或要求重新验证 | R07：旧密码登录 401，新密码 200，但旧 JWT 读取管理设置仍 200 | 失败（已复现） |
+| RV11 | 页面持续打开，月流量 10→30 GB、CPU 11→44%，等待真实一分钟刷新 | 月流量、额度比例与其他指标一起更新 | `browser.json`：CPU=44%，周期 REST 已完成，月流量仍 10 GB/10%；重载才为 30 GB/30%；截图已查看 | 失败（已复现） |
+| RV12 | 页面持续打开时新增节点并上报，等待周期 REST | 页面加入节点并更新订阅 | `browser.json`：API 两节点，页面一节点；重载后两节点；浏览器 pageerror=[] | 失败（已复现） |
+| RV13 | 搜索调用点、解析静态导入及比较函数源码 | 识别可验证的重复代码和依赖边界 | `structure.json`：notification/outbox 循环依赖；4 个逐字相同计费函数合计 60 行；旧 public 脚本 11,426 行；无调用者明细见审查报告 | 完成（静态分析） |
+
+本轮证据目录：`output/test-results/review-20260919/`（Git 忽略）。复现程序和浏览器程序均已关闭自己的主控、socket 和浏览器，临时数据库路径保留在 JSON 中供复核。原有自动化套件不包含上述新增边界；复现脚本退出成功表示采集完成，不能视为业务验收通过。
+
+未进行生产部署、Docker 安装/更新/卸载验收、FreeBSD/arm64 真机或长时间负载验证；原生实测为 Linux amd64，Go 工具链使用现有测试缓存。没有业务实现变更，因此未添加功能变更日志，未提交测试数据或凭证。
+
 ## 后台顶栏与退出按钮右边界对齐（2026-09-17）
 
 **已修复并于 2026-09-17 17:01（Asia/Shanghai）部署至 `https://jm.zedy.cc`。** 顶栏与下方面板统一使用 20px 水平内边距；刷新/退出按钮组换行后继续靠右。Chromium 在隔离环境的 1440、768、390、320px，中/英/日文，深色/浅色共 24 种组合下测得顶栏按钮组与退出按钮右边界差均为 0px；公网已核对同一构建的资源哈希及浏览器加载的对齐样式。

@@ -1,10 +1,12 @@
+import { isValidRealtimeId } from '../utils/realtimeId.js';
+import { ResourceAlertWindows } from './ResourceAlertWindows.js';
+import { maskPublicIpUpdate } from '../utils/publicMetrics.js';
+import { LatestReports } from './LatestReports.js';
 import { saveMetricsHistory } from '../database/schema.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
 import {
-  AGENT_CONFIG_MD5_HEADER,
   AGENT_CONFIG_LEGACY_SCHEMA_VERSION,
-  AGENT_CONFIG_SCHEMA_HEADER,
   AGENT_CONFIG_SCHEMA_VERSION,
   DEFAULT_WSS_REPORT_INTERVAL,
   describeAgentConfig,
@@ -26,64 +28,15 @@ import {
   AGENT_DEFAULT_HISTORY_WRITE_INTERVAL_MS,
   AGENT_MIN_IDLE_WSS_REPORT_INTERVAL_MS,
   AGENT_SERVER_DETAIL_TTL_MS,
-  LATEST_REPORT_CACHE_MAX_SERVERS,
-  LATEST_REPORT_CACHE_TTL_MS
 } from '../utils/config.js';
 
 const MAX_SUBSCRIBE_IDS = 500;
-const MAX_SERVER_ID_LENGTH = 64;
-const SERVER_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 const WS_POLICY_VIOLATION = 1008;
 const WS_TRY_AGAIN_LATER = 1013;
 const AGENT_REPORT_KIND = 'agent-report';
-const AGENT_WSS_MODE_HEADER = 'X-Agent-Wss-Mode';
-const AGENT_WSS_REASON_HEADER = 'X-Agent-Wss-Reason';
 const AGENT_WSS_SCHEDULE_INACTIVE = 'wss_schedule_inactive';
 const AGENT_WSS_SCHEDULE_DISABLED = 'wss_disabled';
 const ALLOWED_AGENT_REPORT_INTERVALS = new Set([30, 60, 120, 180]);
-const RESOURCE_ALERT_STORAGE_KEY = 'resource_alert_windows_v1';
-const RESOURCE_ALERT_BUCKET_MS = 60 * 1000;
-const RESOURCE_ALERT_MAX_BUCKETS = 10;
-const RESOURCE_ALERT_MAX_SERVERS = 1000;
-const RESOURCE_ALERT_EVALUATE_RULE_BATCH_MAX = 20;
-const RESOURCE_ALERT_SNAPSHOT_INTERVAL_MS = 60 * 1000;
-const RESOURCE_ALERT_CACHE_ACTIVE_GRACE_MS = 3 * 60 * 1000;
-const RESOURCE_ALERT_LATEST_TOLERANCE_MS = 2 * 60 * 1000;
-const RESOURCE_ALERT_MIN_SAMPLE_RATIO = 0.4;
-const RESOURCE_ALERT_MIN_SAMPLE_COUNT = 2;
-const RESOURCE_ALERT_MODE_AVERAGE = 'average';
-const RESOURCE_ALERT_MODE_CONTINUOUS = 'continuous';
-function getAlertCutoffMinute(now, buckets) {
-  return Math.floor(now / RESOURCE_ALERT_BUCKET_MS) * RESOURCE_ALERT_BUCKET_MS -
-    Math.max(0, buckets - 1) * RESOURCE_ALERT_BUCKET_MS;
-}
-
-function parseAllowedOrigins(corsAllowedOrigins) {
-  if (!corsAllowedOrigins || corsAllowedOrigins.trim() === '') {
-    return [];
-  }
-  return corsAllowedOrigins
-    .split(',')
-    .map(o => o.trim())
-    .filter(o => o !== '');
-}
-
-function toFiniteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function normalizeMetricTimestamp(value, fallback = Date.now()) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return fallback;
-  return number < 10000000000 ? number * 1000 : number;
-}
-
-function toPublicIpReachability(value) {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized && normalized !== '0' && normalized !== 'false' ? '1' : '0';
-}
-
 function normalizeConfigSchema(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -103,169 +56,14 @@ function firstDefined(...values) {
   return undefined;
 }
 
-function maskPublicIpFields(data) {
-  if (!data || typeof data !== 'object') return data;
-  let masked = data;
-  const ensureMaskedCopy = () => {
-    if (masked === data) masked = { ...data };
-  };
-
-  if (Object.prototype.hasOwnProperty.call(data, 'ip_v4')) {
-    ensureMaskedCopy();
-    masked.ip_v4 = toPublicIpReachability(data.ip_v4);
-  }
-  if (Object.prototype.hasOwnProperty.call(data, 'ip_v6')) {
-    ensureMaskedCopy();
-    masked.ip_v6 = toPublicIpReachability(data.ip_v6);
-  }
-  for (const field of ['data', 'payload', 'metrics']) {
-    if (data[field] && typeof data[field] === 'object' && !Array.isArray(data[field])) {
-      const nested = maskPublicIpFields(data[field]);
-      if (nested !== data[field]) {
-        ensureMaskedCopy();
-        masked[field] = nested;
-      }
-    }
-  }
-  return masked;
-}
-
-function maskPublicIpSample(sample) {
-  if (!sample || typeof sample !== 'object') return sample;
-  if (sample.data && typeof sample.data === 'object') {
-    return { ...sample, data: maskPublicIpFields(sample.data) };
-  }
-  if (sample.payload && typeof sample.payload === 'object') {
-    return { ...sample, payload: maskPublicIpFields(sample.payload) };
-  }
-  if (sample.metrics && typeof sample.metrics === 'object') {
-    return { ...sample, metrics: maskPublicIpFields(sample.metrics) };
-  }
-  return sample;
-}
-
-function maskPublicIpUpdate(update) {
-  if (!update || !Array.isArray(update.samples)) return update;
-  return {
-    ...update,
-    samples: update.samples.map(maskPublicIpSample)
-  };
-}
-
-function normalizeResourceAlertSample(sample) {
-  if (!sample || typeof sample !== 'object') {
-    return null;
-  }
-
-  const data = sample.data || sample.payload || sample.metrics;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return null;
-  }
-
-  const metrics = data.metrics || data.payload || data;
-  const ts = normalizeMetricTimestamp(sample.ts || sample.timestamp || metrics.sample_timestamp || metrics.last_updated || metrics.timestamp);
-  const cpu = toFiniteNumber(metrics.cpu);
-  const ramTotal = toFiniteNumber(metrics.ram_total);
-  const ramUsed = toFiniteNumber(metrics.ram_used);
-  const ram = ramTotal && ramTotal > 0 && ramUsed !== null
-    ? (ramUsed / ramTotal) * 100
-    : null;
-  const diskTotal = toFiniteNumber(metrics.disk_total);
-  const diskUsed = toFiniteNumber(metrics.disk_used);
-  const disk = diskTotal && diskTotal > 0 && diskUsed !== null
-    ? (diskUsed / diskTotal) * 100
-    : null;
-  const netIn = Math.max(0, toFiniteNumber(metrics.net_in_speed) ?? 0);
-  const netOut = Math.max(0, toFiniteNumber(metrics.net_out_speed) ?? 0);
-
-  return {
-    ts,
-    minuteTs: Math.floor(ts / RESOURCE_ALERT_BUCKET_MS) * RESOURCE_ALERT_BUCKET_MS,
-    cpu,
-    ram,
-    disk,
-    netIn,
-    netOut,
-    netTotal: netIn + netOut
-  };
-}
-
-function normalizeThresholds(thresholds = {}) {
-  const normalize = value => {
-    const number = Number(value);
-    return Number.isFinite(number) && number > 0 ? number : 0;
-  };
-
-  return {
-    cpu: normalize(thresholds.cpuPercent),
-    ram: normalize(thresholds.ramPercent),
-    disk: normalize(thresholds.diskPercent),
-    netIn: normalize(thresholds.netInBps),
-    netOut: normalize(thresholds.netOutBps),
-    netTotal: normalize(thresholds.netTotalBps)
-  };
-}
-
-function normalizeResourceAlertMode(value) {
-  return String(value || '').trim().toLowerCase() === RESOURCE_ALERT_MODE_CONTINUOUS
-    ? RESOURCE_ALERT_MODE_CONTINUOUS
-    : RESOURCE_ALERT_MODE_AVERAGE;
-}
-
-function getMetricValue(sample, metric) {
-  const value = sample?.[metric];
-  return Number.isFinite(value) ? value : null;
-}
-
-function summarizeMetric(samples, metric) {
-  const values = samples
-    .map(sample => getMetricValue(sample, metric))
-    .filter(value => value !== null);
-  if (values.length === 0) return null;
-  const sum = values.reduce((total, value) => total + value, 0);
-  return {
-    current: values[values.length - 1],
-    min: Math.min(...values),
-    max: Math.max(...values),
-    avg: sum / values.length
-  };
-}
-
-function getResourceAlertSampleSpan(samples) {
-  if (!Array.isArray(samples) || samples.length < 2) return 0;
-  return Math.max(0, samples[samples.length - 1].minuteTs - samples[0].minuteTs);
-}
-
-function getResourceAlertLatestTolerance(samples) {
-  if (!Array.isArray(samples) || samples.length < 2) return RESOURCE_ALERT_LATEST_TOLERANCE_MS;
-  const avgSpacing = getResourceAlertSampleSpan(samples) / (samples.length - 1);
-  return Math.max(RESOURCE_ALERT_LATEST_TOLERANCE_MS, avgSpacing * 1.5);
-}
-
-function hasSufficientResourceAlertSamples(samples, windowMinutes) {
-  if (!Array.isArray(samples) || samples.length < RESOURCE_ALERT_MIN_SAMPLE_COUNT) return false;
-
-  const requiredByCount = Math.ceil(windowMinutes * RESOURCE_ALERT_MIN_SAMPLE_RATIO);
-  if (samples.length >= requiredByCount) return true;
-
-  const targetSpan = Math.max(1, windowMinutes - 1) *
-    RESOURCE_ALERT_BUCKET_MS *
-    RESOURCE_ALERT_MIN_SAMPLE_RATIO;
-  return getResourceAlertSampleSpan(samples) >= targetSpan;
-}
-
 export class RealtimeHub {
   constructor(env) {
     this.frontendSockets = new Set();
     this.processing = new Set();
     this.env = env;
     // 仅用于新页面快速接上最近一包数据；hub 重启或休眠回收后允许自然丢失。
-    this.latestReportUpdates = new Map();
-    this.resourceAlertWindows = new Map();
-    this.resourceAlertSnapshotLoaded = false;
-    this.resourceAlertSnapshotDirty = false;
-    this.resourceAlertLastSnapshotSave = 0;
-    this.resourceAlertCacheActiveUntil = 0;
+    this.latestReports = new LatestReports(env.DB);
+    this.resourceAlerts = new ResourceAlertWindows(env);
     this.agentServerDetails = new Map();
     this.agentHistoryWrites = new Map();
     this.standardAgentWebSocketCount = 0;
@@ -274,17 +72,8 @@ export class RealtimeHub {
 
   }
 
-  _isValidServerId(id) {
-    return (
-      typeof id === 'string' &&
-      id.length > 0 &&
-      id.length <= MAX_SERVER_ID_LENGTH &&
-      SERVER_ID_PATTERN.test(id)
-    );
-  }
-
   _isValidScope(scope) {
-    return scope === 'all' || this._isValidServerId(scope);
+    return scope === 'all' || isValidRealtimeId(scope);
   }
 
   _normalizeServerIds(ids) {
@@ -301,7 +90,7 @@ export class RealtimeHub {
       }
 
       const value = id.trim();
-      if (!this._isValidServerId(value)) {
+      if (!isValidRealtimeId(value)) {
         return { ok: false, ids: [] };
       }
 
@@ -310,69 +99,6 @@ export class RealtimeHub {
       normalized.push(value);
     }
     return { ok: true, ids: normalized };
-  }
-
-  _normalizeResourceAlertServerIds(ids) {
-    if (!Array.isArray(ids) || ids.length > RESOURCE_ALERT_MAX_SERVERS) {
-      return { ok: false, ids: [] };
-    }
-
-    const seen = new Set();
-    const normalized = [];
-    for (const id of ids) {
-      if (typeof id !== 'string') {
-        return { ok: false, ids: [] };
-      }
-
-      const value = id.trim();
-      if (!this._isValidServerId(value)) {
-        return { ok: false, ids: [] };
-      }
-
-      if (seen.has(value)) continue;
-      seen.add(value);
-      normalized.push(value);
-    }
-    return { ok: true, ids: normalized };
-  }
-
-  _normalizeResourceAlertEvaluationRules(rules) {
-    if (
-      !Array.isArray(rules) ||
-      rules.length === 0 ||
-      rules.length > RESOURCE_ALERT_EVALUATE_RULE_BATCH_MAX
-    ) {
-      return { ok: false, rules: [] };
-    }
-
-    const normalized = [];
-    for (const rule of rules) {
-      if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
-        return { ok: false, rules: [] };
-      }
-
-      const ruleId = typeof rule.ruleId === 'string'
-        ? rule.ruleId.trim()
-        : String(rule.ruleId || '').trim();
-      if (!this._isValidServerId(ruleId)) {
-        return { ok: false, rules: [] };
-      }
-
-      const serverIds = this._normalizeResourceAlertServerIds(rule.serverIds);
-      if (!serverIds.ok) {
-        return { ok: false, rules: [] };
-      }
-
-      normalized.push({
-        ruleId,
-        serverIds: serverIds.ids,
-        mode: rule.mode,
-        windowMinutes: rule.windowMinutes,
-        thresholds: rule.thresholds
-      });
-    }
-
-    return { ok: true, rules: normalized };
   }
 
   _closeInvalidSubscription(ws) {
@@ -407,11 +133,6 @@ export class RealtimeHub {
   _getFrontendWebSockets() { return Array.from(this.frontendSockets); }
   _getFrontendSubscriberCount() { return this.frontendSockets.size; }
   _getAgentReportWebSockets() { return Array.from(this.standardAgentWebSockets); }
-
-  _isWebSocketUpgrade(request) {
-    const upgradeHeader = request.headers.get('Upgrade');
-    return !!upgradeHeader && upgradeHeader.toLowerCase() === 'websocket';
-  }
 
   _sendWsJson(ws, payload) {
     try {
@@ -458,7 +179,7 @@ export class RealtimeHub {
   removeServer(id) {
     for (const ws of this.standardAgentWebSockets) if (ws.getContext().serverId === id) ws.close(1008, 'server removed');
     this.agentServerDetails.delete(id); this.agentHistoryWrites.delete(id);
-    this.latestReportUpdates.delete(id); this.resourceAlertWindows.delete(id);
+    this.latestReports.delete(id); this.resourceAlerts.delete(id);
     this.revokeFrontendSessions();
   }
 
@@ -483,7 +204,9 @@ export class RealtimeHub {
         delete state.pendingHistoryAggregate;
       }
     }
-    await this._persistResourceAlertSnapshotIfNeeded(Date.now(), true);
+    this.resourceAlerts.load();
+    this.resourceAlerts.persist(Date.now(), true);
+    this.latestReports.clear();
   }
 
   _closeWsWithError(ws, message, code = 400, extra = {}, closeCode = WS_POLICY_VIOLATION, closeReason = message) {
@@ -525,40 +248,6 @@ export class RealtimeHub {
       WS_TRY_AGAIN_LATER,
       AGENT_WSS_SCHEDULE_DISABLED
     );
-  }
-
-  _createAgentWssUnavailableResponse(scheduleState) {
-    if (!scheduleState?.configured) {
-      return new Response(JSON.stringify({
-        error: 'Agent WSS report disabled',
-        code: 409,
-        text: AGENT_WSS_SCHEDULE_DISABLED,
-        connection_mode: 'http'
-      }), {
-        status: 409,
-        headers: {
-          'Cache-Control': 'no-store',
-          'Content-Type': 'application/json',
-          [AGENT_WSS_MODE_HEADER]: scheduleState.mode,
-          [AGENT_WSS_REASON_HEADER]: scheduleState.reason
-        }
-      });
-    }
-
-    return new Response(JSON.stringify({
-      error: 'Agent WSS report outside active hours',
-      code: 409,
-      text: AGENT_WSS_SCHEDULE_INACTIVE,
-      connection_mode: 'http'
-    }), {
-      status: 409,
-      headers: {
-        'Cache-Control': 'no-store',
-        'Content-Type': 'application/json',
-        [AGENT_WSS_MODE_HEADER]: scheduleState.mode,
-        [AGENT_WSS_REASON_HEADER]: scheduleState.reason
-      }
-    });
   }
 
   _decodeWsMessage(message) {
@@ -665,7 +354,7 @@ export class RealtimeHub {
   async _resolveAgentContext(ws, attachment, data) {
     const rawServerId = data.id ?? attachment.serverId;
     const serverId = typeof rawServerId === 'string' ? rawServerId.trim() : String(rawServerId || '').trim();
-    if (!this._isValidServerId(serverId)) {
+    if (!isValidRealtimeId(serverId)) {
       this._closeWsWithError(ws, 'Invalid server ID', 400);
       return null;
     }
@@ -905,69 +594,25 @@ export class RealtimeHub {
     }
   }
 
-  async _handleAgentConfigChanged(request) {
-    let body = null;
-    try {
-      body = await request.json();
-    } catch (_) {
-      return new Response(JSON.stringify({ error: 'invalid JSON' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+  async agentReportModeChanged() {
+    const settings = await loadSiteSettings(this.env.DB, { forceRefresh: true });
+    const state = getWssReportScheduleState(settings);
+    const result = state.active ? { matched: 0, closed: 0 } : (state.configured ? this._closeInactiveAgentReportWebSockets() : this._closeAgentReportWebSockets());
+    return { ok: true, wssReportEnabled: state.active, ...result };
+  }
 
-    if (body?.agentReportModeChanged === true) {
-      const settings = await loadSiteSettings(this.env.DB, { forceRefresh: true });
-      const scheduleState = getWssReportScheduleState(settings);
-      const result = scheduleState.active
-        ? { matched: 0, closed: 0 }
-        : (scheduleState.configured
-            ? this._closeInactiveAgentReportWebSockets()
-            : this._closeAgentReportWebSockets());
-      return new Response(JSON.stringify({
-        ok: true,
-        wssReportEnabled: scheduleState.active,
-        ...result
-      }), {
-        headers: {
-          'Cache-Control': 'no-store',
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-
-    const serverId = String(body?.serverId || '').trim();
-    if (!this._isValidServerId(serverId)) {
-      return new Response(JSON.stringify({ error: 'invalid serverId' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
+  async agentConfigChanged(serverId) {
+    if (!isValidRealtimeId(serverId)) throw new Error('invalid serverId');
     clearServerDetailCache();
     this.agentServerDetails.delete(serverId);
-
     const descriptor = await this._loadAgentConfigDescriptor(serverId, true, AGENT_CONFIG_SCHEMA_VERSION);
-    if (!descriptor) {
-      return new Response(JSON.stringify({ error: 'server not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
+    if (!descriptor) return null;
     const descriptors = new Map([[AGENT_CONFIG_SCHEMA_VERSION, descriptor]]);
-    for (let schemaVersion = AGENT_CONFIG_LEGACY_SCHEMA_VERSION; schemaVersion < AGENT_CONFIG_SCHEMA_VERSION; schemaVersion++) {
-      const legacyDescriptor = await this._loadAgentConfigDescriptor(serverId, false, schemaVersion);
-      if (legacyDescriptor) descriptors.set(schemaVersion, legacyDescriptor);
+    for (let version = AGENT_CONFIG_LEGACY_SCHEMA_VERSION; version < AGENT_CONFIG_SCHEMA_VERSION; version++) {
+      const legacy = await this._loadAgentConfigDescriptor(serverId, false, version);
+      if (legacy) descriptors.set(version, legacy);
     }
-
-    const result = this._pushAgentConfigFrame(serverId, descriptors);
-    return new Response(JSON.stringify({ ok: true, ...result }), {
-      headers: {
-        'Cache-Control': 'no-store',
-        'Content-Type': 'application/json'
-      }
-    });
+    return { ok: true, ...this._pushAgentConfigFrame(serverId, descriptors) };
   }
 
   async _ackTrafficCorrection(serverId, data) {
@@ -990,49 +635,21 @@ export class RealtimeHub {
     return { ok: true };
   }
 
-  async _ingestRealtimeUpdates(normalizedUpdates, reportTs = Date.now()) {
-    if (!Array.isArray(normalizedUpdates) || normalizedUpdates.length === 0) return;
-    if (this._shouldCacheResourceAlertSamples(reportTs)) {
-      await this._ensureResourceAlertSnapshotLoaded();
-      await this._cacheResourceAlertSamples(normalizedUpdates, reportTs);
-    }
-    this._cacheLatestReportUpdates(normalizedUpdates, reportTs);
-    this._broadcastBatch(normalizedUpdates, reportTs);
+  async _ingestRealtimeUpdates(updates, reportTs = Date.now()) {
+    if (!Array.isArray(updates) || !updates.length) return;
+    for (const update of updates) this.latestReports.set(update.serverId, update.samples, reportTs);
+    await this.resourceAlerts.ingest(updates, reportTs);
+    this._broadcastBatch(updates, reportTs);
   }
 
-  _getAgentRealtimeState(now = Date.now()) {
-    const frontendActive = this._getFrontendSubscriberCount() > 0;
-    const resourceAlertActive = this._shouldCacheResourceAlertSamples(now);
-    return {
-      frontendActive,
-      resourceAlertActive,
-      realtimeActive: frontendActive || resourceAlertActive
-    };
-  }
-
-  _normalizeRealtimeState(realtimeState) {
-    if (realtimeState && typeof realtimeState === 'object') {
-      return {
-        frontendActive: realtimeState.frontendActive === true,
-        resourceAlertActive: realtimeState.resourceAlertActive === true,
-        realtimeActive: realtimeState.realtimeActive === true ||
-          realtimeState.frontendActive === true ||
-          realtimeState.resourceAlertActive === true
-      };
-    }
-    return {
-      frontendActive: realtimeState === true,
-      resourceAlertActive: false,
-      realtimeActive: realtimeState === true
-    };
-  }
+  _getAgentRealtimeState() { return { frontendActive: this._getFrontendSubscriberCount() > 0 }; }
 
   _getAgentNextWssReportAfterMs(wssReportIntervalMs, reportIntervalMs, realtimeState) {
     const normalizedWssReportIntervalMs = Math.max(
       1000,
       Number(wssReportIntervalMs) || DEFAULT_WSS_REPORT_INTERVAL * 1000
     );
-    const state = this._normalizeRealtimeState(realtimeState);
+    const state = typeof realtimeState === 'object' ? realtimeState : { frontendActive: realtimeState === true };
     const normalizedReportIntervalMs = Math.max(
       AGENT_MIN_IDLE_WSS_REPORT_INTERVAL_MS,
       Number(reportIntervalMs) || AGENT_DEFAULT_HISTORY_WRITE_INTERVAL_MS
@@ -1251,11 +868,7 @@ export class RealtimeHub {
       samples: broadcastSamples
     }];
     const realtimeState = this._getAgentRealtimeState(reportTs);
-    if (realtimeState.realtimeActive) {
-      await this._ingestRealtimeUpdates(normalizedUpdates, reportTs);
-    } else {
-      this._cacheLatestReportUpdates(normalizedUpdates, reportTs);
-    }
+    await this._ingestRealtimeUpdates(normalizedUpdates, reportTs);
 
     const persisted = await this._persistAgentHistoryIfDue(ws, context.attachment, {
       serverId: context.serverId,
@@ -1282,504 +895,6 @@ export class RealtimeHub {
       nextWssReportAfterMs,
       ...(configAck || {})
     });
-  }
-
-  async fetch(request, options) {
-    if (typeof request === "string") request = new Request(request, options);
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
-
-    if (method === 'POST' && path === '/agent-config-changed') {
-      return this._handleAgentConfigChanged(request);
-    }
-
-    // ── 2) 广播入口：/update 成功后由主控内部转发 ──
-    //     path: /push/<serverId>   body: { metrics } JSON
-    if (method === 'POST' && (path.startsWith('/push/') || path.includes('/push/'))) {
-      const parts = path.split('/push/');
-      const serverId = decodeURIComponent((parts[1] || '').split('/')[0] || '');
-      if (!serverId) {
-        return new Response(JSON.stringify({ error: 'missing serverId' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      let payload = null;
-      try {
-        payload = await request.json();
-      } catch (_) {
-        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const reportTs = Date.now();
-      const subscribers = this._getFrontendSubscriberCount();
-      if (subscribers === 0) {
-        return new Response(JSON.stringify({ ok: true, skipped: true, subscribers: 0 }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      if (this._shouldCacheResourceAlertSamples(reportTs)) {
-        await this._ensureResourceAlertSnapshotLoaded();
-        await this._cacheResourceAlertSamples([{
-          serverId,
-          samples: [{ ts: reportTs, data: payload }]
-        }], reportTs);
-      }
-      this._broadcast(serverId, payload);
-      return new Response(JSON.stringify({ ok: true, subscribers }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // ── 2b) 批量推送入口 ──────────────────────────────
-    //     body: { updates: [{ serverId, payload }, ...] }
-    if (method === 'POST' && path === '/batch-push') {
-      let body = null;
-      try {
-        body = await request.json();
-      } catch (_) {
-        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const updates = body && body.updates;
-      if (!Array.isArray(updates) || updates.length === 0) {
-        return new Response(JSON.stringify({ error: 'missing or empty updates array' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const normalizedUpdates = this._normalizeBatchUpdates(updates);
-      if (normalizedUpdates.length === 0) {
-        return new Response(JSON.stringify({ error: 'missing valid updates' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const maintainState = body?.maintainState === true;
-      const latestReportOnly = body?.latestReportOnly === true;
-      const subscribers = this._getFrontendSubscriberCount();
-      if (!maintainState && !latestReportOnly && subscribers === 0) {
-        return new Response(JSON.stringify({ ok: true, skipped: true, count: normalizedUpdates.length, subscribers: 0 }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const reportTs = Date.now();
-      if (latestReportOnly && subscribers === 0) {
-        this._cacheLatestReportUpdates(normalizedUpdates, reportTs);
-        return new Response(JSON.stringify({
-          ok: true,
-          count: normalizedUpdates.length,
-          subscribers,
-          latestReportOnly: true
-        }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      await this._ingestRealtimeUpdates(normalizedUpdates, reportTs);
-
-      return new Response(JSON.stringify({ ok: true, count: normalizedUpdates.length, subscribers }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // 主控内部读取每台服务器最近一次上报的完整样本包。
-    if (method === 'POST' && path === '/latest-report-updates') {
-      let body = null;
-      try {
-        body = await request.json();
-      } catch (_) {
-        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const normalizedServerIds = this._normalizeServerIds(body?.serverIds);
-      if (!normalizedServerIds.ok) {
-        return new Response(JSON.stringify({ error: 'invalid serverIds' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const updates = this._getLatestReportUpdates(normalizedServerIds.ids);
-      const payload = { updates };
-
-      return new Response(JSON.stringify(payload), {
-        headers: {
-          'Cache-Control': 'no-store',
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-
-    if (method === 'POST' && path === '/evaluate-resource-alerts') {
-      let body = null;
-      try {
-        body = await request.json();
-      } catch (_) {
-        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const normalizedRules = this._normalizeResourceAlertEvaluationRules(body?.rules);
-      if (!normalizedRules.ok) {
-        return new Response(JSON.stringify({ error: 'invalid rules' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      this._activateResourceAlertCache();
-      await this._ensureResourceAlertSnapshotLoaded();
-      const result = await this._evaluateResourceAlertRules(normalizedRules.rules);
-
-      return new Response(JSON.stringify(result), {
-        headers: {
-          'Cache-Control': 'no-store',
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-
-    // ── 3) 健康检查 ────────────────────────────────────
-    if (method === 'GET' && (path === '/health' || path.endsWith('/health'))) {
-      const subscribers = this._getFrontendSubscriberCount();
-      const agentSockets = this.standardAgentWebSocketCount;
-      const sockets = this.frontendSockets.size + agentSockets;
-      return new Response(JSON.stringify({ ok: true, subscribers, sockets, agentSockets }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    return new Response('Not found', { status: 404 });
-  }
-
-  // 向所有匹配 scope 的 WebSocket 广播推送
-  _broadcast(serverId, payload) {
-    const ts = Date.now();
-    const updates = [{
-      serverId,
-      samples: [{ ts, data: payload }]
-    }];
-    this._cacheLatestReportUpdates(updates, ts);
-    this._broadcastBatch(updates, ts);
-  }
-
-  _pruneLatestReportUpdates(now = Date.now()) {
-    for (const [serverId, update] of this.latestReportUpdates) {
-      if (!update || now - update.reportTs > LATEST_REPORT_CACHE_TTL_MS) {
-        this.latestReportUpdates.delete(serverId);
-      }
-    }
-  }
-
-  _cacheLatestReportUpdates(updates, reportTs = Date.now()) {
-    this._pruneLatestReportUpdates(reportTs);
-
-    for (const update of updates) {
-      if (!update || !update.serverId || !Array.isArray(update.samples) || update.samples.length === 0) continue;
-      const serverId = String(update.serverId);
-      // delete + set 让 Map 的插入顺序同时代表最近更新时间，便于限制内存上限。
-      this.latestReportUpdates.delete(serverId);
-      this.latestReportUpdates.set(serverId, maskPublicIpUpdate({
-        serverId,
-        reportTs,
-        samples: update.samples
-      }));
-    }
-
-    while (this.latestReportUpdates.size > LATEST_REPORT_CACHE_MAX_SERVERS) {
-      const oldestServerId = this.latestReportUpdates.keys().next().value;
-      if (oldestServerId === undefined) break;
-      this.latestReportUpdates.delete(oldestServerId);
-    }
-  }
-
-  _getLatestReportUpdates(serverIds) {
-    const now = Date.now();
-    this._pruneLatestReportUpdates(now);
-    const updates = [];
-    for (const serverId of serverIds) {
-      const update = this.latestReportUpdates.get(serverId);
-      if (update) {
-        updates.push(maskPublicIpUpdate({
-          ...update,
-          reportAgeMs: Math.max(0, now - update.reportTs)
-        }));
-      }
-    }
-    return updates;
-  }
-
-  _activateResourceAlertCache(now = Date.now()) {
-    this.resourceAlertCacheActiveUntil = Math.max(
-      this.resourceAlertCacheActiveUntil,
-      now + RESOURCE_ALERT_CACHE_ACTIVE_GRACE_MS
-    );
-  }
-
-  _shouldCacheResourceAlertSamples() { return true; }
-
-  async _ensureResourceAlertSnapshotLoaded() {
-    if (this.resourceAlertSnapshotLoaded) return;
-
-    this.resourceAlertSnapshotLoaded = true;
-    try {
-      const snapshot = JSON.parse(this.env.DB.prepare('SELECT value FROM runtime_state WHERE key = ?').bind(RESOURCE_ALERT_STORAGE_KEY).first()?.value || 'null');
-      const windows = Array.isArray(snapshot?.windows) ? snapshot.windows : [];
-      const now = Date.now();
-      const cutoffMinute = getAlertCutoffMinute(now, RESOURCE_ALERT_MAX_BUCKETS);
-
-      for (const item of windows) {
-        if (!item || !item.serverId || !Array.isArray(item.samples)) continue;
-        const samples = item.samples
-          .filter(sample => sample && Number(sample.minuteTs) >= cutoffMinute)
-          .sort((a, b) => a.minuteTs - b.minuteTs)
-          .slice(-RESOURCE_ALERT_MAX_BUCKETS);
-        if (samples.length > 0) {
-          this.resourceAlertWindows.set(String(item.serverId), { samples });
-        }
-      }
-
-      this.resourceAlertLastSnapshotSave = Number(snapshot?.savedAt) || 0;
-    } catch (e) {
-      console.warn('[resource-alert] load snapshot failed:', e.message || e);
-    }
-  }
-
-  _pruneResourceAlertWindows(now = Date.now()) {
-    const cutoffMinute = getAlertCutoffMinute(now, RESOURCE_ALERT_MAX_BUCKETS);
-    let changed = false;
-    for (const [serverId, window] of this.resourceAlertWindows) {
-      const originalSamples = Array.isArray(window?.samples) ? window.samples : [];
-      const samples = originalSamples
-        .filter(sample => sample && Number(sample.minuteTs) >= cutoffMinute)
-        .sort((a, b) => a.minuteTs - b.minuteTs)
-        .slice(-RESOURCE_ALERT_MAX_BUCKETS);
-
-      if (samples.length === 0) {
-        this.resourceAlertWindows.delete(serverId);
-        changed = true;
-      } else {
-        const sameSamples = samples.length === originalSamples.length &&
-          samples.every((sample, index) => sample === originalSamples[index]);
-        if (!sameSamples) changed = true;
-        this.resourceAlertWindows.set(serverId, { samples });
-      }
-    }
-
-    while (this.resourceAlertWindows.size > RESOURCE_ALERT_MAX_SERVERS) {
-      const oldestServerId = this.resourceAlertWindows.keys().next().value;
-      if (oldestServerId === undefined) break;
-      this.resourceAlertWindows.delete(oldestServerId);
-      changed = true;
-    }
-
-    if (changed) this.resourceAlertSnapshotDirty = true;
-    return changed;
-  }
-
-  async _cacheResourceAlertSamples(updates, now = Date.now()) {
-    this._pruneResourceAlertWindows(now);
-
-    for (const update of updates) {
-      if (!update || !update.serverId || !Array.isArray(update.samples)) continue;
-      const serverId = String(update.serverId);
-      const minuteMap = new Map(
-        (this.resourceAlertWindows.get(serverId)?.samples || []).map(sample => [sample.minuteTs, sample])
-      );
-
-      for (const sample of update.samples) {
-        const normalized = normalizeResourceAlertSample(sample);
-        if (!normalized) continue;
-        minuteMap.set(normalized.minuteTs, normalized);
-      }
-
-      const samples = Array.from(minuteMap.values())
-        .filter(sample => sample && Number(sample.minuteTs) >= getAlertCutoffMinute(now, RESOURCE_ALERT_MAX_BUCKETS))
-        .sort((a, b) => a.minuteTs - b.minuteTs)
-        .slice(-RESOURCE_ALERT_MAX_BUCKETS);
-
-      if (samples.length > 0) {
-        this.resourceAlertWindows.delete(serverId);
-        this.resourceAlertWindows.set(serverId, { samples });
-        this.resourceAlertSnapshotDirty = true;
-      }
-    }
-
-    await this._persistResourceAlertSnapshotIfNeeded(now);
-  }
-
-  async _persistResourceAlertSnapshotIfNeeded(now = Date.now(), force = false) {
-    if (!this.resourceAlertSnapshotDirty && !force) return;
-    if (!force && now - this.resourceAlertLastSnapshotSave < RESOURCE_ALERT_SNAPSHOT_INTERVAL_MS) return;
-
-    this._pruneResourceAlertWindows(now);
-    const windows = [];
-    for (const [serverId, window] of this.resourceAlertWindows) {
-      if (!window || !Array.isArray(window.samples) || window.samples.length === 0) continue;
-      windows.push({
-        serverId,
-        samples: window.samples
-      });
-    }
-
-    try {
-      this.env.DB.prepare('INSERT INTO runtime_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(RESOURCE_ALERT_STORAGE_KEY, JSON.stringify({ savedAt: now, windows })).run();
-      this.resourceAlertSnapshotDirty = false;
-      this.resourceAlertLastSnapshotSave = now;
-    } catch (e) {
-      console.warn('[resource-alert] persist snapshot failed:', e.message || e);
-    }
-  }
-
-  _evaluateResourceAlertRule(rule = {}, now = Date.now()) {
-    const windowMinutesNumber = Number(rule.windowMinutes);
-    const windowMinutes = Number.isInteger(windowMinutesNumber)
-      ? Math.max(5, Math.min(10, windowMinutesNumber))
-      : 5;
-    const cutoffMinute = getAlertCutoffMinute(now, windowMinutes);
-    const mode = normalizeResourceAlertMode(rule.mode);
-    const thresholds = normalizeThresholds(rule.thresholds);
-    const metricThresholds = [
-      ['cpu', thresholds.cpu],
-      ['ram', thresholds.ram],
-      ['disk', thresholds.disk],
-      ['netIn', thresholds.netIn],
-      ['netOut', thresholds.netOut],
-      ['netTotal', thresholds.netTotal]
-    ].filter(([, threshold]) => threshold > 0);
-
-    const alerts = [];
-    const evaluatedServerIds = [];
-    const evaluations = [];
-    if (metricThresholds.length === 0) {
-      return { ruleId: rule.ruleId, now, mode, windowMinutes, alerts, evaluatedServerIds, evaluations };
-    }
-
-    for (const serverId of rule.serverIds || []) {
-      const samples = (this.resourceAlertWindows.get(serverId)?.samples || [])
-        .filter(sample => sample && Number(sample.minuteTs) >= cutoffMinute)
-        .sort((a, b) => a.minuteTs - b.minuteTs);
-      if (!hasSufficientResourceAlertSamples(samples, windowMinutes)) continue;
-
-      const latestSample = samples[samples.length - 1];
-      if (!latestSample || now - latestSample.ts > getResourceAlertLatestTolerance(samples)) continue;
-
-      const metrics = [];
-      const evaluationMetrics = [];
-      let canEvaluateAllMetrics = true;
-      for (const [metric, threshold] of metricThresholds) {
-        const metricSamples = samples
-          .map(sample => ({ sample, value: getMetricValue(sample, metric) }))
-          .filter(item => item.value !== null);
-        if (!hasSufficientResourceAlertSamples(metricSamples.map(item => item.sample), windowMinutes)) {
-          canEvaluateAllMetrics = false;
-          break;
-        }
-        const summary = summarizeMetric(metricSamples.map(item => item.sample), metric);
-        if (!summary) {
-          canEvaluateAllMetrics = false;
-          break;
-        }
-
-        const triggerValue = mode === RESOURCE_ALERT_MODE_AVERAGE ? summary.avg : summary.current;
-        const isTriggered = mode === RESOURCE_ALERT_MODE_AVERAGE
-          ? triggerValue > threshold
-          : metricSamples.every(item => item.value > threshold);
-
-        const metricEvaluation = {
-          metric,
-          mode,
-          threshold,
-          triggerValue,
-          triggered: isTriggered,
-          ...summary
-        };
-        evaluationMetrics.push(metricEvaluation);
-        if (isTriggered) {
-          metrics.push(metricEvaluation);
-        }
-      }
-
-      if (!canEvaluateAllMetrics) continue;
-      evaluatedServerIds.push(serverId);
-      evaluations.push({
-        serverId,
-        mode,
-        windowMinutes,
-        sampleCount: samples.length,
-        minSampleRatio: RESOURCE_ALERT_MIN_SAMPLE_RATIO,
-        latestTs: latestSample.ts,
-        metrics: evaluationMetrics
-      });
-
-      if (metrics.length > 0) {
-        alerts.push({
-          serverId,
-          mode,
-          windowMinutes,
-          sampleCount: samples.length,
-          minSampleRatio: RESOURCE_ALERT_MIN_SAMPLE_RATIO,
-          latestTs: latestSample.ts,
-          metrics
-        });
-      }
-    }
-
-    return { ruleId: rule.ruleId, now, mode, windowMinutes, alerts, evaluatedServerIds, evaluations };
-  }
-
-  async _evaluateResourceAlertRules(rules = []) {
-    const now = Date.now();
-    this._pruneResourceAlertWindows(now);
-    const results = [];
-
-    for (const rule of rules) {
-      results.push(this._evaluateResourceAlertRule(rule, now));
-    }
-
-    await this._persistResourceAlertSnapshotIfNeeded(now);
-    return { now, results };
-  }
-
-  // WebSocket 收到消息（ping 已被自动响应拦截，不会到达此处）
-  _normalizeBatchUpdates(updates) {
-    const now = Date.now();
-    return updates.map(item => {
-      if (!item || !item.serverId) return null;
-      const serverId = String(item.serverId);
-      const rawSamples = Array.isArray(item.samples)
-        ? item.samples
-        : (item.payload ? [{ ts: now, payload: item.payload }] : []);
-
-      const samples = rawSamples.map(sample => {
-        if (!sample || typeof sample !== 'object') return null;
-        const data = sample.data || sample.payload || sample.metrics;
-        if (!data || typeof data !== 'object') return null;
-        const ts = Number(sample.ts || sample.timestamp || data.last_updated || now) || now;
-        return { ts, data };
-      }).filter(Boolean);
-
-      if (samples.length === 0) return null;
-      samples.sort((a, b) => a.ts - b.ts);
-      return { serverId, samples };
-    }).filter(Boolean);
   }
 
   _broadcastBatch(updates, ts = Date.now()) {
@@ -1850,8 +965,6 @@ export class RealtimeHub {
         try {
           await this._hintAgentRealtimeIntervals({
             frontendActive: true,
-            resourceAlertActive: this._shouldCacheResourceAlertSamples(),
-            realtimeActive: true
           });
         } catch (e) {
           console.warn('[ws] Failed to hint agent realtime interval:', e?.message || e);
@@ -1863,11 +976,6 @@ export class RealtimeHub {
     } catch (_) {}
   }
 
-  // WebSocket 关闭 — hub 自动清理，无需手动移除
-  webSocketClose(ws, code, reason) {}
-
-  // WebSocket 错误 — hub 自动处理
-  webSocketError(ws, error) {}
 }
 
 export default RealtimeHub;

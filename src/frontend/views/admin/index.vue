@@ -195,7 +195,6 @@
         :delete-server-id="deleteServerId"
         :current-server-name="currentServerName"
         :delete-target-os="deleteTargetOs"
-        :delete-version="deleteVersion"
         :delete-install-mode="deleteInstallMode"
         :uninstall-command="getUninstallCommand()"
         :uninstall-copied="uninstallCopied"
@@ -203,7 +202,6 @@
         @confirm-delete="confirmDelete"
         @copy-uninstall="copyUninstallCmd"
         @update:delete-target-os="deleteTargetOs = $event"
-        @update:delete-version="deleteVersion = $event"
         @update:delete-install-mode="deleteInstallMode = $event"
       />
 
@@ -355,6 +353,8 @@
 </template>
 
 <script setup>
+import { createServerForm, buildServerFormPayload } from '../../utils/serverForm.js'
+import { buildAgentInstallCommand, buildAgentUninstallCommand } from '../../utils/agentCommands.js'
 import { ref, computed, onMounted, watch, nextTick, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TerminalHeader from '../../components/TerminalHeader.vue'
@@ -373,7 +373,7 @@ import { getAuthToken } from '../../utils/http'
 import { adminApi, login, logout as apiLogout, clearHistory, getApiBases, fetchConfig } from '../../utils/api'
 import { hasMultipleApiBases } from '../../utils/config.js'
 import { t, useTranslation, normalizeLanguagePreference } from '../../utils/i18n'
-import { PING_NODE_FIELDS, SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../utils/pingNode.js'
+import { PING_NODE_FIELDS, SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../shared/pingNode.js'
 import { normalizeDisplayMode, resolveDisplayMode } from '../../utils/displayMode.js'
 import { applyMikusThemeOptions } from '../../utils/themeOptions.js'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../utils/constants.js'
@@ -781,7 +781,6 @@ const copiedServerId = ref(null)
 const copiedNoteServerId = ref(null)
 const copiedSpecKey = ref(null)
 const deleteTargetOs = ref('linux')
-const deleteVersion = ref('go')
 const deleteInstallMode = ref('current-user')
 const uninstallCopied = ref(false)
 const saving = ref(false)
@@ -1258,7 +1257,17 @@ const saveSettings = async () => {
       applyMikusThemeOptions(themeOptionsResult.value)
       clearAdminPasswordInputs()
       changeAdminPassword.value = false
-      loadSettings()
+      if (result.data?.requiresLogin) {
+        apiLogout(selectedApiIndex.value)
+        saveResult.value = null
+        isLoggedIn.value = false
+        requiresTwoFactor.value = false
+        loginForm.value.username = settings.value.username || 'admin'
+        loginForm.value.password = ''
+        loginForm.value.code = ''
+      } else {
+        await loadSettings()
+      }
     } else {
       saveResult.value = { success: false, error: getMessage(result.error) || 'fail' }
     }
@@ -1323,21 +1332,7 @@ const resolveServerPingNode = (server, field) => {
   }
 }
 
-const getUninstallCommand = () => {
-  const HOST = selectedApiBase.value
-  const isGo = deleteVersion.value === 'go'
-  const downloadBase = `${HOST}/agent`
-  if (isGo) {
-    const scriptUrl = `${HOST}/agent/install.sh`
-    const downloadParam = ` ${quotePosixShellArg(`--download-url=${downloadBase}`)}`
-    const uninstallCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- uninstall${downloadParam}`
-    if (deleteTargetOs.value === 'linux' && deleteInstallMode.value === 'cfsm-user') {
-      return buildUninstallAsCfsmCommand(uninstallCommand)
-    }
-    return uninstallCommand
-  }
-  return `curl -fsSL '${HOST}/uninstall.sh' | sh -s`
-}
+const getUninstallCommand = () => buildAgentUninstallCommand(selectedApiBase.value, deleteTargetOs.value, deleteInstallMode.value, trans.value)
 
 const copyCmd = (serverId) => {
   const server = servers.value.find(s => s.id === serverId)
@@ -1380,101 +1375,31 @@ const copyCmd = (serverId) => {
   showCopyModal.value = true
 }
 
-const hasCorrectionValue = (value) => value !== null && value !== undefined && value !== ''
-
-const quotePosixShellArg = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`
-
-
-const quotePosixDoubleShellArg = (value) => `"${String(value)
-  .replaceAll('\\', '\\\\')
-  .replaceAll('"', '\\"')
-  .replaceAll('$', '\\$')
-  .replaceAll('`', '\\`')}"`
-
-const buildUninstallAsCfsmCommand = (command) => {
-  const runuserCommand = `runuser -u cfsm -- env HOME="\${CFSM_HOME}" XDG_RUNTIME_DIR="/run/user/\${CFSM_UID}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\${CFSM_UID}/bus" sh -c ${quotePosixDoubleShellArg(command)}`
-  return [
-    '(',
-    'set -e',
-    `if ! command -v runuser >/dev/null 2>&1; then echo ${quotePosixDoubleShellArg(trans.value.dedicatedUserUninstallUnsupported)} >&2; exit 1; fi`,
-    `id cfsm >/dev/null 2>&1 || { echo ${quotePosixDoubleShellArg(trans.value.nonRootUninstallUserMissing)} >&2; exit 1; }`,
-    'CFSM_UID=$(id -u cfsm)',
-    'CFSM_HOME=$(getent passwd cfsm | cut -d: -f6); [ -n "${CFSM_HOME}" ] || CFSM_HOME=/home/cfsm',
-    'if [ "$(id -u)" -eq 0 ]; then',
-    `  ${runuserCommand}`,
-    'elif command -v sudo >/dev/null 2>&1; then',
-    `  sudo ${runuserCommand}`,
-    'else',
-    `  echo ${quotePosixDoubleShellArg(trans.value.nonRootInstallSudoRequired)} >&2; exit 1`,
-    'fi',
-    ')'
-  ].join('\n')
-}
-
-const buildInstallAsCfsmCommand = (command, runStep) => {
-  const lines = [
-    '(',
-    'set -e',
-    `if [ ! -d /run/systemd/system ] || ! command -v systemctl >/dev/null 2>&1 || ! command -v loginctl >/dev/null 2>&1 || ! command -v useradd >/dev/null 2>&1 || ! command -v runuser >/dev/null 2>&1; then echo ${quotePosixDoubleShellArg(trans.value.dedicatedUserSystemdRequired)} >&2; exit 1; fi`,
-    'if [ "$(id -u)" -eq 0 ]; then',
-    '  as_root() { "$@"; }',
-    'elif command -v sudo >/dev/null 2>&1; then',
-    '  as_root() { sudo "$@"; }',
-    'else',
-    `  echo ${quotePosixDoubleShellArg(trans.value.nonRootInstallSudoRequired)} >&2; exit 1`,
-    'fi'
-  ]
-
-  lines.push(
-    'id cfsm >/dev/null 2>&1 || as_root useradd -m -s /bin/sh cfsm',
-    'as_root loginctl enable-linger cfsm'
-  )
-
-  lines.push(
-    'CFSM_UID=$(id -u cfsm)',
-    'as_root systemctl start user@${CFSM_UID}.service',
-    'if command -v getent >/dev/null 2>&1; then CFSM_HOME=$(getent passwd cfsm | cut -d: -f6); else CFSM_HOME=/home/cfsm; fi; [ -n "${CFSM_HOME}" ] || CFSM_HOME=/home/cfsm',
-    '',
-    `# ${runStep}`,
-    `as_root runuser -u cfsm -- env HOME="\${CFSM_HOME}" XDG_RUNTIME_DIR="/run/user/\${CFSM_UID}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\${CFSM_UID}/bus" sh -c ${quotePosixDoubleShellArg(command)}`,
-    ')'
-  )
-  return lines.join('\n')
-}
-
-const getCustomInstallCommand = () => {
-  const HOST = selectedApiBase.value
-  const downloadBase = `${HOST}/agent`
-  const isDedicatedUserInstall = targetOs.value === 'linux' && installMode.value === 'cfsm-user'
-  const params = [
-    'install',
-    `--download-url=${downloadBase}`,
-    `-id=${copyServerId.value}`,
-    `-secret=${apiSecret.value}`,
-    `-url=${HOST}/update`,
-    `-collect_interval=${collectInterval.value}`,
-    `-interval=${reportInterval.value}`,
-    `-connection_mode=${getEffectiveConnectionMode(connectionMode.value)}`,
-    `-ping_mode=${getEffectivePingMode(isDedicatedUserInstall ? 'tcp' : pingMode.value)}`,
-    `-reset_day=${resetDay.value ?? 1}`,
-    `-auto_update=${autoUpdate.value ? 1 : 0}`
-  ]
-  const nodes = [
-    ['ct', 'custom_ct', customCt.value], ['cu', 'custom_cu', customCu.value],
-    ['cm', 'custom_cm', customCm.value], ['bd', 'custom_bd', customBd.value],
-    ['node_1', 'node_1', node1.value], ['node_2', 'node_2', node2.value],
-    ['node_3', 'node_3', node3.value], ['node_4', 'node_4', node4.value]
-  ]
-  for (const [flag, field, value] of nodes) {
-    if (value || explicitEmptyNodes.value[field]) params.push(`-${flag}=${value}`)
-  }
-  if (networkInterface.value) params.push(`-interface=${networkInterface.value}`)
-  if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction=${rxCorrection.value}`)
-  if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction=${txCorrection.value}`)
-  const scriptUrl = `${HOST}/agent/install.sh`
-  const installCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- ${params.map(quotePosixShellArg).join(' ')}`
-  return isDedicatedUserInstall ? buildInstallAsCfsmCommand(installCommand, trans.value.nonRootInstallRunStep) : installCommand
-}
+const getCustomInstallCommand = () => buildAgentInstallCommand({
+  selectedApiBase: selectedApiBase.value,
+  targetOs: targetOs.value,
+  installMode: installMode.value,
+  copyServerId: copyServerId.value,
+  apiSecret: apiSecret.value,
+  collectInterval: collectInterval.value,
+  reportInterval: reportInterval.value,
+  connectionMode: getEffectiveConnectionMode(connectionMode.value),
+  pingMode: getEffectivePingMode(pingMode.value),
+  resetDay: resetDay.value,
+  autoUpdate: autoUpdate.value,
+  customCt: customCt.value,
+  customCu: customCu.value,
+  customCm: customCm.value,
+  customBd: customBd.value,
+  node1: node1.value,
+  node2: node2.value,
+  node3: node3.value,
+  node4: node4.value,
+  explicitEmptyNodes: explicitEmptyNodes.value,
+  networkInterface: networkInterface.value,
+  rxCorrection: rxCorrection.value,
+  txCorrection: txCorrection.value
+}, trans.value)
 
 const copyCustomCmd = async () => {
   if (window.location.protocol !== 'https:') {
@@ -1519,38 +1444,7 @@ const copyUninstallCmd = async () => {
   }, 1500)
 }
 
-const createEditFormFromServer = (server) => ({
-    id: server.id,
-    name: server.name || '',
-    server_group: server.server_group || '',
-    region: server.region_override ?? (server.region || ''),
-    tags: server.tags || '',
-    note: server.note || '',
-    price: normalizePrice(server.price),
-    billing_cycle: normalizeBillingCycle(detectBillingCycle(server.price) || server.billing_cycle),
-    auto_renewal: server.auto_renewal === '1' || server.auto_renewal === 1 || server.auto_renewal === true,
-    currency: normalizeCurrency(server.currency || detectCurrencySymbol(server.price) || '¥'),
-    expire_date: server.expire_date || '',
-    traffic_limit: server.traffic_limit || '',
-    traffic_calc_type: server.traffic_calc_type || 'total',
-    interface: server.interface || '',
-    reset_day: server.reset_day ?? 1,
-    collect_interval: server.collect_interval ?? 0,
-    report_interval: server.report_interval || 60,
-    wss_report_interval: server.wss_report_interval || 2,
-    connection_mode: getEffectiveConnectionMode(server.connection_mode),
-    ping_mode: server.ping_mode === 'icmp' ? 'icmp' : 'tcp',
-    custom_ct: server.custom_ct ?? '',
-    custom_cu: server.custom_cu ?? '',
-    custom_cm: server.custom_cm ?? '',
-    custom_bd: server.custom_bd ?? '',
-    node_1: server.node_1 ?? '', node_2: server.node_2 ?? '', node_3: server.node_3 ?? '', node_4: server.node_4 ?? '',
-    rx_correction: server.rx_correction ?? '',
-    tx_correction: server.tx_correction ?? '',
-    auto_update: server.auto_update === '1' || server.auto_update === 1 || server.auto_update === true,
-    is_hidden: server.is_hidden === '1',
-    offline_notify_disabled: server.offline_notify_disabled === '1'
-})
+const createEditFormFromServer = server => createServerForm(server, getEffectiveConnectionMode(server.connection_mode))
 
 const openEditModal = (server) => {
   editForm.value = createEditFormFromServer(server)
@@ -1562,122 +1456,18 @@ const closeEditModal = () => {
   showEditModal.value = false
 }
 
-const buildEditPayloadFromForm = (form) => {
-  const pingNodeValidation = getPingNodeValidation(form)
-  if (!pingNodeValidation.valid) {
-    return { error: buildPingNodeError(pingNodeValidation.field) }
-  }
-
-  const normalizedBillingCycle = normalizeBillingCycle(form.billing_cycle)
-  const normalizedAutoRenewal = form.auto_renewal ? '1' : '0'
-  const normalizedPrice = normalizePrice(form.price)
-  const normalizedCurrency = normalizeCurrency(form.currency || detectCurrencySymbol(form.price) || '¥')
-  const normalizedExpireDate = renewExpireDateIfNeeded(
-    form.expire_date,
-    normalizedBillingCycle,
-    normalizedAutoRenewal
-  ).expire_date
-
-  return {
-    payload: {
-      action: 'edit',
-      id: form.id,
-      name: form.name,
-      server_group: form.server_group,
-      region: form.region,
-      tags: form.tags,
-      note: form.note,
-      price: normalizedPrice,
-      billing_cycle: normalizedBillingCycle,
-      auto_renewal: normalizedAutoRenewal,
-      currency: normalizedCurrency,
-      expire_date: normalizedExpireDate,
-      traffic_limit: form.traffic_limit,
-      traffic_calc_type: form.traffic_calc_type,
-      interface: form.interface,
-      reset_day: form.reset_day,
-      collect_interval: form.collect_interval,
-      report_interval: form.report_interval,
-      wss_report_interval: form.wss_report_interval,
-      connection_mode: getEffectiveConnectionMode(form.connection_mode),
-      ping_mode: form.ping_mode === 'icmp' ? 'icmp' : 'tcp',
-      custom_ct: pingNodeValidation.values.custom_ct,
-      custom_cu: pingNodeValidation.values.custom_cu,
-      custom_cm: pingNodeValidation.values.custom_cm,
-      custom_bd: pingNodeValidation.values.custom_bd,
-      node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
-      rx_correction: form.rx_correction,
-      tx_correction: form.tx_correction,
-      auto_update: form.auto_update ? '1' : '0',
-      is_hidden: form.is_hidden ? '1' : '0',
-      offline_notify_disabled: form.offline_notify_disabled ? '1' : '0'
-    },
-    normalized: {
-      price: normalizedPrice,
-      currency: normalizedCurrency,
-      billing_cycle: normalizedBillingCycle,
-      expire_date: normalizedExpireDate
-    }
-  }
+const buildEditPayloadFromForm = form => {
+  const result = buildServerFormPayload(form, getEffectiveConnectionMode(form.connection_mode))
+  return result.invalidField ? { error: buildPingNodeError(result.invalidField) } : result
 }
 
 const saveEdit = async () => {
   validationError.value = null
 
-  const pingNodeValidation = getPingNodeValidation(editForm.value)
-  if (!pingNodeValidation.valid) {
-    validationError.value = buildPingNodeError(pingNodeValidation.field)
-    return
-  }
-
-  const normalizedBillingCycle = normalizeBillingCycle(editForm.value.billing_cycle)
-  const normalizedAutoRenewal = editForm.value.auto_renewal ? '1' : '0'
-  const normalizedPrice = normalizePrice(editForm.value.price)
-  const normalizedCurrency = normalizeCurrency(editForm.value.currency || detectCurrencySymbol(editForm.value.price) || '¥')
-  const normalizedExpireDate = renewExpireDateIfNeeded(
-    editForm.value.expire_date,
-    normalizedBillingCycle,
-    normalizedAutoRenewal
-  ).expire_date
-
-  editForm.value.price = normalizedPrice
-  editForm.value.currency = normalizedCurrency
-  editForm.value.billing_cycle = normalizedBillingCycle
-  editForm.value.expire_date = normalizedExpireDate
-
-  const data = {
-    action: 'edit',
-    id: editForm.value.id,
-    name: editForm.value.name,
-    server_group: editForm.value.server_group,
-    region: editForm.value.region,
-    tags: editForm.value.tags,
-    note: editForm.value.note,
-    price: normalizedPrice,
-    billing_cycle: normalizedBillingCycle,
-    auto_renewal: normalizedAutoRenewal,
-    currency: normalizedCurrency,
-    expire_date: normalizedExpireDate,
-    traffic_limit: editForm.value.traffic_limit,
-    traffic_calc_type: editForm.value.traffic_calc_type,
-    interface: editForm.value.interface,
-    reset_day: editForm.value.reset_day,
-    collect_interval: editForm.value.collect_interval,
-    report_interval: editForm.value.report_interval,
-    wss_report_interval: editForm.value.wss_report_interval,
-    connection_mode: getEffectiveConnectionMode(editForm.value.connection_mode),
-    ping_mode: editForm.value.ping_mode === 'icmp' ? 'icmp' : 'tcp',
-    custom_ct: pingNodeValidation.values.custom_ct,
-    custom_cu: pingNodeValidation.values.custom_cu,
-    custom_cm: pingNodeValidation.values.custom_cm,
-    custom_bd: pingNodeValidation.values.custom_bd,
-    node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
-    rx_correction: editForm.value.rx_correction,
-    tx_correction: editForm.value.tx_correction,
-    auto_update: editForm.value.auto_update ? '1' : '0',
-    is_hidden: editForm.value.is_hidden ? '1' : '0',
-    offline_notify_disabled: editForm.value.offline_notify_disabled ? '1' : '0'
-  }
+  const built = buildEditPayloadFromForm(editForm.value)
+  if (built.error) { validationError.value = built.error; return }
+  Object.assign(editForm.value, built.normalized)
+  const data = built.payload
 
   try {
     const result = await adminApiForSite(data)
@@ -1698,7 +1488,6 @@ const openDeleteModal = (id) => {
   const server = servers.value.find(s => s.id === id)
   currentServerName.value = server?.name || ''
   deleteTargetOs.value = 'linux'
-  deleteVersion.value = 'go'
   deleteInstallMode.value = 'current-user'
   uninstallCopied.value = false
   showDeleteModal.value = true
@@ -1795,7 +1584,7 @@ const saveBatchEdit = async () => {
   batchEditing.value = true
 
   try {
-    let updated = 0
+    const updates = []
     for (const server of selected) {
       const form = createEditFormFromServer(server)
       for (const field of enabledFields) {
@@ -1806,13 +1595,14 @@ const saveBatchEdit = async () => {
         validationError.value = built.error
         return
       }
-      const result = await adminApiForSite(built.payload)
-      if (result.error) {
-        saveResult.value = { success: false, error: getMessage(result.error) || 'Fail' }
-        return
-      }
-      updated += 1
+      updates.push(built.payload)
     }
+    const result = await adminApiForSite({ action: 'batch_edit', servers: updates })
+    if (result.error) {
+      saveResult.value = { success: false, error: getMessage(result.error) || 'Fail' }
+      return
+    }
+    const updated = updates.length
 
     saveResult.value = {
       success: true,

@@ -375,7 +375,7 @@ import { TIME, DEFAULT_SITE_TITLE, STORAGE, LATENCY_WINDOW } from '../utils/cons
 import { normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js'
 import { normalizeDashboardView, normalizeDisplayMode, resolveDisplayMode } from '../utils/displayMode.js'
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
-import { refreshLatencyWindow, updateLatencyWindow } from '../utils/latencyWindow.js'
+import { updateLatencyWindow } from '../utils/latencyWindow.js'
 import { reconcileDashboardSnapshot } from '../utils/dashboardSnapshot.js'
 import { getMikusAssetUrl, isMikusThemeEnabled, normalizeThemeOptions, setMikusThemeClass } from '../utils/themeOptions.js'
 import {
@@ -989,7 +989,7 @@ const loadDashboardConfig = async () => {
 const loadDashboardData = async (options = {}) => {
   const bases = getApiBases()
   const isMultiSite = bases.length > 1
-  playbackBuffers.clear()
+  if (!options.preserveLive) playbackBuffers.clear()
 
   if (isMultiSite) {
     sitesRemaining.value = bases.length
@@ -1082,26 +1082,7 @@ const refreshData = (options = {}) => {
   return dashboardRefreshPending
 }
 
-let latencyRefreshPending = false
 let dashboardActive = true
-const refreshLatencyHistory = async () => {
-  if (latencyRefreshPending || !sysConfig.value.show_three_net_details) return
-  latencyRefreshPending = true
-  try {
-    const data = await fetchServersAll()
-    if (!dashboardActive) return
-    const snapshots = new Map((data?.servers || []).map(server => [`${server.source || ''}:${server.id}`, server]))
-    servers.value = servers.value.map(server => {
-      const snapshot = snapshots.get(`${server.source || ''}:${server.id}`)
-      if (!snapshot) return server
-      return { ...server, ...refreshLatencyWindow(server, snapshot, sysConfig.value.latency_window, Date.now()) }
-    })
-  } catch (error) {
-    console.log('[INFO] Latency history refresh pending...', error)
-  } finally {
-    latencyRefreshPending = false
-  }
-}
 
 // -------------------------------------------------------------------------
 // 实时推送：
@@ -1237,7 +1218,7 @@ onMounted(async () => {
   // 每秒更新 now 变量，使相对时间实时刷新
   runDashboardTick()
   timeUpdateInterval = setInterval(runDashboardTick, 1000)
-  latencyUpdateInterval = setInterval(refreshLatencyHistory, TIME.POLL_INTERVAL_MS)
+  latencyUpdateInterval = setInterval(() => refreshData({ preserveLive: true }), TIME.POLL_INTERVAL_MS)
 })
 
 onUnmounted(() => {

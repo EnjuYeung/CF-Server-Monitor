@@ -6,10 +6,9 @@ import './styles/light.css'
 import { applyDefaultLanguage, currentLang, resolveLanguagePreference, translations } from './utils/i18n'
 import { http, clearAuthToken } from './utils/http'
 import { isAdminEntryPage, updateAdminAccess } from './utils/adminAccess.js'
-import { initConfig, hasMultipleApiBases } from './utils/config'
-import { LAST_AGENT_VERSION, VERSION, normalizeLiveSocketTimeoutMinutes } from './utils/api'
-import { resolveDisplayMode } from './utils/displayMode'
-import { getMikusAssetUrl, isMikusThemeEnabled, normalizeThemeOptions, setMikusThemeClass } from './utils/themeOptions'
+import { initConfig } from './utils/config'
+import { LAST_AGENT_VERSION, VERSION } from './utils/api'
+import { getMikusAssetUrl, isMikusThemeEnabled, setMikusThemeClass } from './utils/themeOptions'
 import { applyDefaultTheme } from './composables/useTheme'
 const getTranslation = () => {
   const lang = currentLang.value || resolveLanguagePreference(localStorage.getItem('language_preference') || 'auto')
