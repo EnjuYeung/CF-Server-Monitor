@@ -1,8 +1,8 @@
 # 最近一次测试报告
 
-## 首页切回延迟与丢包缺样修复（2026-09-19，发布前验收）
+## 首页切回延迟与丢包缺样修复（2026-09-19，已部署生产并完成清理）
 
-已修复历史快照合并误用上报接收时间的问题：以 `sample_timestamp` 判断历史写入进度，保留尚未落库的实时延迟/丢包点。缺少该字段时沿用 `timestamp`、`last_updated` 的兼容回退。真实浏览器切回、重复刷新、每分钟刷新及解冻复测均保留最新样本，真实缺口和已保存历史的清空行为保持。下方 TR01–TR06 为修复前问题核实记录。
+已修复历史快照合并误用上报接收时间的问题：以 `sample_timestamp` 判断历史写入进度，保留尚未落库的实时延迟/丢包点。缺少该字段时沿用 `timestamp`、`last_updated` 的兼容回退。修复提交 `4b61d45` 已同步 GitHub 并于 **2026-09-19 20:20:52（Asia/Shanghai）** 部署至 `https://jm.zedy.cc`，未创建 PR。正式首页后台停留 8 分 45.597 秒后切回，14 台当前区间尚未落库的节点保留实时样本，全程误清空次数为 0。按用户要求完成部署备份、生产测试副本及旧主控镜像清理。下方 TR01–TR06 为修复前问题核实记录。
 
 ### 本轮环境与验收
 
@@ -16,8 +16,17 @@
 | TF02 | 未落库样本显示后切换真实标签页、重复焦点刷新、切换两种卡片视图、等待一分钟刷新、解冻恢复 | 53/63/73ms 及 0/1/2% 保持，下一条实时样本可继续更新 | `browser.json` 六项结果均 true，pageerror=[]；`isolated-after-return-tooltip.png` 显示切回后 53ms，`isolated-bar-fixed.png` 显示后续 54ms；清空已持久化历史后所有柱按预期缺样 | 通过 |
 | TF03 | 全量回归及真实 HTTP/WS/SQLite、原生 Agent 验收 | 既有行为保持，真实上报尚未落库时 REST 刷新不覆盖实时延迟和丢包 | `test-all.log`：101/101、配置与 Go vet/test；`controller-acceptance.json` 19/19，A05 新增 `retainedAfterRefresh=true`；`native-acceptance.json` 6/6 | 通过 |
 | TF04 | 构建候选镜像、核对源码/资产/归档、使用生产一致性快照在断网容器启动 | 镜像包含已测试修复，生产配置和数据可兼容使用 | `source-integrity.json`：源码、312 个构建文件与已测版本一致，Agent manifest 与生产一致；`candidate-smoke.json`：15 台节点、设置、归档不变，数据库 integrity=ok，HTTP 与 8 个 JS/CSS 校验通过 | 通过 |
+| TF05 | 将已测试内容写入 GitHub 当前分支，再用原 Compose 项目替换生产容器 | Git、候选镜像及生产源码一致；沿用环境、端口和数据卷 | `git-publish/published.json`：逐个文件树哈希一致，分支仅快进；`deployment.json`：远端提交 `4b61d45`，容器 `4fb38e087e4c`，healthy，环境/端口/挂载不变 | 通过 |
+| TF06 | 正式首页后台停留 525.597 秒，在新六分钟区间开始后切回并观察 20 秒 | 刷新不丢弃已有实时延迟/丢包点 | `production-summary.json`：12 次 REST、3894 批 WS、364 次 DOM 状态变化，`unexpectedClears=0`、`pendingNodesRetained=14`、pageerror=[]；8 个生产 JS/CSS 与已测构建一致，`production-return.png` 已查看 | 通过 |
+| TF07 | 部署后等待全部 Agent 上报，对比节点、设置、历史及 Agent 归档 | 原有数据保留并持续接收新数据 | `persistence-final.json`：15 台均在部署后上报；15 节点、3 条设置不变；51,681 条切换前历史逐行全部保留；30 个归档哈希不变，SQLite integrity=ok、RestartCount=0 | 通过 |
+| TF08 | 浏览器退出后连续 30 秒检查回环与公网健康、上报和运行日志 | 持续健康，所有 Agent 活跃，无新增 HTTP/WS 错误 | `steady-state.json`：7 轮共 14 次 HTTP 200，每轮 15 台近期上报，runtimeErrors=[]，数据库完整性与容器状态正常 | 通过 |
+| TF09 | 上述验收通过后删除部署备份、生产副本及旧镜像，再复查实际运行数据 | 清理指定产物，当前主控与数据继续可用 | `cleanup-result.json`、`post-cleanup.json`：7 个部署备份目录、6 个 `production-data-copy`、1 个旧镜像已删除；备份目录为空，仅保留 `server-monitor:local 515614703a47`；15 节点、52,057 条历史及 30 个 Agent 归档仍在，两入口健康 200 | 通过 |
 
-候选镜像为 `server-monitor:tab-return-fix-20260919`，ID `sha256:515614703a471d3d0b681721854ce50ed964c8c3f14c312f400c8df99481c94d`。已建立本次临时上线备份与回滚标签；按用户要求，生产部署及实测成功后删除项目部署备份和旧主控镜像。发布、生产切回复验与清理结果完成后补记。
+生产镜像为 `server-monitor:local`，ID `sha256:515614703a471d3d0b681721854ce50ed964c8c3f14c312f400c8df99481c94d`。切换时 200ms 探针采样 32 次，其中 5 次失败，首末失败跨度 0.809 秒；这是采样结果，不作为精确停机时长。原 `.env`、`127.0.0.1:26129` 和 `/opt/1panel/apps/jan_monitor/data` 保持一致。
+
+主机未配置命令行 GitHub 推送凭据，因此使用已连接且有仓库写权限的 GitHub 账号同步此前 3 个未推送提交及本次修复，保留每个提交的文件树与说明，不强制覆盖远端。GitHub 创建的新提交元数据使 SHA 更新；本次本地原提交 `e00abbd` 与远端 `4b61d45` 的文件树均为 `c0cefe9d971e1e40735f35361635e84191374394`，本地分支已对齐远端，原本地历史保留为 `archive/local-history-before-github-sync-20260919`。
+
+清理在生产浏览器与持续健康验证通过后执行：`/opt/1panel/apps/jan_monitor/backups/` 下全部 7 个部署备份目录和测试结果目录中的 6 份生产数据副本已移除，删除的备份文件逻辑大小合计 2,425,411,323 字节（不是镜像层实际回收空间）。旧镜像 `3b29b116f283` 和临时候选标签已移除，Docker 仅保留当前主控镜像标签。下方历史报告中的旧备份路径与回滚镜像已按本次授权清理；生产数据卷和原生 Agent 历史版本归档保持。测试浏览器、临时主控和候选检查容器均已关闭。
 
 本轮仅修改前端历史合并逻辑及相关测试、文档，未更改 Agent 安装、更新或分发逻辑，因此不额外重跑 Agent 安装部署套件；Docker 主控启动与实际部署单独验证。
 
