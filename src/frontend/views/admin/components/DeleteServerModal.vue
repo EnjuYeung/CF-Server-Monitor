@@ -38,8 +38,8 @@
         </div>
       </div>
 
-      <div v-if="deleteVersion === 'go'" class="form-row">
-        <div v-if="deleteTargetOs === 'linux' && deleteVersion === 'go'" class="form-group flex-1 mb-3">
+      <div v-if="deleteTargetOs === 'linux' && deleteVersion === 'go'" class="form-row">
+        <div class="form-group flex-1 mb-3">
           <label class="form-label">
             {{ trans.uninstallMode }}
           </label>
@@ -49,19 +49,6 @@
           </select>
         </div>
 
-        <div class="form-group flex-1 mb-3">
-          <label class="form-label">
-            {{ trans.agentDownloadSource }}
-            <HelpTooltip :text="trans.agentDownloadTip" />
-          </label>
-          <input
-            type="text"
-            :value="deleteDownloadUrl"
-            class="form-input mt-2"
-            :placeholder="trans.agentDownloadPlaceholder"
-            @input="$emit('update:delete-download-url', $event.target.value)"
-          >
-        </div>
       </div>
 
       <div class="cmd-input-wrapper mb-3" :class="{ copied: uninstallCopied }">
@@ -86,8 +73,6 @@
 </template>
 
 <script setup>
-import HelpTooltip from '../../../components/HelpTooltip.vue'
-
 const props = defineProps({
   trans: { type: Object, required: true },
   show: { type: Boolean, default: false },
@@ -96,7 +81,6 @@ const props = defineProps({
   deleteTargetOs: { type: String, default: 'linux' },
   deleteVersion: { type: String, default: 'go' },
   deleteInstallMode: { type: String, default: 'current-user' },
-  deleteDownloadUrl: { type: String, default: '' },
   uninstallCommand: { type: String, default: '' },
   uninstallCopied: { type: Boolean, default: false }
 })
@@ -107,8 +91,7 @@ const emit = defineEmits([
   'copy-uninstall',
   'update:delete-target-os',
   'update:delete-version',
-  'update:delete-install-mode',
-  'update:delete-download-url'
+  'update:delete-install-mode'
 ])
 
 </script>

@@ -304,7 +304,7 @@
           </div>
         </div>
 
-        <div v-if="notificationChannel === 'builtin'" class="form-row">
+        <div v-if="notificationChannel === 'builtin'" class="notification-credentials">
           <div class="form-group flex-1">
             <label class="form-label">{{ trans.telegramToken }}</label>
             <div class="password-input-wrapper">
@@ -506,28 +506,10 @@
         </div>
       </div>
 
-      <div class="settings-section">
+      <div class="settings-section security-settings">
         <div class="section-title"><span>▸</span> {{ trans.securitySettings }}</div>
 
-        <TwoFactorPanel :key="selectedApiBase" :trans="trans" :base-url="selectedApiBase" />
-
-        <div class="form-group mt-4">
-          <label class="form-label">
-            {{ trans.jwtSecret }}
-            <HelpTooltip :text="trans.jwtSecretTip" />
-          </label>
-          <div class="password-input-wrapper">
-            <input type="text" name="jwt_secret" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" v-model="settings.jwt_secret" :class="['form-input', { 'secret-input-masked': !passwordVisible.jwtSecret }]" placeholder="••••••••••••••••••••••••••••••••">
-            <button type="button" class="password-toggle" @click="$emit('toggle-password', 'jwtSecret')">
-              {{ passwordVisible.jwtSecret ? '🙈' : '👁️' }}
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="settings-section">
-        <div class="section-title"><span>▸</span> {{ trans.adminLoginSettings }}</div>
+        <h3 class="section-subtitle mb-3">{{ trans.adminLoginSettings }}</h3>
 
         <div class="form-group">
           <label class="form-label">{{ trans.username }}</label>
@@ -596,6 +578,7 @@
           </div>
         </div>
 
+        <TwoFactorPanel :key="selectedApiBase" :trans="trans" :base-url="selectedApiBase" />
       </div>
 
       <div class="settings-section">
@@ -627,18 +610,6 @@
             </div><p v-if="pingNodeErrors.custom_bd" class="text-red text-sm mt-1">{{ pingNodeErrors.custom_bd }}</p>
           </div>
         </div>
-        <div class="ping-node-grid">
-          <div v-for="field in ['node_1', 'node_2']" :key="field" class="ping-node-item">
-            <div class="ping-node-fields"><input type="text" v-model.trim="settings[`${field}_name`]" class="form-input ping-node-name"><span class="ping-node-arrow">→</span><input type="text" v-model.trim="settings[field]" :class="['form-input', { 'input-invalid': pingNodeErrors[field] }]" placeholder="host[:port] / [IPv6]:port"></div>
-            <p v-if="pingNodeErrors[field]" class="text-red text-sm mt-1">{{ pingNodeErrors[field] }}</p>
-          </div>
-        </div>
-        <div class="ping-node-grid">
-          <div v-for="field in ['node_3', 'node_4']" :key="field" class="ping-node-item">
-            <div class="ping-node-fields"><input type="text" v-model.trim="settings[`${field}_name`]" class="form-input ping-node-name"><span class="ping-node-arrow">→</span><input type="text" v-model.trim="settings[field]" :class="['form-input', { 'input-invalid': pingNodeErrors[field] }]" placeholder="host[:port] / [IPv6]:port"></div>
-            <p v-if="pingNodeErrors[field]" class="text-red text-sm mt-1">{{ pingNodeErrors[field] }}</p>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -653,7 +624,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
-import { PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
+import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
 
 const props = defineProps({
   trans: { type: Object, required: true },
@@ -975,7 +946,7 @@ const pingNodeErrorMessage = computed(() => (
 ))
 
 const pingNodeErrors = computed(() => Object.fromEntries(
-  PING_NODE_FIELDS.map(field => [
+  SETTINGS_PING_NODE_FIELDS.map(field => [
     field,
     validatePingNode(props.settings[field]).valid ? '' : pingNodeErrorMessage.value
   ])

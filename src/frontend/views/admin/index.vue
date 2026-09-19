@@ -174,7 +174,6 @@
         :settings="settings"
         @save="saveEdit"
         @close="closeEditModal"
-        @toggle-auto-update="handleAutoUpdateToggle"
       />
 
       <BatchEditServersModal
@@ -190,30 +189,6 @@
         @close="closeBatchEditModal"
       />
 
-      <div v-if="showAutoUpdateWarning" id="autoUpdateWarningModal" class="modal-overlay auto-update-warning-modal active">
-        <div class="modal-dialog">
-          <div class="modal-header">
-            <div class="modal-title">{{ trans.autoUpdateRiskTitle }}</div>
-            <button class="modal-close" @click="cancelAutoUpdateWarning">✕</button>
-          </div>
-
-          <div class="danger-box mb-4">
-            <div class="flex-center-gap-sm mb-2">
-              <span class="danger-icon text-xl">⚠️</span>
-              <span class="danger-label">{{ trans.autoUpdateRiskTitle }}</span>
-            </div>
-            <p class="text-secondary text-sm line-height-1-6">
-              {{ trans.autoUpdateRiskDesc }}
-            </p>
-          </div>
-
-          <div class="modal-footer flex-justify-between">
-            <button @click="confirmAutoUpdateWarning" class="btn btn-primary">{{ trans.autoUpdateRiskConfirm }}</button>
-            <button @click="cancelAutoUpdateWarning" class="btn">{{ trans.autoUpdateRiskCancel }}</button>
-          </div>
-        </div>
-      </div>
-
       <DeleteServerModal
         :trans="trans"
         :show="showDeleteModal"
@@ -222,7 +197,6 @@
         :delete-target-os="deleteTargetOs"
         :delete-version="deleteVersion"
         :delete-install-mode="deleteInstallMode"
-        :delete-download-url="deleteDownloadUrl"
         :uninstall-command="getUninstallCommand()"
         :uninstall-copied="uninstallCopied"
         @close="closeDeleteModal"
@@ -231,7 +205,6 @@
         @update:delete-target-os="deleteTargetOs = $event"
         @update:delete-version="deleteVersion = $event"
         @update:delete-install-mode="deleteInstallMode = $event"
-        @update:delete-download-url="deleteDownloadUrl = $event"
       />
 
       <CopyCommandModal
@@ -260,7 +233,6 @@
         :tx-correction="txCorrection"
         :auto-update="autoUpdate"
         :install-command="getCustomInstallCommand()"
-        :copied-cmd="copiedCmd"
         @close="closeCopyModal"
         @copy-cmd="copyCustomCmd"
         @update:target-os="targetOs = $event"
@@ -401,7 +373,7 @@ import { getAuthToken } from '../../utils/http'
 import { adminApi, login, logout as apiLogout, clearHistory, getApiBases, fetchConfig } from '../../utils/api'
 import { hasMultipleApiBases } from '../../utils/config.js'
 import { t, useTranslation, normalizeLanguagePreference } from '../../utils/i18n'
-import { PING_NODE_FIELDS, validatePingNode } from '../../utils/pingNode.js'
+import { PING_NODE_FIELDS, SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../utils/pingNode.js'
 import { normalizeDisplayMode, resolveDisplayMode } from '../../utils/displayMode.js'
 import { applyMikusThemeOptions } from '../../utils/themeOptions.js'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../utils/constants.js'
@@ -691,7 +663,6 @@ const settings = ref({
   notification_webhook_headers: '',
   notification_webhook_body: '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
   notification_template: '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
-  jwt_secret: '',
   username: '',
   password: '',
   confirm_password: '',
@@ -729,7 +700,7 @@ const toggleAdminPasswordChange = () => {
 }
 
 const { visibility: passwordVisible, toggle: togglePassword } = usePasswordVisibility([
-  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'jwtSecret', 'password', 'confirmPassword'
+  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'password', 'confirmPassword'
 ])
 
 
@@ -812,7 +783,6 @@ const copiedSpecKey = ref(null)
 const deleteTargetOs = ref('linux')
 const deleteVersion = ref('go')
 const deleteInstallMode = ref('current-user')
-const deleteDownloadUrl = ref('')
 const uninstallCopied = ref(false)
 const saving = ref(false)
 
@@ -823,8 +793,6 @@ const dbLoading = ref(false)
 const dbResult = ref(null)
 const validationError = ref(null)
 const alertMessage = ref(null)
-const showAutoUpdateWarning = ref(false)
-const autoUpdatePendingEnable = ref(false)
 
 const testNotificationLoading = ref(false)
 
@@ -856,7 +824,6 @@ const resetDay = ref(1)
 const rxCorrection = ref('')
 const txCorrection = ref('')
 const autoUpdate = ref(false)
-const copiedCmd = ref(false)
 
 const isWssReportEnabled = computed(() => settings.value.wss_report_enabled === true)
 const getEffectiveConnectionMode = (value) => {
@@ -881,9 +848,9 @@ const getPingNodeLabel = (field) => ({
   ,node_1: settings.value.node_1_name || 'Node 1', node_2: settings.value.node_2_name || 'Node 2', node_3: settings.value.node_3_name || 'Node 3', node_4: settings.value.node_4_name || 'Node 4'
 })[field] || field
 
-const getPingNodeValidation = (source) => {
+const getPingNodeValidation = (source, fields = PING_NODE_FIELDS) => {
   const values = {}
-  for (const field of PING_NODE_FIELDS) {
+  for (const field of fields) {
     const result = validatePingNode(source[field])
     if (!result.valid) {
       return { valid: false, field }
@@ -912,8 +879,11 @@ const copyTextToClipboard = async (text) => {
   textarea.style.opacity = '0'
   document.body.appendChild(textarea)
   textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
+  try {
+    if (!document.execCommand('copy')) throw new Error('Clipboard copy failed')
+  } finally {
+    textarea.remove()
+  }
 }
 
 const copyServerNote = async (server) => {
@@ -1110,7 +1080,6 @@ const loadSettings = async () => {
         notification_webhook_headers: settingsData.notification_webhook_headers || '',
         notification_webhook_body: settingsData.notification_webhook_body || '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
         notification_template: settingsData.notification_template || '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
-        jwt_secret: '',
         username: settingsData.username || '',
         password: '',
         confirm_password: '',
@@ -1155,17 +1124,6 @@ const saveSettings = async () => {
   if (saving.value) return
 
   validationError.value = null
-
-  const jwtSecret = settings.value.jwt_secret
-  if (jwtSecret && jwtSecret.length > 0 && jwtSecret.length < 32) {
-    validationError.value = trans.value.jwtSecretMinLength
-    return
-  }
-
-  if (jwtSecret && /\s/.test(jwtSecret)) {
-    validationError.value = trans.value.jwtSecretNoWhitespace
-    return
-  }
 
   if (!settings.value.username || settings.value.username.trim().length === 0) {
     validationError.value = trans.value.usernameRequired
@@ -1213,7 +1171,7 @@ const saveSettings = async () => {
     }
   }
 
-  const pingNodeValidation = getPingNodeValidation(settings.value)
+  const pingNodeValidation = getPingNodeValidation(settings.value, SETTINGS_PING_NODE_FIELDS)
   if (!pingNodeValidation.valid) {
     validationError.value = buildPingNodeError(pingNodeValidation.field)
     return
@@ -1280,12 +1238,10 @@ const saveSettings = async () => {
       custom_cu: pingNodeValidation.values.custom_cu,
       custom_cm: pingNodeValidation.values.custom_cm,
       custom_bd: pingNodeValidation.values.custom_bd,
-      node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
       custom_ct_name: settings.value.custom_ct_name.trim(),
       custom_cu_name: settings.value.custom_cu_name.trim(),
       custom_cm_name: settings.value.custom_cm_name.trim(),
       custom_bd_name: settings.value.custom_bd_name.trim(),
-      node_1_name: settings.value.node_1_name.trim(), node_2_name: settings.value.node_2_name.trim(), node_3_name: settings.value.node_3_name.trim(), node_4_name: settings.value.node_4_name.trim(),
       csp_static: settings.value.csp_static || '',
       csp_api: settings.value.csp_api || ''
     }
@@ -1295,10 +1251,6 @@ const saveSettings = async () => {
     data.settings.password = settings.value.password
   }
 
-  if (jwtSecret && jwtSecret.length > 0) {
-    data.settings.jwt_secret = jwtSecret
-  }
-
   try {
     const result = await adminApiForSite(data)
     if (!result.error) {
@@ -1306,7 +1258,6 @@ const saveSettings = async () => {
       applyMikusThemeOptions(themeOptionsResult.value)
       clearAdminPasswordInputs()
       changeAdminPassword.value = false
-      settings.value.jwt_secret = ''
       loadSettings()
     } else {
       saveResult.value = { success: false, error: getMessage(result.error) || 'fail' }
@@ -1375,7 +1326,7 @@ const resolveServerPingNode = (server, field) => {
 const getUninstallCommand = () => {
   const HOST = selectedApiBase.value
   const isGo = deleteVersion.value === 'go'
-  const downloadBase = deleteDownloadUrl.value.trim() || `${HOST}/agent`
+  const downloadBase = `${HOST}/agent`
   if (isGo) {
     const scriptUrl = `${HOST}/agent/install.sh`
     const downloadParam = ` ${quotePosixShellArg(`--download-url=${downloadBase}`)}`
@@ -1426,7 +1377,6 @@ const copyCmd = (serverId) => {
   rxCorrection.value = server?.rx_correction ?? ''
   txCorrection.value = server?.tx_correction ?? ''
   autoUpdate.value = server?.auto_update === '1' || server?.auto_update === 1 || server?.auto_update === true
-  copiedCmd.value = false
   showCopyModal.value = true
 }
 
@@ -1531,17 +1481,16 @@ const copyCustomCmd = async () => {
     alertMessage.value = trans.value.httpsRequired
     return
   }
-  const cmd = getCustomInstallCommand()
   try {
-    await navigator.clipboard.writeText(cmd)
+    await copyTextToClipboard(getCustomInstallCommand())
+    copiedServerId.value = copyServerId.value
+    closeCopyModal()
+    setTimeout(() => {
+      copiedServerId.value = null
+    }, 1500)
   } catch (e) {
-    document.execCommand('copy')
+    alertMessage.value = trans.value.copyFailed
   }
-
-  copiedCmd.value = true
-  setTimeout(() => {
-    copiedCmd.value = false
-  }, 1500)
 }
 
 const closeCopyModal = () => {
@@ -1610,31 +1559,7 @@ const openEditModal = (server) => {
 }
 
 const closeEditModal = () => {
-  cancelAutoUpdateWarning()
   showEditModal.value = false
-}
-
-const handleAutoUpdateToggle = (nextValue) => {
-  if (!nextValue) {
-    editForm.value.auto_update = false
-    cancelAutoUpdateWarning()
-    return
-  }
-  autoUpdatePendingEnable.value = true
-  showAutoUpdateWarning.value = true
-}
-
-const confirmAutoUpdateWarning = () => {
-  if (autoUpdatePendingEnable.value) {
-    editForm.value.auto_update = true
-  }
-  autoUpdatePendingEnable.value = false
-  showAutoUpdateWarning.value = false
-}
-
-const cancelAutoUpdateWarning = () => {
-  autoUpdatePendingEnable.value = false
-  showAutoUpdateWarning.value = false
 }
 
 const buildEditPayloadFromForm = (form) => {
@@ -1758,7 +1683,6 @@ const saveEdit = async () => {
     const result = await adminApiForSite(data)
     if (!result.error) {
       saveResult.value = { success: true, message: getMessage(result.data.message) || trans.value.serverEdited }
-      cancelAutoUpdateWarning()
       showEditModal.value = false
       loadServers()
     } else {
@@ -1776,7 +1700,6 @@ const openDeleteModal = (id) => {
   deleteTargetOs.value = 'linux'
   deleteVersion.value = 'go'
   deleteInstallMode.value = 'current-user'
-  deleteDownloadUrl.value = ''
   uninstallCopied.value = false
   showDeleteModal.value = true
 }
@@ -1866,11 +1789,6 @@ const saveBatchEdit = async () => {
   if (selected.length === 0) {
     alertMessage.value = trans.value.selectServersToEdit || trans.value.selectServers
     return
-  }
-
-  if (batchEditEnabled.value.auto_update && batchEditForm.value.auto_update) {
-    const ok = confirm(trans.value.autoUpdateRiskDesc || trans.value.autoUpdateRiskTitle || 'Enable auto-update?')
-    if (!ok) return
   }
 
   validationError.value = null

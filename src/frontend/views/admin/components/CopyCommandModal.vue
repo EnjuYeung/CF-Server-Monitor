@@ -97,7 +97,7 @@
 
       <div class="form-group">
         <label class="form-label">{{ trans.installCommand }}</label>
-        <div class="cmd-output-wrapper" :class="{ copied: copiedCmd }">
+        <div class="cmd-output-wrapper">
           <span class="cmd-prompt">$</span>
           <pre class="cmd-output">{{ installCommand }}</pre>
         </div>
@@ -105,7 +105,7 @@
 
       <div class="modal-footer flex-justify-between">
         <div class="flex items-center gap-2">
-          <button @click="$emit('copy-cmd')" class="btn btn-primary">{{ copiedCmd ? '✅ ' + trans.copied : '📋 ' + trans.copy }}</button> <button @click="$emit('open-edit-from-copy')" class="btn btn-blue">✏️ {{ trans.edit }}</button>
+          <button @click="$emit('copy-cmd')" class="btn btn-primary">📋 {{ trans.copy }}</button> <button @click="$emit('open-edit-from-copy')" class="btn btn-blue">✏️ {{ trans.edit }}</button>
         </div>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
@@ -139,8 +139,7 @@ const props = defineProps({
   rxCorrection: { type: [Number, String], default: '' },
   txCorrection: { type: [Number, String], default: '' },
   autoUpdate: { type: Boolean, default: false },
-  installCommand: { type: String, default: '' },
-  copiedCmd: { type: Boolean, default: false }
+  installCommand: { type: String, default: '' }
 })
 
 const emit = defineEmits([

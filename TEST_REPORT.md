@@ -1,5 +1,97 @@
 # 最近一次测试报告
 
+## 后台顶栏与退出按钮右边界对齐（2026-09-17）
+
+**已修复并于 2026-09-17 17:01（Asia/Shanghai）部署至 `https://jm.zedy.cc`。** 顶栏与下方面板统一使用 20px 水平内边距；刷新/退出按钮组换行后继续靠右。Chromium 在隔离环境的 1440、768、390、320px，中/英/日文，深色/浅色共 24 种组合下测得顶栏按钮组与退出按钮右边界差均为 0px；公网已核对同一构建的资源哈希及浏览器加载的对齐样式。
+
+开发前使用 Node.js v24.21.0 / Go 1.26.8 依次执行 `npm ci`、`npm run geoip:download`、`npm run build`，全部完成，依赖审计 0 vulnerabilities，四个 Agent 目标完整构建。修改前预建全新临时 SQLite、回环地址主控和 Chromium 环境并实际登录取样；修改后运行 `npm run build:frontend`、`npm run test:all`、`npm run test:acceptance`。通知调度关闭，未读取生产数据。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| AL01 | 修改前真实登录后台、进入设置，切换宽度/语言/主题 | 复现并量化偏差 | `before.json`：24 种组合；同一行布局偏差 4px，手机英文/日文换行后偏差约 104–185px；`before-1440.png`、`before-390.png` 已查看 | 通过 |
+| AL02 | 修改后重复 24 种组合，测量顶栏和退出按钮边界 | 两组右边界一致，顶部三个按钮保持等大，换行不破坏对齐 | `after.json`：所有 rightDelta=0，三个按钮均 36×36、顶边一致、有可访问名称；按钮组均位于视口内，页面宽度未增加；桌面、390px 和 320px 截图已查看 | 通过 |
+| AL03 | 点击语言和主题、刷新页面、点击首页/后台入口，再退出并重访后台 | 偏好保留、跳转正常、退出后要求登录 | `after.json`：preferencesPersist=true、logoutWorks=true、returnToAdminRightDelta=0，首页顶栏仍为 16px 留白，pageerror=[] | 通过 |
+| AL04 | 完整回归、主控与原生 Agent 验收、构建检查 | 既有功能保持正常 | `test-all.log`：Node 87/87、Agent 配置及 Go vet/test 通过；`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6；前后构建及 `git diff --check` 通过 | 通过 |
+
+证据目录为 `output/test-results/admin-alignment-20260917/`（Git 忽略），浏览器脚本为 `browser.mjs`，测试主控及浏览器已关闭。此项仅修改 CSS，未修改部署配置或 Agent 安装/更新/分发逻辑，未运行 Docker 部署套件。
+
+320px 英文设置页在修改前后均存在 15px 的表单横向溢出，本次顶栏与退出按钮仍在视口内且对齐，未将整页无溢出记为通过。初次浏览器检查因此调整为验证无新增溢出；另修正了退出验收预期（实际返回首页，再进入后台才显示登录框），复验通过，初次记录保留。原生验收结果的归档复制首次使用了错误文件路径，已从 `agent-integration/native-acceptance.json` 正确归档，不涉及测试失败。
+
+### 本项正式部署验收
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| ALD01 | 构建候选镜像，核对源码及验收记录，备份当前配置/SQLite/GeoIP/Agent 归档并保留旧镜像 | 发布内容来自已验收修改，具备完整回滚资料 | `docker-build.log`、`source-integrity.json`、`prepare-deploy.log`：89 个源码/清单文件已核对，相对原镜像仅 main.css 改变；87 项回归、19 项主控、6 项原生及 24 种浏览器布局证据齐全；备份 SQLite integrity=ok | 通过 |
+| ALD02 | 将生产数据副本挂载到 network=none 的候选容器，访问健康/页面/API/Agent 目录和静态文件 | 原数据正常读取，资源与浏览器已测版本一致 | `candidate-smoke.json`：13 节点，8 个 JS/CSS 哈希匹配，v1.2.0 Agent 归档不变，旧版本保留且每版公开四个目标；预检容器已清理 | 通过 |
+| ALD03 | 切换前再次在线备份数据库，使用既有 Compose 项目重建 monitor 服务 | 新容器健康，环境/端口/数据卷保持一致 | `deploy.log`、`deployment.json`：容器 96b4906c826b healthy，RestartCount=0；200ms 探针采样 32 次、失败 5 次，首末失败间隔 0.803 秒 | 通过 |
+| ALD04 | 逐行比较切换前后的节点和设置、检查旧历史及归档哈希 | 已有数据全部保留，继续接收上报 | `persistence-final.json`：13 节点、3 条设置相同；3341 条旧历史全部保留，检查时已增至 3367 条；30 个 Agent 归档文件 SHA-256 不变；SQLite integrity=ok | 通过 |
+| ALD05 | 回环地址和公网 HTTPS 读取页面/资产，Chromium 桌面与手机切换语言/主题并等待真实 WSS 更新 | 修复资源已发布，浏览器及实时数据正常 | `production-smoke.json`：两条入口 8 个静态资源哈希均匹配；桌面/手机加载的后台对齐规则为 padding-inline=20px、margin-left=auto；WSS hello/subscribed 和 26 批更新，包含打开页面后的新样本；pageerror/requestfailed=[]，390px 首页溢出为 0，后台登录页正常 | 通过 |
+
+运行镜像 `server-monitor:local`，ID `sha256:a3b4e99ace1ad6527c30b60e1d2a209920900bb1c910630daf0bd3a51a6bcd38`；部署时间 `2026-09-17T17:01:58.126113+08:00`。沿用 `/opt/1panel/apps/jan_monitor/.env`、`127.0.0.1:26129` 和原数据卷。回滚镜像 `server-monitor:rollback-admin-alignment-20260917-170007`；备份 `/opt/1panel/apps/jan_monitor/backups/admin-alignment-20260917-170007/`（目录 0700、环境文件 0600）。
+
+部署证据位于 `output/test-results/admin-alignment-deploy-20260917/`（Git 忽略），公网桌面和手机截图已查看，验证浏览器已关闭。公网复验读取页面和 CSS 规则，未登录生产后台或修改设置；后台像素对齐及退出操作的实际验证来自 AL02/AL03 的隔离环境。探针失败间隔是采样结果，不作为精确停机时长。源码核对发现 Docker 的 npm prune 去掉锁文件内 4 个 peer 元数据标记；确认依赖版本和完整性信息一致，候选锁文件与旧生产镜像完全相同后通过检查。
+
+## 后台界面更新正式部署（2026-09-17）
+
+**已将已验收的后台界面更新部署到 `https://jm.zedy.cc`。** 容器 healthy、RestartCount=0；公网 HTTPS 页面和 WSS 实时更新正常，13 台服务器、设置和切换前历史完整保留。采用此前通过 87 项回归、19 项主控、6 项原生 Agent、6 项 Docker 部署和 10 项浏览器专项的同一候选镜像，没有重新生成未经验证的程序。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| UD01 | 备份配置、在线一致性数据库快照、GeoIP 和 Agent 归档，保留旧镜像 | 可回滚，备份完整且不会把测试写入生产 | `deployment.json`、`archive-before.json`：13 节点，备份 SQLite integrity=ok，30 个归档文件记录哈希；切换前再次备份 | 通过 |
+| UD02 | 候选镜像以生产数据副本在 network=none 容器启动 | 原数据可读取，页面/资产和旧 Agent 目录正常 | `candidate-smoke.json`：13 节点、8 个 JS/CSS 与浏览器测试构建一致，v1.2.0 归档不变；`source-integrity.json`：86 个源码文件与工作区一致 | 通过 |
+| UD03 | 使用既有 Compose 项目更新 monitor 服务 | 新容器健康，沿用端口、环境及持久卷 | `compose-up.log`、`deployment.json`：healthy，环境/端口/挂载完全一致；200ms 探针观察到 6 次失败，首末失败间隔 1.003 秒 | 通过 |
+| UD04 | 对比切换前数据库、环境和 Agent 归档 | 节点、设置、历史和程序全部保留 | `persistence-final.json`：13 台节点和 3 条设置逐行一致，2561 条旧历史全部保留、检查时增至 2574 条；30 个归档文件哈希一致；SQLite integrity=ok | 通过 |
+| UD05 | 访问回环地址和正式 HTTPS 页面、后台入口、静态资产及 Agent 目录 | 新界面已实际发布，旧版本仍可下载 | `production-smoke.json`：两条入口全部 HTTP 200，8 个 JS/CSS 哈希与已测试构建一致，v1.1.0/v1.1.1/v1.2.0 目录均保留、每版公开四个目标 | 通过 |
+| UD06 | 公网 Chromium 桌面/手机查看并点击语言、主题按钮，等待真实 Agent 更新 | 方形控件和切换可用，无溢出、页面异常和连接错误 | `production-smoke.json`：36×36、语言及主题切换通过、手机横向溢出 0；WSS 收到 hello/subscribed 和 13 批数据，包含页面打开后的真实新样本；pageerror/requestfailed 均为空，后台登录表单正常渲染 | 通过 |
+
+部署时间 `2026-09-17T16:12:06.485428+08:00`，容器 `e9bde803eb70`；运行镜像 `server-monitor:local`，ID `sha256:51e971435c205db74f8b684be9e5720e9879425d2e12413d0caa2cd7bd252919`。沿用 `/opt/1panel/apps/jan_monitor/.env`、`127.0.0.1:26129` 和原数据卷；回滚镜像 `server-monitor:rollback-admin-ui-20260917-161051`，备份 `/opt/1panel/apps/jan_monitor/backups/admin-ui-20260917-161051/`（目录 0700、环境文件 0600）。
+
+本轮没有修改生产设置或远端 Agent；后台保存、删除、账号密码和 2FA 等操作已在前一轮隔离环境实测，公网复验只读访问页面并切换浏览器本地显示偏好。切换中观察到的失败间隔是采样结果，不作为精确停机时长。证据位于 `output/test-results/admin-ui-deploy-20260917/`（Git 忽略），预检容器和浏览器进程已清理。
+
+## 后台设置与交互精简（2026-09-17）
+
+**清单中的界面与交互已完成，随后已部署正式站点，部署记录见上文。** 使用独立数据库、HTTP/HTTPS 主控及 Chromium 验证真实页面和剪贴板。最终 Node 回归 87/87、Agent 配置与 Go vet/test、主控验收 19/19、原生 Agent 验收 6/6、浏览器专项 10/10 通过；Docker 安装、更新、重建和卸载验收 6/6 通过。安全框内账号修改、重新登录、TOTP 绑定及恢复码关闭均实测。
+
+### 环境和命令
+
+- Linux amd64；Node.js v24.21.0、Go 1.26.8，工具链来自 `/tmp/jan-monitor-tools/`。系统默认 Node 为 26，本轮开发与验收命令显式使用项目要求的 Node 24。
+- 开发前按顺序执行 `npm ci`、`npm run geoip:download`、`npm run build`，依赖审计为 0 vulnerabilities；完整构建 Linux/FreeBSD 各 amd64/arm64 四个原生程序及前端。
+- 修改前先启动全新隔离主控、准备三台测试节点与本地 TLS 代理，并在浏览器登录后保存原始界面截图。通知调度关闭，未使用生产数据库或向真实通知渠道发送消息。
+- 修改后执行 `npm run build:frontend`、`npm run test:all`、`npm run test:acceptance`；构建 `server-monitor:admin-ui-20260917` 和 `server-monitor:agent-native`，执行 `AGENT_TEST_IMAGE=server-monitor:admin-ui-20260917 npm run test:agent-deployment`。
+- 浏览器专项脚本：`node output/test-results/admin-ui-20260917/browser.mjs`；候选镜像检查：同目录 `candidate-smoke.mjs`。脚本、日志、JSON、截图与测试凭证均位于 Git 忽略的证据目录，未纳入源码。
+
+### 验收项
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| UI01 | 打开隔离 HTTPS 后台，用真实表单登录 | 成功加载三台服务器 | `browser.json` UI01：实际表单及 HTTP 登录，servers=3 | 通过 |
+| UI02 | 查看未设/零流量阈值及已设 2048GB 的服务器，点击复制流量 | 无限制显示并复制 `∞`，有限制继续显示容量 | 实际列表为 `∞`、`2 TB`、`2 TB`；读取真实系统剪贴板为 `∞` | 通过 |
+| UI03 | 单台勾选、取消、再启用自动更新并保存；再批量启用 | 不出现自动更新警告，保存结果正常 | `browser.json` UI03：开关状态立即变化、后台实际保存为 1，批量全部为 1，浏览器 confirm/dialog=0 | 通过 |
+| UI04 | Linux 当前用户/专用用户、其他 Linux、FreeBSD 四种安装方式逐一复制 | 剪贴板等于完整预览，成功后关闭弹窗 | 四次真实剪贴板逐字比对，均含当前主控 `/agent/install.sh`、自动更新参数；copyModal 全部关闭 | 通过 |
+| UI05 | 注入 Clipboard API 拒绝，再注入回退复制失败 | 正常回退复制后关闭；完全失败时保留命令并提示 | 回退使用实际文本域和系统剪贴板，内容相等；失败路径显示手动复制提示，原弹窗保留且临时文本域清除 | 通过 |
+| UI06 | 删除弹窗切换 Linux/其他 Linux/FreeBSD 及专用用户，复制卸载命令，再删除测试节点 | 下载源输入消失，使用当前主控，原删除功能正常 | `browser.json` UI06、`delete-after.png`：命令与剪贴板一致，下载源为当前主控，删除后节点数 2 | 通过 |
+| UI07a | 点击语言按钮依次切换中/日/英，刷新并跳转首页/后台 | 单按钮循环，文案和语言偏好持久化 | `browser.json` UI07：ja/en/zh 完整循环，刷新保留日文，首页/后台入口可用 | 通过 |
+| UI07b | 点击主题按钮、使用 Enter/Space，再改变模拟系统配色 | 深色/浅色/跟随系统循环且偏好保存 | UI07：三种偏好正确，auto 随系统改变，刷新保持深色，键盘操作通过 | 通过 |
+| UI07c | 桌面与手机、三种语言和明暗主题下测量顶栏 | 语言、主题、设置/主页三个按钮均为等大正方形 | UI07/UI08 的 DOM 实测：每个按钮 36×36，顶边一致，均有可访问名称和悬停提示；没有旧的按钮列表 | 通过 |
+| UI08a | 在 1440px/390px、中/英/日、深色/浅色的 12 种组合查看通知框 | Bot Token 和 Chat ID 上下排列且左右对齐 | `browser.json` UI08：输入框左边差和宽度差均为 0，上下间距为正；页面横向溢出 0；四张 `settings-*.png` 留存，桌面/手机截图已检查 | 通过 |
+| UI08b | 检查安全框并保存普通设置 | 没有 JWT 前端编辑入口，也不提交密钥 | UI08/UI09：JWT 输入数 0，保存请求无 jwt_secret；SQLite 内密钥摘要保存前后相同 | 通过 |
+| UI08c | 在合并后的安全框修改用户名和密码，再重新登录 | 管理员登录与 2FA 位于同一框，原功能正常 | UI08/UI09：同一 security-settings 内含账号与双重验证；不匹配密码被拒绝，新账号密码真实登录成功 | 通过 |
+| UI08d | 查看 PING 框、输入无效及有效地址并保存 | 仅四项可编辑，无效地址阻止保存，隐藏字段不被覆盖 | UI08/UI09：四个输入组；非法 URL 禁止保存，合法 host:port 保存；请求无 Node 1–4 及名称，预置旧 Node 1 值和名称保持 | 通过 |
+| UI09 | 保存通知凭证、PING 和账号密码，检查请求、API、数据库并重新登录 | 配置真实保存，隐藏字段及 JWT 保留 | `browser.json` UI09：通知两项、custom_ct 均读取一致，旧节点保留，JWT 未变，重新登录成功 | 通过 |
+| UI10 | 在合并安全框用新密码启用 TOTP，再使用一个恢复码关闭 | 完成绑定、显示 10 个恢复码、成功关闭 | `browser.json` UI10：实际设置 API 和表单流程；浏览器 pageerror=0，confirm/dialog=0 | 通过 |
+| UI11 | 停止隔离主控，将其数据副本交给最终 Docker 镜像启动 | 重启后配置和密钥保留，构建资产匹配浏览器已测版本 | `candidate-smoke.json`：network=none，健康/页面/登录正常，2 节点、通知及 PING 配置保留，JWT 相同、2FA 关闭状态保持、SQLite integrity=ok；8 个 JS/CSS SHA-256 与本地构建一致 | 通过 |
+| UI12 | 执行完整回归和主控、原生验收 | 既有主控、协议、采集、历史和权限行为保持 | `test-all-final.log`：87/87、配置和 Go 测试；`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6 | 通过 |
+| UI13 | 在独立 Docker 网络安装 Agent、自动更新、重建主控、关闭更新及卸载 | 当前分发、安装和卸载流程可用 | `agent-deployment-final.log`、`agent-deployment.json` ND01–ND06；Linux amd64 实际 HTTPS/WSS 上报、v1.0.99 测试版本更新到 v1.2.0、配置及流量保留、卸载完成 | 通过 |
+
+### 复验、产物与边界
+
+- 浏览器首次保存编辑发现删除警告弹窗后仍有旧关闭回调残留，导致保存成功后显示前端错误；已清除该调用并重新构建，单台/批量保存及完整专项复验全部通过。初次失败证据保留为 `browser-initial-failure.json`。
+- 候选镜像 `server-monitor:admin-ui-20260917`，ID `sha256:51e971435c205db74f8b684be9e5720e9879425d2e12413d0caa2cd7bd252919`；开发验收采用隔离环境，随后经用户要求上线到生产 `server-monitor:local`，部署及备份记录见上文。
+- JWT 仅移除前端配置功能，主控自动生成、持久化及验证逻辑保持；没有清除现有 JWT 或 Node 1–4 数据。PING 精简范围为全局设置框，单台/批量节点参数与 Agent 协议仍兼容现有字段。
+- 自动更新此次只移除前端警告，VPS 本地开关仍通过安装命令控制；勾选后台开关本身不会远程启用本地自动更新。
+- 原生运行和 Docker 部署实测范围为 Linux amd64，使用容器后台进程模式；FreeBSD、ARM64 和真实 systemd 用户服务本轮未运行。四个发布目标已完整构建，FreeBSD 及专用用户命令已在浏览器检查与复制。
+- 证据目录为 `output/test-results/admin-ui-20260917/`；`git diff --check` 通过。测试进程、容器和网络在完成后清理，测试数据库和日志不提交。
+
 ## 延迟、丢包柱统一固定 10px（2026-09-17）
 
 **已完成并重新部署正式站点。** 延迟和丢包的所有柱子固定为 10px，悬停、不同颜色和实时数值变化都不改变高度；颜色、透明度、数字和提示沿用原逻辑。此改动只影响主控前端，Agent 仍为 v1.2.0，现有 VPS 无需升级即可看到新样式。

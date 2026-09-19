@@ -3,7 +3,8 @@ const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
 const IPV4_LIKE_PATTERN = /^(?:\d+\.){3}\d+$/
 const IPV6_PATTERN = /^(?:(?:[0-9a-f]{1,4}:){1,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:|(?:[0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,5}(?::[0-9a-f]{1,4}){1,2}|(?:[0-9a-f]{1,4}:){1,4}(?::[0-9a-f]{1,4}){1,3}|(?:[0-9a-f]{1,4}:){1,3}(?::[0-9a-f]{1,4}){1,4}|(?:[0-9a-f]{1,4}:){1,2}(?::[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(?:(?::[0-9a-f]{1,4}){1,6})|:(?:(?::[0-9a-f]{1,4}){1,7}|:))$/i
 
-export const PING_NODE_FIELDS = ['custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4']
+export const SETTINGS_PING_NODE_FIELDS = ['custom_ct', 'custom_cu', 'custom_cm', 'custom_bd']
+export const PING_NODE_FIELDS = [...SETTINGS_PING_NODE_FIELDS, 'node_1', 'node_2', 'node_3', 'node_4']
 
 const isValidIpv4 = (host) => {
   if (!IPV4_PATTERN.test(host)) return false

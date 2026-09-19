@@ -146,8 +146,8 @@
               <span
                 class="spec-text"
                 :class="{ 'spec-copied': isSpecCopied(server, 'traffic_limit') }"
-                @click.stop="emitCopySpec(server, 'traffic_limit', server.traffic_limit ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : '')"
-              >{{ server.traffic_limit ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : '-' }}</span>
+                @click.stop="emitCopySpec(server, 'traffic_limit', server.traffic_limit > 0 ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : '∞')"
+              >{{ server.traffic_limit > 0 ? formatBytes(server.traffic_limit * 1024 * 1024 * 1024) : '∞' }}</span>
             </td>
             <td>
               <span

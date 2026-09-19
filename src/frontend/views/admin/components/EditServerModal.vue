@@ -227,7 +227,7 @@
       <div class="form-row">
         <div class="form-group">
           <div class="checkbox-item no-margin">
-            <input type="checkbox" :checked="editForm.auto_update" @change="handleAutoUpdateChange">
+            <input type="checkbox" v-model="editForm.auto_update">
             <label>
               <b>{{ trans.autoUpdate }}</b>
             </label>
@@ -362,13 +362,5 @@ watch(
   { immediate: true }
 )
 
-const emit = defineEmits(['save', 'close', 'toggle-auto-update'])
-
-const handleAutoUpdateChange = (event) => {
-  const nextValue = event.target.checked
-  if (nextValue) {
-    event.target.checked = false
-  }
-  emit('toggle-auto-update', nextValue)
-}
+defineEmits(['save', 'close'])
 </script>
