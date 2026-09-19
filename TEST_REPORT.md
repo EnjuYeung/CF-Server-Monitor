@@ -1,5 +1,58 @@
 # 最近一次测试报告
 
+## 首页切回延迟与丢包缺样修复（2026-09-19，发布前验收）
+
+已修复历史快照合并误用上报接收时间的问题：以 `sample_timestamp` 判断历史写入进度，保留尚未落库的实时延迟/丢包点。缺少该字段时沿用 `timestamp`、`last_updated` 的兼容回退。真实浏览器切回、重复刷新、每分钟刷新及解冻复测均保留最新样本，真实缺口和已保存历史的清空行为保持。下方 TR01–TR06 为修复前问题核实记录。
+
+### 本轮环境与验收
+
+- Linux amd64，Node.js v24.21.0、Go 1.26.8、Chromium 有界面模式 / Xvfb。开发前执行 `npm ci`、`npm run geoip:download`、`npm run build`，修改后重新完整构建四目标 Agent 和前端。
+- 浏览器使用新建临时 SQLite、回环随机端口及测试凭据；真实 WS 上报、真实标签页隐藏/切回，等待实际一分钟周期刷新，并通过 CDP 暂停/恢复页面。未加速系统时钟。条形图与环形图的已保存截图均已查看。
+- 证据目录：`output/test-results/tab-return-fix-20260919/`（Git 忽略）。Node/Go、主控与原生 Agent 验收在最终本地构建完成后执行；Docker 构建使用独立文件系统，不与本地 dist 清理竞争。
+
+| 编号 | 功能 / 操作 | 预期结果 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| TF01 | 对旧代码运行新增的接收/落库时间分离测试，再应用修复 | 测试能捕捉当前格被清空、同格退回旧值，并在修复后保留最新值 | `regression-before.log`：新增两项均失败（undefined/306，期望 65）；`regression-after.log`：快照及延迟窗口 12/12 通过，同时验证零丢包、真实缺口、超时、禁用探针和已持久化历史清空 | 通过 |
+| TF02 | 未落库样本显示后切换真实标签页、重复焦点刷新、切换两种卡片视图、等待一分钟刷新、解冻恢复 | 53/63/73ms 及 0/1/2% 保持，下一条实时样本可继续更新 | `browser.json` 六项结果均 true，pageerror=[]；`isolated-after-return-tooltip.png` 显示切回后 53ms，`isolated-bar-fixed.png` 显示后续 54ms；清空已持久化历史后所有柱按预期缺样 | 通过 |
+| TF03 | 全量回归及真实 HTTP/WS/SQLite、原生 Agent 验收 | 既有行为保持，真实上报尚未落库时 REST 刷新不覆盖实时延迟和丢包 | `test-all.log`：101/101、配置与 Go vet/test；`controller-acceptance.json` 19/19，A05 新增 `retainedAfterRefresh=true`；`native-acceptance.json` 6/6 | 通过 |
+| TF04 | 构建候选镜像、核对源码/资产/归档、使用生产一致性快照在断网容器启动 | 镜像包含已测试修复，生产配置和数据可兼容使用 | `source-integrity.json`：源码、312 个构建文件与已测版本一致，Agent manifest 与生产一致；`candidate-smoke.json`：15 台节点、设置、归档不变，数据库 integrity=ok，HTTP 与 8 个 JS/CSS 校验通过 | 通过 |
+
+候选镜像为 `server-monitor:tab-return-fix-20260919`，ID `sha256:515614703a471d3d0b681721854ce50ed964c8c3f14c312f400c8df99481c94d`。已建立本次临时上线备份与回滚标签；按用户要求，生产部署及实测成功后删除项目部署备份和旧主控镜像。发布、生产切回复验与清理结果完成后补记。
+
+本轮仅修改前端历史合并逻辑及相关测试、文档，未更改 Agent 安装、更新或分发逻辑，因此不额外重跑 Agent 安装部署套件；Docker 主控启动与实际部署单独验证。
+
+## 首页切回标签页后最新延迟、丢包缺样核实（2026-09-19，仅核实）
+
+**问题属实，隔离环境及正式首页浏览器均已复现。** 正式首页后台停留 7 分 54.319 秒后切回，15 台服务器中有 7 台已显示数值的最新延迟/丢包柱被刷新成“无样本”，服务器仍在线，3 秒检查时这些节点均已随新上报恢复。隔离复现中，最新延迟数字仍为 53ms，但三网延迟及丢包的最右侧六个柱同时缺样；已落库的对照节点正常，新 WS 样本可恢复，再次刷新又复现。本次只记录诊断结果，未修改业务代码、生产配置或部署。
+
+### 环境、操作与证据
+
+- 按要求先执行 `npm ci`、`npm run geoip:download`、`npm run build`，使用 `/tmp/jan-monitor-tools/env.sh` 中的 Node.js v24.21.0 / Go 1.26.8；完整构建前端及四目标 Agent，依赖审计 0 vulnerabilities。
+- 隔离环境使用全新临时 SQLite、回环随机端口、两台测试节点和真实 HTTP / WS。WS 节点历史写入周期 180 秒，首个已存样本预置在上一个六分钟柱区间，后续样本、页面事件均使用真实时间；不改系统时钟或应用源码。HTTP 对照节点已保存当前区间的数据。
+- Chromium 在 Xvfb 中以有界面模式运行。通过 `connectOverCDP({ noDefaults: true })` 连接，避免 Playwright 默认的持续可见模拟；实测 `document.hidden` 的 true→false 事件。隔离测试后台停留 3.107 秒，说明长时间隐藏不是必要条件。
+- 正式站点仅匿名读取 `https://jm.zedy.cc` 页面/API，并观察浏览器本地状态；生产 Dashboard 与 playback 两个 JS 文件哈希和本次构建一致，15 台节点的历史/实时上报配置为 30 秒 / 2 秒。真实后台驻留约 8 分钟，在 20:00 六分钟图区间开始后 4 秒切回，针对当前区间尚未落库的边界进行检查；没有注入生产数据或加速时钟。
+- 证据位于 `output/test-results/tab-return-20260919/`，受 Git 忽略。`reproduce.mjs`、`real-browser.mjs` 为隔离复现程序；`reproduction.json`、`reproduce.log`、`isolated-before.png`、`isolated-after-return-tooltip.png` 保存操作、接口值、DOM 与已查看截图。生产观测为 `production-observe.mjs`。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 验证方式与实际证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| TR01 | 安装依赖、下载地区库、完整构建后启动独立主控并加载首页 | HTTP、WS、SQLite 和页面可用 | `npm-ci.log`、`geoip-download.log`、`build.log`；健康检查、两台卡片及实时 53ms 显示均通过 | 通过 |
+| TR02 | 实时样本尚未落库时，切到另一真实标签页再切回 | 已显示的当前延迟/丢包样本保留 | `reproduction.json`：WS ACK `persisted=false`；切回后六个柱从 53/63/73ms、0/1/2% 变为“无样本”，数值标题和在线状态保留 | 失败，已复现 |
+| TR03 | 对照已落库节点，并在异常后发送下一条 WS 样本，再触发焦点刷新 | 对照不空白；新样本可显示，后续刷新保持 | 对照始终保留 83/93/103ms 与 0/1/2%；异常节点收到下一条上报后恢复 54/64/74ms，再次刷新六个柱再次缺样 | 对照与恢复通过；重复刷新失败 |
+| TR04 | 正式首页保持后台，观察真实周期刷新与最新柱变化 | 已收到的当前区间样本不被刷新清空 | `production-hidden-interim.json`、`production-interim-clears.json`：19:54:05.655（Asia/Shanghai）有 8 台节点在同一 19:54 区间由有效数值变为“无样本”；后续实时样本在 370–1693ms 内恢复 | 失败，线上已观察到 |
+| TR05 | 正式首页后台停留 474.319 秒后真实切回，并继续观察 20 秒 | 当前实时数据保持完整 | `production-observation.json`、`production-summary.json`、已查看的 `production-return.png`：20:00:04.011 切回，7 台在线节点出现 8 次“同一区间已有值→无样本”转换（其中一台重复清空）；每次在 63–1541ms 后恢复，3 秒检查时这些节点均已恢复；收到 11 次 REST、3729 批 WS，pageerror=[] | 失败，线上切回已复现 |
+| TR06 | 完整回归及真实主控、原生 Agent 验收 | 既有测试无失败 | `test-all.log`：Node 99/99、配置及 Go vet/test 通过；`test-acceptance.log`、`controller-acceptance.json` 19/19、`native-acceptance.json` 6/6 | 通过，但未覆盖本缺陷 |
+
+### 已定位原因及范围
+
+1. `src/frontend/views/Dashboard.vue:1156` 在页面可见、重新获得焦点等事件中调用 `refreshData({ preserveLive: true })`；每分钟定时刷新也使用这条路径。
+2. `src/utils/metrics.js:217` 分别返回 `sample_timestamp`（已落库样本时间）和 `last_updated`（最近认证上报接收时间）。WS 实时上报可以先广播而未到历史写入周期，见 `src/realtime/RealtimeHub.js:752`。
+3. `src/frontend/utils/latencyWindow.js:65` 却将 `snapshot.last_updated` 当作落库时间，过滤掉时间不大于它的本地实时柱样本。隔离证据中，已落库样本为 19:47:59.000，实时样本为 19:52:07.503，接收时间为 19:52:07.514；实时样本尚未落库，仍被错误丢弃。
+4. 主指标合并正确保留较新的实时数值，因此可以出现“数字 53ms 仍在、柱提示无样本”。随后 REST 中的 `latestReportUpdates` 受 `Dashboard.vue:786` 的严格时间递增过滤，同时间戳样本不会重新补回柱中，只能等待后续新样本或历史写入。
+
+当前六分钟区间还没有历史样本的节点会显示空柱，已保存该区间样本的节点通常不空，因此只影响部分服务器。已有 `test/dashboard-snapshot.test.js` 将 `last_updated` 设为旧的历史时间，没有覆盖接收时间已前进、落库时间未前进的组合；全套测试通过不能抵消本次浏览器复现的失败。
+
+本次已确认的是最新柱缺样及下一次实时上报恢复，未将其描述为服务端历史丢失或持续无法恢复。生产统计只计入同一时间格中“已有样本→无样本”的转换，排除本来就缺样的节点。按用户“先核实”的范围保留原实现；没有进行修复发布，也未触发 Agent 安装、更新或分发变更，未重跑 Docker 部署验收。专用浏览器与隔离主控已关闭，临时浏览器配置及专项测试数据库已清理。
+
 ## 审查修复正式部署（2026-09-19）
 
 已于 **2026-09-19 17:13:56（Asia/Shanghai）** 将修复提交 `cc0b315` 部署到 `https://jm.zedy.cc`。容器 healthy、RestartCount=0；15 台节点均恢复上报，公网 HTTPS/WSS、月流量字段和桌面/手机页面实测通过。切换前的 47,922 条历史、全部节点与设置、30 个 Agent 归档文件完整保留。已按用户要求提交 Git，未创建 PR；下方“未部署生产”的内容为本次发布前的历史验证记录。

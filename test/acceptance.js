@@ -15,6 +15,7 @@ import { drainNotifications } from '../src/services/outbox.js';
 import { clearAllCaches } from '../src/utils/cache.js';
 import { cleanupHistory } from '../src/database/schema.js';
 import { updateLatencyWindow } from '../src/frontend/utils/latencyWindow.js';
+import { reconcileDashboardSnapshot } from '../src/frontend/utils/dashboardSnapshot.js';
 
 // Prepare all fixtures before executing acceptance cases. Never use an existing database.
 const root = await mkdtemp(join(tmpdir(), 'monitor-acceptance-'));
@@ -166,8 +167,15 @@ try {
     const liveWindow = updateLatencyWindow(before,sample.payload,sample.ts);
     assert.equal(liveWindow.ping.at(-1).ct,65);
     assert.equal(liveWindow.loss.at(-1).ct,10);
+    const pendingSnapshot = (await request('/api/servers')).body.servers.find(s => s.id === mainId);
+    assert.ok(pendingSnapshot.sample_timestamp < sample.ts, 'Live sample must still be awaiting persistence');
+    assert.ok(pendingSnapshot.last_updated >= sample.ts, 'Receipt time must include the pending report');
+    const liveSample = { ...sample.payload, sample_timestamp: sample.ts, report_timestamp: pendingSnapshot.last_updated };
+    const restored = reconcileDashboardSnapshot(pendingSnapshot, { ...persistedWindow, ...liveSample, ...liveWindow }, liveSample);
+    assert.equal(restored.ping.at(-1).ct,65,'snapshot refresh must retain unpersisted live latency');
+    assert.equal(restored.loss.at(-1).ct,10,'snapshot refresh must retain unpersisted live loss');
     await edit(mainId,{report_interval:120});await agent.find(m=>m.type==='config');
-    agent.ws.close();viewer.ws.close();return {persisted:ack.persisted,realtime:true,configPush:true,handshakeDate:true,latency:{persisted:306,live:65,loss:10,points:liveWindow.ping.length}};
+    agent.ws.close();viewer.ws.close();return {persisted:ack.persisted,realtime:true,configPush:true,handshakeDate:true,latency:{persisted:306,live:65,loss:10,points:liveWindow.ping.length,retainedAfterRefresh:true}};
   });
   await step('A06', '地区识别与手动覆盖', '同机回环上报后指定 JP 地区', '自动识别 US，手动值 JP 优先', async () => {
     await report(mainId,{cpu:44,timestamp:Date.now()});assert.equal((await request(`/api/server?id=${mainId}`)).body.region,'US');

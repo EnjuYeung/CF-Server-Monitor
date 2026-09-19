@@ -16,7 +16,7 @@
 | 最新回放与资源告警窗口 | src/realtime/LatestReports.js、ResourceAlertWindows.js | RealtimeHub 组合调用；test/realtime-hub.test.js |
 | 共用计费、探测与字段规则 | src/shared/billing.js、pingNode.js、metrics.js | 后端入库/下发及前端表单/实时合并；test/agent-commands.test.js |
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
-| 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js | test/dashboard-snapshot.test.js、frontend-live-socket.test.js；BR01–BR05 |
+| 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js、utils/latencyWindow.js | test/dashboard-snapshot.test.js（接收/落库时间分离）、frontend-live-socket.test.js；A05、BR01–BR05 |
 | 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；test/agent-commands.test.js；ND01–ND06 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、单选分组与地区交集；src/frontend/styles/main.css；G01–G08 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |

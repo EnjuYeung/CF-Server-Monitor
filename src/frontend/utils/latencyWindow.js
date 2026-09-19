@@ -62,7 +62,8 @@ export function updateLatencyWindow(server, metrics, timestamp, config = {}, now
 }
 
 export function refreshLatencyWindow(server, snapshot, config = {}, now = Date.now()) {
-  const persistedTs = normalizeTimestamp(snapshot.last_updated, 0)
+  // Receipt time can advance while WS samples are still awaiting persistence.
+  const persistedTs = normalizeTimestamp(snapshot.sample_timestamp ?? snapshot.timestamp ?? snapshot.last_updated, 0)
   // REST owns persisted history (including a deliberate clear). Only retain
   // local samples newer than the last persisted report while backfilling.
   const live = Object.fromEntries(SERIES.map(key => [key,
