@@ -1,5 +1,278 @@
 # 最近一次测试报告
 
+## 顶部布局生产部署（2026-09-21）
+
+已于 **2026-09-21 19:01:41（Asia/Shanghai）** 部署至 https://jm.zedy.cc。部署代码提交为 `9313558`，候选镜像 `server-monitor:layout-20260921`，镜像 ID `sha256:bae387e8265d97bc5c043af0c485058adcab95159052b4b78934f77a45d4696a`；生产沿用 `server-monitor:local`。此前未提交的已上线改动一并纳入代码提交，本次相比原生产镜像仅 4 个前端源码文件及两份依赖清单变化。下方“未部署”描述为各轮开发阶段记录，本次已完成上线。
+
+| 编号 | 操作与预期 | 实际验证及证据 | 状态 |
+| --- | --- | --- | --- |
+| LP01 | 构建镜像并确保与已测版本一致 | Docker 构建成功；134 个源码/清单、313 个前端资源哈希一致，依赖锁完全一致；Agent manifest 不变，source-integrity.json | 通过 |
+| LP02 | 备份、准备回滚并隔离验证 | 一致性 SQLite 备份 integrity=ok，16 节点、5 设置、30 归档文件；断网生产副本启动候选，调度关闭，HTTP/资源/安装脚本/版本目录正常，节点设置归档无变化 | 通过 |
+| LP03 | 切换 Compose，保持运行参数与数据 | 容器 healthy，端口/挂载/环境一致；32 次健康探测中 5 次失败，首末失败样本相隔 0.809 秒，不等同精确中断时长；deployment.json | 通过 |
+| LP04 | 公网桌面/手机页面及真实实时数据 | HTTPS、静态资源哈希、标题在樱花右侧、无筛选前置文字、按钮等尺寸、苹方优先、卡片 12px；语言/主题/动效与登录页检查通过；WSS 16 批、16 卡片，pageerror=[]、失败请求=[]；production-smoke.json，桌面/手机截图已查看 | 通过 |
+| LP05 | 比较生产数据，确保旧数据保留且 Agent 恢复 | 106,497 条切换前历史全部保留，总历史增至 106,529；16 台均已重新上报，节点/设置/30 个归档文件不变；SQLite integrity=ok，重启次数 0；persistence-final.json | 通过 |
+| LP06 | 浏览器退出后观察 30 秒并清理副本 | 7 轮内外网健康请求均 200，16 台 Agent 持续上报，runtimeErrors=[]，容器 healthy/零重启；已删除隔离数据副本，备份与回滚镜像保留；steady-state.json、cleanup.json | 通过 |
+
+证据位于 Git 忽略的 `output/test-results/layout-deploy-20260921/`。备份目录 `/opt/1panel/apps/jan_monitor/backups/layout-20260921T110118Z`，切换前快照 `monitor-pre-switch.sqlite`；回滚镜像 `server-monitor:rollback-layout-20260921t110118z`。环境备份权限 0600、备份目录 0700，生产凭据及测试产物不入 Git。未创建 PR。
+
+
+## 移除筛选前置文字（2026-09-21）
+
+环境：Node 24.21.0 / Go 1.26.8，开发前完成 npm ci、geoip:download、完整 build；修改后前端构建成功。浏览器使用全新临时 SQLite 和随机回环端口，调度关闭，未部署生产。证据目录 output/test-results/filter-labels/ 不纳入 Git。
+
+| 编号 | 功能、操作和预期 | 验证方式与证据 | 状态 |
+| --- | --- | --- | --- |
+| FL01 | 查看首页地区和分组，不显示前置“地区”“分组”文字，按钮直接左对齐 | 320/375/414/768/1440px 浏览器断言 dashboard-filter-label 数量 0，无横向溢出；browser.json、home-light.png、home-mobile-light.png | 通过 |
+| FL02 | 点击地区/分组组合筛选并切换三种视图，既有行为保持 | 浏览器真实点击，19 组检查、pageerror=[]；包括动效、后台保存、弹窗焦点及 50 节点 | 通过 |
+| FL03 | 安装、构建和完整回归 | setup.log、build.log；首轮管理入口限流用例出现 404/429 差异，无后端修改，完整复跑 106/106、Agent 配置与 Go vet/test 通过，test-all-retry.log | 通过（首轮失败已记录） |
+
+npm run test:acceptance 实际退出 0，主控全部用例及原生 Agent 6/6 通过，证据 acceptance.log。
+
+本次没有调整字体或 Agent 分发逻辑，未运行部署专项。原始首轮失败日志保留，未将其覆盖或宣称从未失败。
+
+
+## 首页顶部布局协调（2026-09-21）
+
+环境：Node 24.21.0 / Go 1.26.8；先执行 npm ci、geoip:download、完整 build，再修改。使用预建临时 SQLite、随机回环端口主控及 Chromium，关闭调度；没有部署生产。证据：output/test-results/header-layout/（Git 忽略）。
+
+| 编号 | 功能、操作及预期 | 实测方式与证据 | 状态 |
+| --- | --- | --- | --- |
+| HL01 | 打开首页，标题位于樱花右侧且与设置区对齐 | DOM 为“✿樱昼 · 星夜”，樱花右边界不超过标题左边界，品牌与按钮不重叠；browser.json | 通过 |
+| HL02 | 查看统计摘要下的地区、分组和视图工具区，边界协调且不重叠 | 320/375/414/768/1440px 检查：统计在筛选上方，分组在地区下方；桌面视图位于地区右侧；手机单列；无全页溢出 | 通过 |
+| HL03 | 操作地区/分组多选、三种视图、动效、主题和语言 | 实际浏览器点击验证组合筛选、视图切换、动效持久化及减少动态效果；详情、后台编辑保存、弹窗焦点、50 节点检查通过，19 组记录、pageerror=[] | 通过 |
+| HL04 | 查看最终截图、按钮尺寸及字体圆角保持 | home-light.png、home-mobile-light.png；实际查看截图；桌面 40×40、手机 44×44，卡片 12px、筛选 8px、苹方优先 | 通过 |
+| HL05 | 完整构建与回归，确保现有功能正常 | build.log、final-build.log；test-all.log：106/106 Node、Agent 配置、Go vet/test 通过；git diff --check 通过 | 通过 |
+| HL06 | 真实主控和原生 Agent HTTP/WS/SQLite 验收 | 首轮全部用例报告通过但进程退出 143，未将其视为完整成功；重跑 npm run test:acceptance 退出 0，主控及原生 6/6 通过，acceptance-retry.log | 通过 |
+
+限制：测试机没有苹方，截图使用回退字体。未进行本轮生产部署或 Agent 分发变更，未运行部署专项；保留前次测试记录供追溯。
+
+
+## 首页标题与样式微调（2026-09-21）
+
+环境：隔离临时 SQLite、回环随机端口主控、Chromium，关闭调度；无生产数据访问。首次默认环境为 Node 26 且 Go 不在 PATH，完整构建失败；修正为现有工具链 Node 24.21.0 / Go 1.26.8 后重新执行 npm ci、geoip:download、完整 build，再开始修改。修改后重新完整构建。证据位于 Git 忽略的 output/test-results/header-polish/。
+
+| 编号 | 功能、操作与预期 | 验证方式、实际结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| HP01 | 打开首页，站点标题仅保留一份并位于樱花左侧，无顶部固定品牌文字 | Chromium DOM 断言品牌文字为“樱昼 · 星夜✿”，重复标题数量 0，标题右边界小于樱花左边界；home-light.png、home-mobile-light.png 已查看 | 通过 |
+| HP02 | 在桌面/手机检查动效、语言、主题、管理按钮尺寸一致 | 实测匿名首页 3 个可见按钮，后台 4 个按钮；桌面 40×40、手机 44×44；初次测试误期望匿名首页显示管理按钮，修正夹具断言后通过；browser.json | 通过 |
+| HP03 | 查看卡片、筛选、弹窗圆角及字体 | 卡片计算样式 12px、筛选 8px，标题字体以 PingFang SC 开头，字体网络请求为空；查看截图及实际打开编辑、财务、批量和删除弹窗 | 通过 |
+| HP04 | 在 320/375/414/768/1440px 检查看板，并操作明暗、动效、视图、筛选、语言及后台表单 | 无全页水平溢出，动效关闭持久化/减少动态效果禁用通过，50 节点、详情和弹窗保存/焦点检查通过；浏览器 19 组记录、pageerror=[]；browser.json | 通过 |
+| HP05 | 安装、构建与完整回归，确保既有业务不回退 | ci.log、geoip.log、baseline-build.log、build.log；test-all.log：106/106 Node、Agent 配置及 Go vet/test 通过 | 通过 |
+| HP06 | 真实 HTTP/WS/SQLite 与原生 Agent 验收 | npm run test:acceptance 退出码 0；主控全部用例、原生 Agent 6/6 通过，acceptance.log | 通过 |
+
+限制：测试机未安装苹方，验证了优先字体声明及系统回退，未验证 macOS/iOS 上实际苹方字形。本轮仅修改并验证工作区，未部署生产；不涉及 Agent 安装、更新或分发逻辑，未运行部署专项。原始测试产物不提交。
+
+
+## 樱昼 / 星夜生产部署（2026-09-21）
+
+已于 **2026-09-21 17:49:33（Asia/Shanghai）** 部署至 `https://jm.zedy.cc`。候选镜像 `server-monitor:dream-ui-20260921`，生产 Compose 标签仍为 `server-monitor:local`；镜像 ID `sha256:bf14b872fe13a13256eeb34534f75fbdb05860148bcd038507d87d5a68a0c9bb`。沿用原端口、挂载、环境文件与 Compose 项目。
+
+| 编号 | 操作及预期 | 实测结果与证据 |
+| --- | --- | --- |
+| DUDEP01 | 构建候选并核对已验收源码/资产 | 134 个源码/清单、410 个资源哈希一致；依赖锁一致，原生 Agent manifest 无变化，source-integrity.json |
+| DUDEP02 | 一致性备份与回滚准备 | 16 节点、5 条设置、104,680 条历史；SQLite integrity=ok，30 个归档文件，备份目录 0700、环境文件 0600，deployment.json |
+| DUDEP03 | 用断网生产副本启动候选，禁止调度器外部写入 | HTTP、9 个 JS/CSS、安装脚本和版本目录通过；节点/设置/归档未变化，candidate-smoke.json |
+| DUDEP04 | Compose 切换并核对运行参数 | healthy、RestartCount=0，端口/挂载/环境不变；31 次探测中 5 次未成功，首末失败样本间隔 0.81 秒，不等同精确中断时长 |
+| DUDEP05 | 公网 HTTPS 桌面/手机、深浅色、语言、动效开关、后台登录及 WSS | 16 卡片；16 次实时批次与新月流量样本；浏览器 pageerror=0、请求失败=0；静态资源哈希与候选一致，production-smoke.json 及截图 |
+| DUDEP06 | 浏览器关闭后独立观察 30 秒 | 7 轮内外网健康请求均 200，16 节点持续上报；无匹配的 HTTP/WS/异常日志，steady-state.json |
+| DUDEP07 | 比较切换前快照与现有数据库及归档 | 104,680 条旧历史逐行全部保留，总历史增至 104,721；节点/配置/30 归档未变，16 节点均已在切换后上报，SQLite integrity=ok，persistence-final.json |
+| DUDEP08 | 清理隔离验证副本 | 删除本轮 production-data-copy；候选检查容器与浏览器已关闭，备份和回滚镜像保留，cleanup.json |
+
+备份：`/opt/1panel/apps/jan_monitor/backups/dream-ui-20260921T094908Z`，最终快照为 `monitor-pre-switch.sqlite`。回滚镜像：`server-monitor:rollback-dream-ui-20260921t094908z`。初次切换后检查仅 8 台完成新上报，未据此宣布完成；等待后 16 台全部通过。没有修改生产服务器配置、写入测试节点或触发测试通知。
+
+全部证据位于 Git 忽略目录 `output/test-results/dream-ui-deploy-20260921/`；Docker 构建日志位于 `output/test-results/dream-ui/docker-build.log`。本次上线已验收的工作区内容，未提交或推送 Git。Agent 安装/更新/分发逻辑及程序未变，未额外运行 agent-deployment。下方“未部署生产”为上线前历史记录。
+
+## 樱昼 / 星夜 UI 重构（2026-09-21）
+
+环境：Node 24.21.0、Go 1.26.8、本机 Chromium 1234。修改前执行 npm ci、geoip:download、完整 build；依赖变更后再次 npm ci、完整 build。浏览器启动随机回环端口的真实主控、临时 SQLite、关闭调度器，管理 API 写入虚构节点与指标，不连接生产。最终临时目录 `/tmp/monitor-dream-ui-3Rss6H`；浏览器脚本、JSON、18 张截图和命令日志位于 Git 忽略的 `output/test-results/dream-ui/`。
+
+| 编号 | 实际操作 | 验证结果 |
+| --- | --- | --- |
+| DU01 | npm ci、npm run build | 通过；final-ci.log、final-build.log。构建四种原生程序及 Vue 资源，最后注释调整后 build:frontend 也通过 |
+| DU02 | npm run test:all | 106/106 Node、Agent 配置、Go vet/test 通过，test-all.log |
+| DU03 | npm run test:acceptance | 主控 19/19、原生 Agent 6/6 通过，acceptance.log |
+| DU04 | 首页 320/375/414/768/1440px，后台 320/375/414/768px | 全页无水平溢出；宽表格保留自身滚动；375px 设置表单与编辑弹窗边界通过 |
+| DU05 | 首页亮暗切换、三种视图、地区和分组连选 | 条形/环形/列表可用；同类并集与跨类交集结果正确；截图人工复核 |
+| DU06 | 详情、登录、后台服务器/设置/数据库及财务/编辑/批量编辑/删除确认 | 真实导航与操作通过；编辑保存经 API 回读确认；删除只取消、不执行删除 |
+| DU07 | 编辑弹窗连续 12 次 Tab、Escape，财务弹窗关闭 | 焦点留在模态框；Escape 关闭；财务关闭后焦点回到触发按钮；移动弹窗完整处于视口内并可内部滚动 |
+| DU08 | 动效按钮关闭、刷新、重新开启、emulateMedia reduced-motion | 偏好保留；关闭/减少动态效果时背景节点移除；减少动态效果时按钮禁用 |
+| DU09 | 模拟 document.hidden + visibilitychange；手机视口 | CSS animation-play-state 为 paused；手机 8 花瓣 / 16 星，桌面 18 / 32，无逐帧 Vue 更新 |
+| DU10 | 50 节点，三种动效状态各采样约 3 秒 | 性能数据如下；全部 50 卡片存在，pageerror=0 |
+| DU11 | 手机循环中/日/英，读取动态按钮可访问名称 | 三种语言和按钮名称存在，无全页溢出 |
+| DU12 | 浏览器将实际主题 token 转换为 sRGB 后计算对比度 | 正文/卡片：浅 13.86、深 13.83；次级文字/卡片：浅 7.06、深 7.93；主按钮字/底：浅 7.19、深 9.15。不是全页面所有状态的自动无障碍审计 |
+
+最终性能采样（未限速、未限 CPU、50 节点中 6 个准备了在线指标，其余为离线容量夹具）：
+
+| 状态 | 帧间隔 P95 | 最大帧间隔 | 主线程任务 / 约3秒 | 脚本 / 布局 |
+| --- | --- | --- | --- | --- |
+| 星夜开启 | 16.8ms | 33.4ms | 377.7ms | 12.6ms / 0ms |
+| 樱昼开启 | 16.8ms | 33.4ms | 318.3ms | 12.2ms / 0ms |
+| 动效关闭 | 16.7ms | 16.8ms | 182.8ms | 11.4ms / 0ms |
+
+前一轮主线程采样分别为 338.8 / 334.2 / 245.8ms，说明短测存在波动；未声称严格因果开销或低端手机帧率保证。帧间隔由 requestAnimationFrame 采样，任务/脚本/布局由 Chromium Performance.getMetrics 差分；并非 Lighthouse、INP 或真实用户 Core Web Vitals。web-perf 所需 Chrome DevTools MCP 未配置，因此未完成该技能完整审计，使用既有 Playwright/CDP 测试替代。字体请求全部同源，最终首页加载 5 个 Unicode 分片，合计 260,232 字节；未依赖 Google Fonts。
+
+浏览器无 pageerror。测试主动中止两个外部汇率域名请求，8 条 ERR_FAILED 均为预设隔离行为，界面显示内置汇率回退；不计为网络全部成功。调试中实际发现并修复旧 modal-dialog 的 position 覆盖新 Dialog 定位、视图选中态颜色及冗余嵌套边框；也调整了减少动态效果异步等待、保存成功弹窗关闭等测试等待条件。最终整套浏览器重跑通过。Hallmark 截图复核覆盖首页亮暗、手机首页、财务、设置与手机编辑/后台；保留用户明确要求的 emoji 和装饰动画例外。
+
+未部署生产、未提交 Git；未更改 Agent 安装/更新/分发逻辑，因此未运行 agent-deployment。既有实时订阅、地区多选及其他工作区改动保留。
+
+## 首页地区与分组多选（2026-09-21）
+
+环境：Node 24.21.0、Go 1.26.8；修改前完成 `npm ci`、`npm run geoip:download`、`npm run build`。默认 shell 首次构建因没有 Go 且 Node 为 26 失败，改用已有 `/tmp/monitor-toolchain-lflYI6/go/bin` 工具链后通过。浏览器使用本机 Chromium 1234、随机回环端口、临时空 SQLite；先通过管理 API 准备 21 台虚构服务器，再打开页面验收，不连接生产。
+
+| 编号 | 功能 / 实际操作 | 预期结果 / 验证方式 | 状态与证据 |
+| --- | --- | --- | --- |
+| MS01 | 启动隔离主控并打开首页 | 默认显示全部 21 台且保持顺序；浏览器读取实际 DOM | 通过，browser.json |
+| MS02–MS03 | 连选 US、JP，再连选 Alpha、Beta | 地区并集、分组并集，两类条件取交集，按钮状态一致 | 通过，browser.json |
+| MS04 | 切换环形、列表、条形 | 三种视图保持同一筛选结果及顺序 | 通过，3 项实际 DOM 断言 |
+| MS05–MS08 | 取消一个地区、构造无匹配组合、逐类清空 | 其余选项保留，无匹配显示空状态，清空恢复不限 | 通过，browser.json |
+| MS09 | 同时选择未知地区和 US | 两类服务器均展示 | 通过，browser.json |
+| MS10 | 刷新页面 | 与既有行为一致，不持久化筛选，恢复全部 | 通过，browser.json |
+| MS11–MS12 | 390px 手机视口，在更多菜单连选两地区，点菜单外再打开，逐项取消 | 菜单支持连续选择，外部点击关闭，选择保留，全部取消后入口不再高亮 | 通过，browser.json、mobile.png |
+| MS13 | `npm run build`、`npm run test:all` | 全平台构建及既有回归通过 | 通过，build.log；106/106 Node、Agent 配置、Go vet/test，test-all.log |
+| MS14 | `npm run test:acceptance` | HTTP/WS、SQLite、重启持久化和原生 Agent 兼容 | 通过，主控 19/19、原生 Agent 6/6，acceptance.log |
+
+浏览器共 14 项结果，pageerror 为 0。测试脚本首轮因默认浏览器版本路径失效未启动，指定已安装 Chromium 后运行；调试期间修正了“更多”按钮匹配到隐藏测量按钮及点击被菜单遮挡区域的测试定位问题，最终全程重跑通过。证据位于 `output/test-results/multiselect/`，均为 Git 忽略产物。未部署生产，未改 Agent 安装、更新、分发，因此未运行 agent-deployment。
+
+## 主题商店删除与到期提醒修复生产部署（2026-09-21）
+
+已于 **2026-09-21 15:49:54（Asia/Shanghai）** 部署到 `https://jm.zedy.cc`。候选标签 `server-monitor:theme-expiry-20260921`，生产标签 `server-monitor:local`，镜像 ID `sha256:6ef330147e8a24f9c8fe8018045cdb72449dcae6e8f5715dda75ca844c12b29d`。沿用原 Compose 项目、环境文件、数据卷及 `127.0.0.1:26129`；容器 healthy，RestartCount=0。
+
+| 编号 | 操作 / 功能 | 预期和验证方式 | 结果与证据 |
+| --- | --- | --- | --- |
+| DEP01 | 构建候选镜像，比较已验收源码及资源 | 与本地测试版本一致，Agent 归档无冲突 | 通过；source-integrity.json：106 文件、313 资源匹配；依赖版本一致，仅规范化 npm peer 标记；相对生产仅 8 个主题商店/到期修复文件变化 |
+| DEP02 | 一致性备份数据库、环境、Compose、GeoIP 和 Agent 归档，保留旧镜像 | 可回滚，数据库 integrity=ok | 通过；deployment.json；备份目录 0700、环境文件 0600；切换前再次备份 |
+| DEP03 | 生产数据副本运行候选，network=none、关闭调度器 | 16 节点/设置/归档不变，HTTP、9 个 JS/CSS、Agent 目录正常 | 通过；candidate-smoke.json，/theme=404，资源哈希匹配，SQLite integrity=ok |
+| DEP04 | 既有 Compose 重建 monitor 并等待健康 | 新镜像就绪，端口、挂载、环境保持一致 | 通过；deployment.json、compose-up.log；切换期间 26 次健康采样中 1 次失败，不据此推算精确中断时长 |
+| DEP05 | 公网及回环 HTTP、桌面/手机浏览器和实时 WSS | 新资源加载、后台登录页正常、16 节点展示并接收新上报 | 通过；production-smoke.json：HTTPS 证书验证、9 资源哈希、/theme=404、WSS hello/subscribed/batchUpdate、16 个含月流量的新样本；浏览器 errors=[]、failedRequests=[]；手机截图已查看 |
+| DEP06 | 对比切换前后 SQLite、环境和 Agent 归档 | 原数据保留，到期修复按正常调度执行 | 通过；persistence-final.json：16 节点及配置内容不变，102,059 条切换前历史全部保留，30 个归档文件一致，integrity=ok；新增当天 expiry_report_last，1 条到期事件已标记送达 |
+| DEP07 | 浏览器关闭后连续观察 30 秒 | 7 次健康检查成功、16 台 Agent 持续上报、无运行错误或重启 | 通过；steady-state.json：公网/回环均 200，recentAgents=16，runtimeErrors=[]，restarts=0 |
+
+备份目录：`/opt/1panel/apps/jan_monitor/backups/theme-expiry-20260921T074910Z`，最终切换快照为 `monitor-pre-switch.sqlite`。回滚镜像：`server-monitor:rollback-theme-expiry-20260921t074910z`。旧镜像及完整备份保留；候选检查容器和可重建生产测试副本已删除。未触发额外测试通知，实际到期事件由生产调度器按原设置自动发送；未修改管理员配置。
+
+首轮持久化检查使用全部 settings 行相等断言，因修复后新增正常的 `expiry_report_last` 失败；已改为对节点和其余配置作内容哈希比较，并单独核对到期日期及队列送达记录。首轮与浏览器并行的日志观察记录 17 条 `[http] Premature close`，原始结果保留于 steady-state-first.json；浏览器关闭后独立 30 秒观察通过，不宣称部署全程没有提示。
+
+验证证据位于 `output/test-results/theme-expiry-deploy-20260921/`，被 Git 忽略。本次部署已验收工作区内容，未提交/推送 Git；下方“未部署生产”为本次上线前的历史记录。Agent 安装、更新、分发代码及程序未变化，未重复运行 agent-deployment 套件；此前 106 项 Node、Agent 配置/Go、19 项主控和 6 项原生 Agent 验收结果已核对。
+
+## 修复到期提醒缺少函数导入（2026-09-21）
+
+本次修复上一节主题商店删除验收发现的既有缺陷：`expiry.js` 补齐 `getTrafficPeriodKeys` 导入。运行规则及通知格式不变。新增真实 HTTP 配置、SQLite 持久化和本地 Webhook 回归，并加强 A10 的独立到期事件断言。未部署生产，未修改生产配置或数据。
+
+环境先准备完成：Node 24.21.0、Go 1.26.8；`npm ci`、`npm run geoip:download`、`npm run build` 均成功，四个平台 Agent 构建校验通过。测试使用临时空数据库、随机回环端口、本地 Webhook，调度器自动运行关闭，显式调用定时任务同一服务验证确定性时间边界。
+
+| 编号 | 功能 / 操作 | 预期与验证方式 | 状态与实际证据 |
+| --- | --- | --- | --- |
+| EX01 | 修复前执行新增 expiry-notification.test.js | 测试必须捕获原有错误 | 通过（预期失败）：ReferenceError、false !== true，退出 1；before.log |
+| EX02 | HTTP 创建两天后跨日仍待提醒的服务器，调用到期检查并发送 | SQLite 新增到期事件，本地 HTTP Webhook 收到服务器名和剩余天数 | 通过：首日一条，event=服务器到期提醒、clients=[Expiry fixture]、剩余3天；delivered_at 写入；after.log |
+| EX03 | 同日重复检查、重启主控后再次检查 | SQLite 队列仍一条，不重复提醒 | 通过；持久去重日期 2026-09-21 |
+| EX04 | 上海时间 23:59 到次日 00:00（UTC 日期未变） | 新增下一天提醒，剩余天数更新 | 通过；去重日期 2026-09-22、剩余2天、第二条实际送达 |
+| EX05 | 推进到服务器过期后再检查 | 无待提醒服务器，不生成新事件或占用新日期 | 通过；队列仍两条、日期仍 2026-09-22 |
+| EX06 | npm run test:all | Node、Agent 配置、Go vet/test 全部通过 | 通过；106 tests、106 pass、0 fail，退出 0；test-all.log |
+| EX07 | npm run test:acceptance | HTTP/WS、备份恢复、原生 Agent 回归及到期事件独立断言通过 | 通过；19 项主控、6 项原生 Agent，退出 0；A10 queuedEvents=5、expiryEvents=1、duplicateReportEvents=0；无到期检测 ReferenceError |
+| EX08 | git diff --check | 无补丁空白错误 | 通过，退出 0 |
+
+证据位于 `output/test-results/expiry-fix-20260921/`，测试产物被 Git 忽略。新增测试先失败再通过，已证实能阻止本次缺陷回归；上一节所记的到期通知问题现已修复。
+
+## 删除主题商店（2026-09-21）
+
+范围：删除商店面板、后台入口、清单代理及缓存、中英日专用文案和旧待办；保留第三方主题加载及管理 API、深浅色和 Mikus 设置。保留工作区既有标签、财务等修改。未部署生产，未操作生产数据库。
+
+环境：Node 24.21.0（从现有 Node 24 镜像提取）、Go 1.26.8（官方 golang 镜像工具链）、Chromium 1234；先完成依赖安装、GeoIP 准备与完整四平台构建，再进行最终测试。主控及原生 Agent 验收使用临时独立数据目录和随机回环端口。
+
+| 编号 | 功能 / 操作 | 预期与验证方式 | 结果 / 证据 |
+| --- | --- | --- | --- |
+| TS01 | 删除清单接口；实际 GET /theme | 返回 404，不提供远程商店清单 | 通过；acceptance A01 removedThemeStore=404；browser.json TS01 |
+| TS02 | 中英日登录后台，切换保留页签 | 仅服务器、设置、数据库管理三个入口，面板可切换，无商店组件 | 通过；browser.json TS02-zh/en/ja；admin-zh/en/ja.png |
+| TS03 | 浏览器监控请求和 JS 异常 | 无 /theme、CFSM-Theme-Store 请求，无运行异常 | 通过；browser.json errors=[]、storeRequests=[] |
+| TS04 | 三种语言下保存 Mikus JSON 后刷新读取 | 设置正常保存、Mikus 启用且刷新后保留 | 通过；browser.json 三种语言 mikusPersisted=true |
+| TS05 | npm ci、npm run geoip:download、npm run build | 依赖安装、GeoIP 准备、Vue 和四个平台 Agent 构建成功 | 通过；Node 24 下安装 0 vulnerabilities，GeoIP 2026-09，4 verified artifacts，Vite 389 modules |
+| TS06 | npm run test:all | Node 回归、Agent 配置、Go vet/test 通过 | 通过；test-all.log：105 tests、105 pass、0 fail；agent config tests passed；Go 测试退出 0 |
+| TS07 | npm run test:acceptance | 实际 HTTP/WS、SQLite、备份恢复和原生 Agent 验收 | 命令退出 0，19 项主控和 6 项原生 Agent 断言通过；但到期通知存在下述既有异常，不能据此认定该子功能通过 |
+| TS08 | 搜索 src/dist 并检查补丁 | 无商店符号、URL 及空白错误 | 通过；rg 无 themeStore/ThemeStore/THEME_STORE/CFSM-Theme-Store 命中；git diff --check 退出 0 |
+
+证据目录：`output/test-results/theme-store-removal-20260921/`，测试脚本、截图、日志均被 Git 忽略。代码及文档删除可从 Git 历史恢复，未删除用户数据。
+
+测试过程说明：宿主机 Node 26.7.0 且无 Go，首次完整构建因 `go ENOENT` 失败，已切换到上述要求的工具链完成。首次 Node 测试误与重构建同时运行，dist 清理窗口使首页返回 503，造成安全测试后续级联失败；构建完成后重新完整执行 test:all，105 项全部通过，首轮日志保留在 test-all-first.log。
+
+既有缺陷：`src/services/notifications/expiry.js:61` 使用 `getTrafficPeriodKeys` 但未导入，该文件与 HEAD 一致，本次未修改。A10 实际日志出现 `ReferenceError`，服务捕获异常并返回 false，但测试只检查聚合队列数量，仍报告 PASS。因此本次明确不将到期通知视为验证通过；此问题不影响主题商店删除，留待单独修复。
+
+## 服务器标签独立配色与价格计费（2026-09-19）
+
+实现独立七色表和严格的 `标签<color>` 语法，支持小写内置色名、`#RGB`、`#RRGGBB`。未指定颜色的标签按原六色顺序及自身位置循环；标签仅按英文逗号拆分、保留大小写，其他配色格式按普通文字显示。旧标签保持数据库原文，无需迁移。移除“白嫖中”对财务计算的影响，价格 0 才显示免费，负一不再作为免费哨兵。
+
+### 环境和证据
+
+- 先执行 `npm ci`、`npm run geoip:download`、`npm run build`；Node.js v24.21.0、Go 1.26.8、Chromium，测试使用临时 SQLite 和回环随机端口，凭据独立于生产。
+- 专项证据：`output/test-results/tag-colors-20260919/`（Git 忽略）；正式回归 `test/server-tags.test.js` 共 4 项，覆盖严格后缀、英文逗号、大小写、HEX、默认映射、长度边界、存储幂等及财务规则。
+- 新增共享 `serverTags.js`、共用渲染 `ServerTags.vue`、问号帮助 `ServerTagsHelp.vue`；移除前后台重复的 `tagColorClass` / `splitTags`、六个 `.tag-color-*` CSS 类、卡片 composable 中旧标签逻辑、财务 `hasFreeTag` 和 `-1` 免费分支。帮助复用已有 `HelpTooltip`，未建立第二套提示交互；热更新复用既有 WS 重连补取机制。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 实际证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| TC01 | 隔离主控新增旧格式标签，在首页及后台检查 | 原六色循环，lower/UPPER/case/Case 原样显示 | `browser.json`：七个标签顺序及 CSS 色值逐项匹配，text-transform=none | 通过 |
+| TC02 | 真实后台编辑输入 green、短 HEX、完整 HEX、重复标签并保存；保持条形/环形首页打开 | 后台和两个首页颜色一致，无需手动刷新，数据保存准确 | `browser.json`：热更新 1124ms，页面 reload=0；三处文本/颜色一致，重复标签正常 | 通过 |
+| TC03 | 打开财务弹窗，检查带“白嫖中”的正价格服务器、零价、负价节点 | 计费与标签无关，仅零价显示免费 | 两台正价格节点显示 ¥15.00 / ¥30.00；零价显示免费，负价无免费标记且不计入金额 | 通过 |
+| TC04 | 保存方括号/冒号/圆括号、大写色名、非支持色名、不合法 HEX、中文逗号、HTML 样式文本 | 仅规定后缀被识别，其他原样显示为普通文字 | `browser.json`：8 个标签及默认颜色匹配，中文逗号不拆分，HTML 不生成 img、不弹出 alert | 通过 |
+| TC05 | 实际批量编辑为白/黑/蓝标签，再清空并重新设置 | 标签实时改变、删除；文字与背景可读 | 页面 reload=0，白底黑字、黑底白字，批量保存和清空均热更新 | 通过 |
+| TC06 | 实际条形/环形视图 × 默认/Mikus CSS 状态 × 深/浅色 × 320/375/414/768/1440px | 明确颜色跨主题一致，不强制大写、无横向溢出 | 40 种组合通过，同时断言实际环形卡片数量；桌面/手机截图已查看 | 通过 |
+| TC07 | 编辑框标签问号悬停、键盘 Tab/Escape、外部点击；手机点击展开关闭，切换中英日 | 沿用原交互/浮层，列出七个颜色及规则，手机无溢出 | `browser.json`：交互通过，七个色样、HEX 和默认顺序提示可见，help-desktop/mobile.png 已查看 | 通过 |
+| TC08 | 导出并重新导入带配色的节点，再重启隔离主控 | 标签原文、大小写与色值后缀保持 | 原节点和导入节点重启后 tags 与保存文本完全一致 | 通过 |
+| TG01 | 完整构建与回归 | 既有业务和 Agent 保持正常 | `test-all.log`：105/105 Node，配置及 Go vet/test；主控 19/19、原生 Agent 6/6 | 通过 |
+| TG02 | 构建候选镜像，核对本地源码/资产并使用断网生产副本启动 | 候选即已测版本，原数据/归档可兼容 | `source-integrity.json`：108 个源码/清单、313 个构建文件一致；`candidate-smoke.json`：15 节点、设置/归档不变，SQLite integrity=ok | 通过 |
+
+浏览器脚本前两轮失败均保留原始日志：第一次在已聚焦问号上再次调用 focus，没有触发新的键盘焦点事件；改为实际 Tab/Shift+Tab 后通过。第二次测试脚本在 about:blank 执行 localStorage 初始化，被浏览器拒绝；将夹具初始化限定到 HTTP(S) 文档后通过。最终再次显式固定条形/环形视图并校验对应 DOM，8 个流程、40 个布局、pageerror=[] 全部通过。未修改产品代码来规避这些测试工具问题。
+
+已于 **2026-09-19 22:09:57（Asia/Shanghai）** 部署到 `https://jm.zedy.cc`，运行镜像 `sha256:bb3171ef49c5dfc971f01038e7cf5cb7ebefca581edb9df548a5823e1fbda50c`，容器 healthy、RestartCount=0。
+
+| 编号 | 功能 / 实际操作 | 预期结果 | 实际证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| TP01 | 原 Compose 项目替换主控，核对生产环境、端口和挂载 | 运行已测镜像，配置/数据卷保持 | `deployment.json`：环境、端口、挂载逐项一致；200ms 探针 31 次，5 次失败，首末失败跨度 0.808 秒（不是精确停机时长） | 通过 |
+| TP02 | 公网逐台检查条形/环形、1440px/375px 标签 | 旧标签保留原文，默认配色与大小写正确，无溢出 | `production.json`：15 台节点、17 个自定义标签，在四种组合中逐项核对文字/背景/前景/大小写样式通过；手机卡片截图已查看 | 通过 |
+| TP03 | 两入口读取 JS/CSS，公网打开财务并观察 WSS | 正式资产匹配，财务仅按价格展示，实时推送正常 | 两入口各 9 个 JS/CSS 哈希匹配；13 张付费卡片与正价格节点一致；WSS hello=1、subscribed=1、batchUpdate=45，pageerror=[] | 通过 |
+| TP04 | 等待节点重连后与切换前快照逐行核对 | 全部节点恢复，设置/标签/历史/归档保留 | `persistence-final.json`：15/15 节点切换后上报，15 节点及 3 条设置完整相同；54,578 条切换前历史逐行保留，核验时历史增至 54,626；30 个归档哈希一致，SQLite integrity=ok | 通过 |
+| TP05 | 浏览器退出后持续 30 秒观察健康与上报 | 服务持续健康、无新增运行错误 | `steady-state.json`：7 轮、14 次 HTTP 200，各轮 15 台近期上报，runtimeErrors=[]，容器无重启 | 通过 |
+
+第一次公网浏览器检查已完成全部标签、资产和财务断言，并完成 WSS 握手/订阅，但在 15 秒数据等待窗口内未收到批次而失败；原结果保留在 `production-first.json` / `.log`。随后确认 15 台节点均已切换后重新上报，允许正常重连等待后复测，收到 45 批更新并通过，未修改生产代码或配置。浏览器操作期间存在 `[http] Premature close` 请求提前关闭日志，最终独立 30 秒观察无新增；不声称整段发布日志完全无告警。
+
+滚动全部节点后立即截图，手机首张卡片曾因既有 `content-visibility: auto` 尚未绘制而在截图中空白；逐台 DOM、文本、颜色断言均通过。补充实际滚入视口、等待绘制并捕获 `production-bar-mobile-card.png` / `production-ring-mobile-card.png`，两张均已查看，标签和卡片正常。
+
+备份目录：`/opt/1panel/apps/jan_monitor/backups/tag-colors-20260919T140703Z`，含环境文件、一致性数据库、Agent 归档和切换前 `monitor-pre-switch.sqlite`；目录 0700、环境文件 0600。回滚镜像：`server-monitor:rollback-tag-colors-20260919t140703z`。沿用原 `.env`、`127.0.0.1:26129` 和数据目录；未向生产写入测试标签或修改服务器配置，全部编辑、批量、导入和重启写测试仅在隔离环境完成。
+
+本次浏览器、隔离主控及候选检查容器已关闭，生产测试副本已清理，备份与回滚镜像保留。源码和文档修改保留在工作区，未提交/推送 Git；测试产物位于 Git 忽略目录。本次未更改 Agent 安装/更新/分发逻辑，未额外运行 `test:agent-deployment`，主控部署已独立实测。
+
+## 财务弹窗按服务器展示剩余价值（2026-09-19）
+
+将首页 `$ finance --summary` 弹窗中的六个独立汇率框替换为服务器剩余价值卡片：名称、剩余天数、剩余价值在卡片内横向排列，桌面两列、768px 及以下一列。顺序沿用后台保存的服务器顺序，免费、白嫖标签及无有效正价格的节点不展示；隐藏服务器继续由公共 API 排除。保留顶部三项汇总、汇率来源和币种切换，删除“已计价、已到期、无到期日”统计。
+
+- 环境：Node.js v24.21.0、Go 1.26.8、Chromium，临时 SQLite / 回环随机端口；先执行 `npm ci`、`npm run geoip:download`、`npm run build`。修改后完整构建并执行全套测试，最终样式修正后再次完整构建和浏览器复测。
+- 剩余天数按剩余毫秒数向上取整，过期为 0 天，无到期时间/无效日期为 `—`；金额复用已有折算和封顶公式。日期异常不冒充有效剩余天数。中/英/日文案同步。
+- 证据目录：`output/test-results/finance-summary-20260919/`，Git 忽略。浏览器接口使用固定汇率夹具以验证精确金额，不将夹具结果描述为第三方汇率可用性测试。
+
+| 编号 | 功能 / 操作 | 预期结果 | 实际证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| FS01 | 启动隔离主控，后台 API 添加 50 台节点并反向保存排序，打开财务弹窗 | 按后台顺序展示付费节点，免费/白嫖/隐藏/无有效价格不展示 | `browser.json`：44 张卡片，名称顺序逐项匹配；365 元年付剩 100 天为 100 元，12 美元月付剩 15 天在夹具汇率下为 30 元；到期、无日期、无效日期、提前续费封顶、不足一天均通过 | 通过 |
+| FS02 | 检查新卡片、六个旧汇率框及三个旧统计，切换 USD 后刷新 | 旧框和统计移除，顶部三项汇总保留；新卡片和汇总统一币种，偏好持久化 | `browser.json`：旧 DOM=0，汇总=3，USD 年付测试显示 $20.00，刷新仍选择 USD；当天缓存命中 | 通过 |
+| FS03 | 重启隔离主控，再查询服务器；实际关闭/重开弹窗 | 排序和计费数据持久化，关闭与 OK 可用 | `browser.json`：重启后公共列表顺序一致，弹窗关闭/重新打开成功 | 通过 |
+| FS04 | 将所有测试节点通过后台批量改为免费 | 不展示服务器卡片，显示空状态 | `browser.json`：卡片数 0，空状态可见 | 通过 |
+| FL01 | 中/英/日 × 深/浅色 × 320/375/414/768/1440px | 无横向溢出，字段横排，桌面两列，窄屏一列，50 节点可滚动至最后 | `browser.json`：30 种布局通过；四张深浅色桌面/手机截图已查看。首轮发现币种标签换行，修正后完整复测 34 项均通过，pageerror=[] | 通过 |
+| FR01 | 完整回归和真实主控/原生 Agent 验收 | 既有功能保持 | `test-all.log`：101/101 Node、Agent 配置、Go vet/test 通过；`controller-acceptance.json` 19/19，`native-acceptance.json` 6/6 | 通过 |
+| FD01 | 构建候选 Docker 镜像，核对源码、前端和 Agent 归档 | 镜像与浏览器已测版本一致 | `source-integrity.json`：105 个源码/清单、312 个构建文件一致，依赖版本和 Agent manifest 与生产一致 | 通过 |
+| FD02 | 备份生产数据/环境/归档和旧镜像，将数据副本挂到断网候选容器 | 候选能使用现有数据，生产节点/设置/归档不变 | `prepare.log`、`candidate-smoke.json`：15 台节点，SQLite integrity=ok，HTTP 和 8 个 JS/CSS 通过，network=none | 通过 |
+
+已于 **2026-09-19 21:35:54（Asia/Shanghai）** 部署到 `https://jm.zedy.cc`，生产容器 healthy，RestartCount=0。
+
+| 编号 | 功能 / 操作 | 预期结果 | 实际证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| FD03 | 原 Compose 项目替换主控并等待健康 | 原环境、端口、数据卷保持，生产运行候选镜像 | `deployment.json`：环境、挂载、端口逐项一致，镜像 `sha256:d7ead91c065e9db6747e84285e14c1a20bcae9e9f3ebf719f63c904582e89496`；200ms 探针 32 次，5 次失败，首末失败跨度 0.81 秒（不是精确停机时长） | 通过 |
+| FP01 | 公网 Chromium 点击剩余价值，在桌面和手机检查，再切换 JPY 并刷新 | 13 台付费服务器依后台顺序展示，2 台免费节点不展示，币种偏好持久化，旧框/旧计数消失 | `production.json`：15 台节点、13 张卡片；1440px 两列、375px 一列，无横向溢出、最后卡片可见、pageerror=[]；两张实际主题截图已查看 | 通过 |
+| FP02 | 回环和公网读取全部 JS/CSS，观察 WSS 连接及真实更新 | 正式资产与已测构建相同，推送持续可用 | `production.json`：两入口各 8 个 JS/CSS 哈希匹配；WSS hello=2、subscribed=2、batchUpdate=10 | 通过 |
+| FP03 | 对比切换前一致性快照与生产节点、设置、全部历史及归档 | 数据保留，所有 Agent 在切换后继续上报 | `persistence-final.json`：15/15 节点均切换后上报；15 节点、3 条设置、53,933 条旧历史及 30 个归档哈希保持，核验时历史增至 53,963 条；SQLite integrity=ok | 通过 |
+| FP04 | 浏览器退出后持续检查两入口健康、近期上报和日志 | 主控持续健康，真实上报继续 | 复查 `steady-state.json`：30 秒 7 轮、14 次 HTTP 200，每轮 15 台近期上报，无新增 HTTP/WS 错误，重启次数 0 | 通过（首轮日志告警见下） |
+
+首轮持续检查的健康请求与 15 台节点上报均正常，但期间记录 3 条 `[http] Premature close`，因此“日志无错误”断言失败，原始结果保存在 `steady-state-first.json` / `.log`。浏览器操作期间也有此类请求提前关闭日志，未据此推断服务端数据损坏。再次独立观察 30 秒，健康、上报、日志断言全部通过；不将整段部署日志描述为完全无告警。
+
+生产沿用 `127.0.0.1:26129`、`/opt/1panel/apps/jan_monitor/.env` 和原始数据目录。备份：`/opt/1panel/apps/jan_monitor/backups/finance-summary-20260919T133440Z`（含切换前 `monitor-pre-switch.sqlite`），目录 0700、环境文件 0600；回滚镜像：`server-monitor:rollback-finance-summary-20260919t133440z`。本次测试浏览器、隔离主控和候选测试容器已关闭，生产测试副本已删除，部署备份及回滚镜像保留。源码修改保留在工作区，未提交或推送 Git。
+
+此次没有修改 Agent 安装、更新或分发逻辑，未额外运行 `test:agent-deployment`；主控容器部署已独立实测。
+
 ## 首页切回延迟与丢包缺样修复（2026-09-19，已部署生产并完成清理）
 
 已修复历史快照合并误用上报接收时间的问题：以 `sample_timestamp` 判断历史写入进度，保留尚未落库的实时延迟/丢包点。缺少该字段时沿用 `timestamp`、`last_updated` 的兼容回退。修复提交 `4b61d45` 已同步 GitHub 并于 **2026-09-19 20:20:52（Asia/Shanghai）** 部署至 `https://jm.zedy.cc`，未创建 PR。正式首页后台停留 8 分 45.597 秒后切回，14 台当前区间尚未落库的节点保留实时样本，全程误清空次数为 0。按用户要求完成部署备份、生产测试副本及旧主控镜像清理。下方 TR01–TR06 为修复前问题核实记录。

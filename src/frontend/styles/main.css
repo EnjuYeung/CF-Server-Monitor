@@ -3,9 +3,29 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Google Fonts Import
+   1. shadcn-vue / Tailwind utilities (without preflight reset)
    -------------------------------------------------------------------------- */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@source '../components/ui';
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+}
 
 /* --------------------------------------------------------------------------
    2. CSS Variables (Design Tokens)
@@ -793,8 +813,8 @@ body::before {
     font-size: 11px;
 }
 
-.finance-modal-dialog {
-    width: 620px;
+.modal-dialog.finance-modal-dialog {
+    width: 820px;
 }
 
 .finance-summary-grid {
@@ -867,40 +887,68 @@ body::before {
     padding: 6px 10px;
 }
 
-.finance-rate-grid {
+.finance-currency-picker > span {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.finance-server-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px 12px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
-.finance-rate-row {
-    align-items: center;
+.finance-server-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    color: var(--text-secondary);
-    display: flex;
-    font-size: 12px;
-    justify-content: space-between;
     min-width: 0;
-    padding: 8px 10px;
+    padding: 12px;
 }
 
-.finance-rate-row b {
-    color: var(--text-primary);
-    font-weight: 700;
-    margin-left: 8px;
+.finance-server-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    margin: 0;
+}
+
+.finance-server-field {
+    min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.finance-server-field dt {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.finance-server-field dd {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+    margin: 8px 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.finance-server-days,
+.finance-server-value {
     text-align: right;
 }
 
-.finance-modal-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 14px;
+.finance-server-value dd {
+    color: var(--accent-cyan);
+}
+
+.finance-empty {
     color: var(--text-muted);
-    font-size: 11px;
-    margin-top: 14px;
+    font-size: 12px;
+    padding: 20px 12px;
+    text-align: center;
 }
 
 .stats-grid {
@@ -1130,31 +1178,9 @@ body::before {
 }
 
 .badge-tag {
-    color: var(--color-inherit);
-}
-
-.tag-color-0 {
-    background: var(--accent-cyan);
-}
-
-.tag-color-1 {
-    background: var(--accent-purple);
-}
-
-.tag-color-2 {
-    background: var(--accent-pink);
-}
-
-.tag-color-3 {
-    background: var(--accent-green);
-}
-
-.tag-color-4 {
-    background: var(--accent-blue);
-}
-
-.tag-color-5 {
-    background: var(--accent-yellow);
+    text-transform: none;
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 .badge-tf {
@@ -4875,7 +4901,7 @@ body.mikus-theme .mikus-stats-mascot-img {
     }
 
     .finance-summary-grid,
-    .finance-rate-grid {
+    .finance-server-grid {
         grid-template-columns: 1fr;
     }
 

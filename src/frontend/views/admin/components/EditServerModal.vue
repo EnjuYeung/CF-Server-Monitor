@@ -1,6 +1,5 @@
 <template>
-  <div id="editModal" class="modal-overlay" :class="{ active: show }">
-    <div class="modal-dialog edit-server-modal">
+  <AppDialog :open="show" :title="currentServerName" content-class="edit-server-modal" @close="$emit('close')">
       <div class="modal-header">
         <div class="modal-title">{{ currentServerName }}</div>
         <button class="modal-close" @click="$emit('close')">✕</button>
@@ -20,7 +19,7 @@
       </div>
       <div class="form-row">
         <div class="form-group flex-1">
-          <label class="form-label">{{ trans.tags }}</label>
+          <label class="form-label">{{ trans.tags }} <ServerTagsHelp /></label>
           <input type="text" name="edit_tags" autocomplete="off" v-model="editForm.tags" class="form-input" :placeholder="trans.tagsPlaceholder">
         </div>
 
@@ -256,14 +255,15 @@
         <button @click="$emit('save')" class="btn btn-primary" :disabled="hasPingNodeErrors">{{ trans.save }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
-    </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
+import AppDialog from '../../../components/AppDialog.vue'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
+import ServerTagsHelp from '../../../components/ServerTagsHelp.vue'
 import { PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
 import { currentLang } from '../../../utils/i18n.js'
 import { BILLING_CYCLES, CURRENCY_OPTIONS, normalizePrice, renewExpireDateIfNeeded } from '../../../utils/server.js'

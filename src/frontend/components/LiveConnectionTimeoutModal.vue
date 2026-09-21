@@ -1,15 +1,7 @@
 <template>
-  <div
-    v-if="show"
-    class="modal-overlay active"
-    role="dialog"
-    aria-modal="true"
-    :aria-labelledby="titleId"
-    :aria-describedby="messageId"
-  >
-    <div class="modal-dialog live-timeout-dialog">
+  <AppDialog :open="show" :title="trans.liveConnectionTimeoutTitle" content-class="live-timeout-dialog" @close="$emit('close')">
       <div class="modal-header">
-        <div :id="titleId" class="modal-title">$ websocket --timeout</div>
+        <div :id="titleId" class="modal-title">{{ trans.liveConnectionTimeoutTitle }}</div>
       </div>
 
       <div class="warning-box live-timeout-message">
@@ -28,11 +20,11 @@
           {{ trans.continueConnection }}
         </button>
       </div>
-    </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
+import AppDialog from './AppDialog.vue'
 const titleId = 'live-connection-timeout-title'
 const messageId = 'live-connection-timeout-message'
 

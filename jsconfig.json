@@ -1,9 +1,4 @@
 {
-  "compilerOptions": {
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/frontend/*"]
-    }
-  }
+  "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/frontend/*"] } },
+  "include": ["src/frontend/**/*"]
 }

@@ -117,10 +117,9 @@
             </td>
             <td>{{ server.server_group || trans.default }}</td>
             <td>
-              <div v-if="splitTags(server.tags).length" class="tag-list admin-tag-list">
-                <span v-for="(tag, index) in splitTags(server.tags)" :key="tag" :class="['badge', 'badge-tag', tagColorClass(index)]">{{ tag }}</span>
+              <div class="tag-list admin-tag-list">
+                <ServerTags :value="server.tags" empty="-" />
               </div>
-              <span v-else>-</span>
             </td>
             <td>
               <span
@@ -183,6 +182,7 @@ import { getPublicAssetUrl } from '../../../utils/config'
 import { currentLang } from '../../../utils/i18n'
 import { detectBillingCycle, detectCurrencySymbol, getBillingCycleOption, isEnabledFlag, isFreePrice, normalizeCurrency, normalizePrice } from '../../../utils/server.js'
 import OsIcon from '../../../components/OsIcon.vue'
+import ServerTags from '../../../components/ServerTags.vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 
 const props = defineProps({
@@ -439,11 +439,6 @@ const emitCopySpec = (server, field, value) => {
   })
 }
 
-const splitTags = (value) => String(value || '')
-  .split(',')
-  .map(tag => tag.trim())
-  .filter(Boolean)
-const tagColorClass = (index) => `tag-color-${index % 6}`
 const normalizePublicIpValue = (value) => String(value ?? '').trim()
 const isPublicIpAvailable = (value) => {
   const normalized = normalizePublicIpValue(value)

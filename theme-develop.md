@@ -6,7 +6,7 @@
 
 默认使用同源主控地址，HTTP 页面连 WS，HTTPS 页面连 WSS。独立主题可通过 HTML `<meta name="apiBase" content="https://monitor.example.com">` 指定后端；跨域时同时配置主控 CORS_ALLOWED_ORIGINS。第三方主题不依赖 Workers、Pages 或 Turnstile。
 
-管理页面始终使用内置前端，入口由 `.env` 的 `ADMIN_PATH` 决定。匿名主题不得提供后台链接；通过 `/api/config` 确認 authorization=true 后才可使用返回的 admin_path 生成设置入口。主题入口为 index.html，静态资源使用相对路径（通常 assets/）；主题商店与后台主题选择逻辑保留。站点标题、背景、CSP 扩展和 theme_options 由后台设置注入。自建主题自行构建，不再提供本项目旧的 GitHub Pages 构建或部署脚本。
+管理页面始终使用内置前端，入口由 `.env` 的 `ADMIN_PATH` 决定。匿名主题不得提供后台链接；通过 `/api/config` 确認 authorization=true 后才可使用返回的 admin_path 生成设置入口。主题入口为 index.html，静态资源使用相对路径（通常 assets/）；主题商店、后台商店面板和 `/theme` 清单接口已移除，已有 `theme_url` 的加载及管理 API 仍保留。站点标题、背景、CSP 扩展和 theme_options 由后台设置注入。自建主题自行构建，不再提供本项目旧的 GitHub Pages 构建或部署脚本。
 
 ## 数据与认证
 

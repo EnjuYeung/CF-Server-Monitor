@@ -2,7 +2,7 @@
   <div class="batch-edit-field">
     <label class="batch-edit-field-toggle">
       <input type="checkbox" :checked="enabled" @change="$emit('toggle', $event.target.checked)">
-      <span>{{ label }}</span>
+      <span>{{ label }} <slot name="help" /></span>
     </label>
     <div class="batch-edit-field-control">
       <slot />

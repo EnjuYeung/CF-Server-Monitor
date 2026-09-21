@@ -16,21 +16,26 @@
 | 最新回放与资源告警窗口 | src/realtime/LatestReports.js、ResourceAlertWindows.js | RealtimeHub 组合调用；test/realtime-hub.test.js |
 | 共用计费、探测与字段规则 | src/shared/billing.js、pingNode.js、metrics.js | 后端入库/下发及前端表单/实时合并；test/agent-commands.test.js |
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
+| 樱昼 / 星夜视觉与 shadcn-vue | tokens.css、design.md、components.json、src/frontend/styles/dream.css | styles/main.css 的 Tailwind 4 映射、components/ui、lib/utils.js；main.js 自托管标题字体 |
+| 轻量樱花 / 星星与动效偏好 | src/frontend/components/AmbientBackground.vue、composables/useAmbientMotion.js | App.vue 单实例初始化、TerminalHeader.vue 开关；移动端降量、reduced-motion、隐藏暂停 |
+| 模态框键盘与焦点管理 | src/frontend/components/AppDialog.vue | shadcn-vue Dialog；Dashboard、ServerDetail、LiveConnectionTimeoutModal、后台表单弹窗 |
 | 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js、utils/latencyWindow.js | test/dashboard-snapshot.test.js（接收/落库时间分离）、frontend-live-socket.test.js；A05、BR01–BR05 |
 | 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；test/agent-commands.test.js；ND01–ND06 |
-| 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、单选分组与地区交集；src/frontend/styles/main.css；G01–G08 |
+| 服务器标签、独立色表与语法帮助 | src/shared/serverTags.js | serverInput.js 统一保存规则；ServerTags.vue 统一渲染；ServerTagsHelp.vue 复用 HelpTooltip；test/server-tags.test.js |
+| 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；test/server-tags.test.js；TC03、FS01–FS04 |
+| 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、地区和分组各自多选取并集，两类筛选取交集，空选择不限；src/frontend/styles/main.css；G01–G08、MS01–MS12 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | src/utils/historyFields.js、metrics.js；A07、A14 |
 | 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
-| 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10 |
+| 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10；test/expiry-notification.test.js 验证到期送达及跨日/重启去重 |
 | 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；显式发送状态，无循环依赖 |
 | 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
 | 后台系统、外观、主题配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10 |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | test/frontend-live-socket.test.js、frontend-api-base.test.js |
-| 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、theme.js、src/utils/csp.js | theme-develop.md |
+| 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、src/utils/csp.js | theme-develop.md；主题商店及 /theme 清单接口已移除 |
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |

@@ -1,6 +1,5 @@
 <template>
-  <div id="deleteModal" class="modal-overlay" :class="{ active: show }">
-    <div class="modal-dialog">
+  <AppDialog :open="show" :title="currentServerName" content-class="" @close="$emit('close')">
       <div class="modal-header">
         <div class="modal-title">{{ currentServerName }}</div>
         <button class="modal-close" @click="$emit('close')">✕</button>
@@ -61,11 +60,11 @@
         <button @click="$emit('confirm-delete')" class="btn btn-red">{{ trans.confirmDelete }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancelAction }}</button>
       </div>
-    </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
+import AppDialog from '../../../components/AppDialog.vue'
 const props = defineProps({
   trans: { type: Object, required: true },
   show: { type: Boolean, default: false },

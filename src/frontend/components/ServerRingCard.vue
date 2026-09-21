@@ -24,7 +24,7 @@
           </div>
         </div>
         <div class="card-badges">
-          <span v-for="(tag, index) in tagList" :key="tag" :class="['badge', 'badge-tag', tagColorClass(index)]">{{ tag }}</span>
+          <ServerTags :value="server.tags" />
           <span v-if="hasPublicIPv4 && hasPublicIPv6" class="badge badge-v4-v6">IPv4/6</span>
           <template v-else>
             <span v-if="hasPublicIPv4" class="badge badge-v4">IPv4</span>
@@ -131,6 +131,7 @@
 </template>
 
 <script setup>
+import ServerTags from './ServerTags.vue'
 import OsIcon from './OsIcon.vue'
 import ServerLatencyPanel from './ServerLatencyPanel.vue'
 import { DEFAULT_SERVER_CARD_CONFIG, useServerCardData } from '../composables/useServerCardData'
@@ -188,8 +189,6 @@ const {
   threeNetDetails,
   hasThreeNetDetails,
   getPublicAssetUrl,
-  tagList,
-  tagColorClass,
   hasPublicIPv4,
   hasPublicIPv6,
   isExpired,

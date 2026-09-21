@@ -3,7 +3,6 @@ import { handleAdminAPI } from './handlers/admin.js';
 import { serveFrontend } from './handlers/frontend.js';
 import { handleUpdate } from './handlers/update.js';
 import { handleServerAPI, handleServersAPI } from './handlers/dashboard.js';
-import { handleTheme } from './handlers/theme.js';
 import { isValidThemeOptions, loadSettings, loadSiteSettings, loadAppearanceOptions, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, saveThemeOptions, setDebug } from './utils/settings.js';
 import { omitNullLossProbeFields } from './handlers/dashboard.js';
 import { checkAuth, simpleAuthResponse } from './middleware/auth.js';
@@ -147,23 +146,6 @@ export default {
             hours: DASHBOARD_LATENCY_WINDOW_HOURS
           }
         });
-      }},
-      { method: 'GET', path: '/theme', handler: async () => {
-        const themeResult = await handleTheme()
-        if (!themeResult.ok) {
-          return new Response(JSON.stringify({
-            error: themeResult.error || 'themeStoreProxyFailed',
-            code: 502,
-            fallback: 'client'
-          }), {
-            status: 502,
-            headers: { 'Content-Type': 'application/json' }
-          })
-        }
-
-        return createSuccessResponse(themeResult.themeStore, {
-          'X-CFSM-Theme-Source': themeResult.cached ? 'cache' : 'raw'
-        })
       }},
       { method: 'POST', path: '/api/theme_options', handler: async () => {
         await ensureSiteSettings();

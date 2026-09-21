@@ -1,6 +1,5 @@
 <template>
-  <div class="modal-overlay" :class="{ active: show }">
-    <div class="modal-dialog batch-edit-modal">
+  <AppDialog :open="show" :title="trans.batchEdit" content-class="batch-edit-modal" @close="$emit('close')">
       <div class="modal-header">
         <div class="modal-title">{{ trans.batchEdit }} [{{ selectedCount }}]</div>
         <button class="modal-close" @click="$emit('close')">×</button>
@@ -16,6 +15,7 @@
             <input type="text" v-model.trim="form.region" class="form-input" :disabled="!enabled.region" :placeholder="trans.regionPlaceholder">
           </BatchEditField>
           <BatchEditField :enabled="enabled.tags" :label="trans.tags" @toggle="toggleField('tags', $event)">
+            <template #help><ServerTagsHelp /></template>
             <input type="text" v-model="form.tags" class="form-input" :disabled="!enabled.tags" :placeholder="trans.tagsPlaceholder">
           </BatchEditField>
         </div>
@@ -160,14 +160,15 @@
         <button @click="$emit('save')" class="btn btn-primary" :disabled="!hasEnabledFields">{{ saving ? trans.saving : trans.save }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
-    </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
+import AppDialog from '../../../components/AppDialog.vue'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed } from 'vue'
 import BatchEditField from './BatchEditField.vue'
+import ServerTagsHelp from '../../../components/ServerTagsHelp.vue'
 import { currentLang } from '../../../utils/i18n.js'
 import { BILLING_CYCLES, CURRENCY_OPTIONS } from '../../../utils/server.js'
 

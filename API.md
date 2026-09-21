@@ -29,7 +29,6 @@
 | `POST /<ADMIN_PATH>/api` | 除登录/退出外需管理员 | 管理动作，见下表 |
 | `POST /<ADMIN_PATH>/backup` | 管理员 | 下载完整 SQLite 快照；同时只允许一份备份任务 |
 | POST /clearHistory | 管理员 | 清空历史，保留服务器、设置及最近持久化状态 |
-| GET /theme | 无 | 第三方主题商店清单，依赖外部网络 |
 | POST /api/theme_options | 管理员 | 保存 `{theme_options:{...}}` |
 
 没有旧数据库迁移、Cloudflare 用量或 Durable Object 健康接口。历史 `hours` 只接受 `0.167,0.5,1,6,12,24,48,96,168`；其他值返回 400。

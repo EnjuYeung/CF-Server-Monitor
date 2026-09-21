@@ -152,12 +152,6 @@ export function useServerCardData(props) {
     }
   })
 
-  const tagList = computed(() => String(props.server.tags || '')
-    .split(',')
-    .map(tag => tag.trim())
-    .filter(Boolean)
-  )
-  const tagColorClass = (index) => `tag-color-${index % 6}`
   const hasPublicIPv4 = computed(() => String(props.server.ip_v4 ?? '').trim() === '1')
   const hasPublicIPv6 = computed(() => String(props.server.ip_v6 ?? '').trim() === '1')
 
@@ -447,8 +441,6 @@ export function useServerCardData(props) {
     trafficUsagePercentText,
     trafficLimitPercentText,
     trafficLimitText,
-    tagList,
-    tagColorClass,
     hasPublicIPv4,
     hasPublicIPv6,
     netInSpeed,

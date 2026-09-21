@@ -98,7 +98,6 @@ export function normalizePrice(value) {
   const normalized = numberText.replace(/,/g, '');
   const num = Number.parseFloat(normalized);
   if (!Number.isFinite(num)) return '';
-  if (num === -1) return '-1';
   if (num < 0) return '';
 
   return num.toFixed(2);

@@ -30,9 +30,7 @@ export const RESOURCE_ALERT_EVALUATE_RULE_BATCH_SIZE = 20;
 export const RESOURCE_ALERT_EVALUATE_SERVER_BATCH_SIZE = 500;
 export const RESOURCE_ALERT_NOTIFICATION_SOFT_LIMIT = 3200;
 
-// 主题商店与远程主题资源缓存。
-export const THEME_STORE_URL = 'https://raw.githubusercontent.com/huilang-me/CFSM-Theme-Store/refs/heads/main/themes.json';
-export const THEME_STORE_CACHE_TTL_SECONDS = 300;
+// 远程主题资源缓存。
 export const THEME_ASSET_CACHE_TTL_SECONDS = 3600;
 export const THEME_COMMIT_CACHE_TTL_SECONDS = 86400;
 export const THEME_PREVIEW_AUTH_TTL_SECONDS = 600;

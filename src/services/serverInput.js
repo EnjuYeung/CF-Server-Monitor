@@ -3,6 +3,7 @@ import { isWssReportConfigured } from '../utils/settings.js';
 import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../shared/billing.js';
 
 import { PING_NODE_FIELDS } from '../shared/pingNode.js';
+import { normalizeServerTags } from '../shared/serverTags.js';
 export { PING_NODE_FIELDS } from '../shared/pingNode.js';
 export const isValidUUID = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 const flag = value => value === true || value === 1 || value === '1' || value === 'true' ? '1' : '0';
@@ -47,7 +48,7 @@ export function normalizeServerInput(input, settings) {
   return {
     name: input.name.trim(), server_group: String(input.server_group || 'Default'),
     region: String(input.region || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16),
-    tags: String(input.tags || '').split(',').map(tag => tag.trim().replace(/[^\p{L}\p{N} ._\-]/gu, '').slice(0, 32)).filter(Boolean).slice(0, 12).join(','),
+    tags: normalizeServerTags(input.tags),
     note: String(input.note || '').trim().slice(0, 500),
     price: normalizePrice(input.price), billing_cycle: cycle, auto_renewal: renewal,
     currency: normalizeCurrency(input.currency || detectCurrencySymbol(input.price) || '¥'),

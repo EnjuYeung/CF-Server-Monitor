@@ -2,7 +2,6 @@ import {
   detectBillingCycle,
   detectCurrencySymbol,
   getBillingCycleOption,
-  isFreePrice,
   normalizeCurrency,
   normalizePrice
 } from './server.js'
@@ -220,8 +219,6 @@ export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANG
   }
 
   for (const server of Array.isArray(servers) ? servers : []) {
-    if (hasFreeTag(server)) continue
-
     const priceCNY = getPriceCNY(server, exchangeRates)
     if (priceCNY <= 0) continue
 
@@ -262,6 +259,24 @@ export function calculateRemainingValueCNY(server, priceCNY, now = Date.now()) {
   return Math.min(priceCNY, priceCNY * (diffMs / billingCycleMs))
 }
 
+// The dashboard snapshot already follows the server order saved in admin.
+export function calculateServerFinanceRows(servers, exchangeRates = DEFAULT_EXCHANGE_RATES, now = Date.now()) {
+  return (Array.isArray(servers) ? servers : []).flatMap(server => {
+    const priceCNY = getPriceCNY(server, exchangeRates)
+    if (priceCNY <= 0) return []
+
+    const expireDate = String(server?.expire_date || server?.expired_at || '').trim()
+    const expiredAt = new Date(expireDate).getTime()
+    return [{
+      id: server.id,
+      source: server.source,
+      name: server.name,
+      remainingDays: Number.isFinite(expiredAt) ? Math.max(0, Math.ceil((expiredAt - now) / MS_PER_DAY)) : null,
+      remainingValueCNY: calculateRemainingValueCNY(server, priceCNY, now)
+    }]
+  })
+}
+
 export function calculateMonthlyAverageCostCNY(server, priceCNY) {
   if (priceCNY <= 0) return 0
   const billingCycleDays = getBillingCycleDays(server)
@@ -292,7 +307,7 @@ export function convertCnyAmount(amountCNY, currency, exchangeRates = DEFAULT_EX
 
 function getPriceCNY(server, exchangeRates) {
   const priceText = normalizePrice(server?.price)
-  if (!priceText || isFreePrice(priceText)) return 0
+  if (!priceText) return 0
 
   const price = Number(priceText)
   if (!Number.isFinite(price) || price <= 0) return 0
@@ -313,14 +328,6 @@ function getBillingCycleDays(server) {
   const cycleValue = detectBillingCycle(server?.price) || server?.billing_cycle
   const cycle = getBillingCycleOption(cycleValue)
   return BILLING_CYCLE_DAYS[cycle.value] || (cycle.months * MONTH_DAYS)
-}
-
-function hasFreeTag(server) {
-  const tags = String(server?.tags || '')
-    .split(',')
-    .map(tag => tag.trim())
-    .filter(Boolean)
-  return tags.includes('白嫖中')
 }
 
 async function fetchExchangeRates() {

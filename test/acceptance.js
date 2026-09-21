@@ -99,10 +99,11 @@ try {
     assert.equal((await request('/healthz')).body.storage, 'sqlite');
     const html = await request('/'); assert.equal(html.status, 200); assert.match(html.body, /\/static\//);
     assert.equal((await request(`/${config.ADMIN_PATH}`)).status, 200);
+    assert.equal((await request('/theme', undefined, '')).status, 404);
     const asset = html.body.match(/src="([^"]+\.js)"/)[1]; assert.equal((await request(asset)).status, 200);
     const publicConfig = (await request('/api/config')).body;
     assert.equal('turnstile_enabled' in publicConfig, false);
-    return {health:200, home:200, admin:200, static:200, schema:controller.env.DB.prepare('PRAGMA user_version').first().user_version};
+    return {health:200, home:200, admin:200, static:200, removedThemeStore:404, schema:controller.env.DB.prepare('PRAGMA user_version').first().user_version};
   });
   await step('A02', '管理员登录', 'POST /<ADMIN_PATH>/api login', '获得有效会话，可以读取设置', async () => {
     const login = await request(`/${config.ADMIN_PATH}/api`, {action:'login',username:'admin',password:config.API_SECRET}, '');
@@ -217,11 +218,19 @@ try {
     const resource=controller.env.DB.prepare('SELECT payload FROM notification_outbox ORDER BY id DESC LIMIT 1').first();assert.match(resource.payload,/High CPU|资源/);
     await checkTrafficReports(controller.env.DB,{now});
     await edit(mainId,{expire_date:new Date(now+2*86400000).toISOString().slice(0,10),auto_renewal:'0'});
-    await checkExpiringServers(controller.env.DB,{now});
+    const expiryRows = () => controller.env.DB.prepare("SELECT payload FROM notification_outbox WHERE json_extract(payload, '$.context.event') = '服务器到期提醒'").all().results;
+    const expiryBefore = expiryRows().length;
+    assert.equal(await checkExpiringServers(controller.env.DB,{now}), true);
+    const expiry = expiryRows();
+    assert.equal(expiry.length, expiryBefore + 1);
+    const expiryPayload = JSON.parse(expiry.at(-1).payload);
+    assert.match(expiryPayload.msg, /剩余2天/);
+    assert.ok(expiryPayload.context.clients.length > 0);
     const before=controller.env.DB.prepare('SELECT count(*) AS n FROM notification_outbox').first().n;
-    await checkTrafficReports(controller.env.DB,{now});await checkExpiringServers(controller.env.DB,{now});
+    await checkTrafficReports(controller.env.DB,{now});assert.equal(await checkExpiringServers(controller.env.DB,{now}), true);
+    assert.equal(expiryRows().length, expiry.length);
     assert.equal(controller.env.DB.prepare('SELECT count(*) AS n FROM notification_outbox').first().n,before);
-    return {queuedEvents:before,duplicateReportEvents:0};
+    return {queuedEvents:before,expiryEvents:expiry.length-expiryBefore,duplicateReportEvents:0};
   });
   await step('A11', '异常输入与权限', '错误密码、密钥、JSON、时间范围；匿名备份；隐藏服务器 WS 订阅', '返回 400/401/404；隐藏服务器不推送', async () => {
     assert.equal((await request(`/${config.ADMIN_PATH}/api`,{action:'login',username:'admin',password:'wrong'},'')).status,401);

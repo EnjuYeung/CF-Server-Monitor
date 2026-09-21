@@ -55,7 +55,7 @@ export const CURRENCY_OPTIONS = Object.freeze([
 
 export function isFreePrice(value) {
   const price = normalizePrice(value);
-  return price === '-1' || price === '0.00';
+  return price === '0.00';
 }
 
 export function getBillingCycleOption(value) {

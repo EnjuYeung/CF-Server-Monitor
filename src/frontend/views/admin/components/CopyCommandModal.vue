@@ -1,6 +1,5 @@
 <template>
-  <div id="copyModal" class="modal-overlay" :class="{ active: show }">
-    <div class="modal-dialog">
+  <AppDialog :open="show" :title="currentServerName" content-class="copy-command-modal" @close="$emit('close')">
       <div class="modal-header">
         <div class="modal-title">{{ currentServerName }}</div>
         <button class="modal-close" @click="$emit('close')">✕</button>
@@ -109,11 +108,11 @@
         </div>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
-    </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
+import AppDialog from '../../../components/AppDialog.vue'
 import { computed } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 
