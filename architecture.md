@@ -50,9 +50,7 @@ Docker 最终镜像携带 `agent-dist/`，不携带 Go 编译器。`AgentDistrib
 | Scheduler | 每分钟检查离线、资源、流量、到期、WS 时段及历史保留，投递通知；GeoIP 启动检查并每 24 小时更新 |
 | Vue 前端 | 管理、实时看板、详情图表、主题、下载备份 |
 
-前端采用 Hallmark「樱昼 / 星夜」统一视觉体系，`tokens.css` 为语义色、字体与间距来源；既有 CSS 保留，`styles/dream.css` 最后覆盖。shadcn-vue / Reka UI 提供 Button、ToggleGroup、Tabs、Dialog，Tailwind 4 仅引入主题和工具类，不引入 preflight 重置。`AppDialog` 统一焦点约束、关闭焦点恢复与忙碌状态关闭保护；后台页签保留表单挂载。霞鹜文楷常规字重自托管、Unicode 分片，仅用于标题，正文为系统字体。
-
-`App.vue` 唯一初始化 `useAmbientMotion` 并挂载 `AmbientBackground`。浅色最多 18 花瓣、深色最多 32 星星，640px 以下减至 8/16，使用 CSS transform/opacity；不再保留旧主题的 Canvas 樱花循环。关闭动效和 reduced-motion 时移除背景节点，隐藏页面暂停 CSS 动画，事件监听随 App 卸载清理。此动效生命周期不改变实时数据订阅行为。明暗切换沿用手动/系统模式，动效偏好单独存储于 localStorage。
+前端已恢复樱花／星空改版前的原版界面，沿用 main.css / light.css、原生按钮与原有弹窗结构，不加载 Hallmark 设计变量、Tailwind、shadcn-vue 或全局装饰背景。地区与分组继续支持多选，标签、实时订阅及后台业务逻辑保留。明暗切换沿用手动/系统模式。
 
 ## 后台入口与双重验证
 

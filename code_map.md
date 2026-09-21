@@ -16,9 +16,6 @@
 | 最新回放与资源告警窗口 | src/realtime/LatestReports.js、ResourceAlertWindows.js | RealtimeHub 组合调用；test/realtime-hub.test.js |
 | 共用计费、探测与字段规则 | src/shared/billing.js、pingNode.js、metrics.js | 后端入库/下发及前端表单/实时合并；test/agent-commands.test.js |
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
-| 樱昼 / 星夜视觉与 shadcn-vue | tokens.css、design.md、components.json、src/frontend/styles/dream.css | styles/main.css 的 Tailwind 4 映射、components/ui、lib/utils.js；main.js 自托管标题字体 |
-| 轻量樱花 / 星星与动效偏好 | src/frontend/components/AmbientBackground.vue、composables/useAmbientMotion.js | App.vue 单实例初始化、TerminalHeader.vue 开关；移动端降量、reduced-motion、隐藏暂停 |
-| 模态框键盘与焦点管理 | src/frontend/components/AppDialog.vue | shadcn-vue Dialog；Dashboard、ServerDetail、LiveConnectionTimeoutModal、后台表单弹窗 |
 | 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js、utils/latencyWindow.js | test/dashboard-snapshot.test.js（接收/落库时间分离）、frontend-live-socket.test.js；A05、BR01–BR05 |
 | 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；test/agent-commands.test.js；ND01–ND06 |
 | 服务器标签、独立色表与语法帮助 | src/shared/serverTags.js | serverInput.js 统一保存规则；ServerTags.vue 统一渲染；ServerTagsHelp.vue 复用 HelpTooltip；test/server-tags.test.js |

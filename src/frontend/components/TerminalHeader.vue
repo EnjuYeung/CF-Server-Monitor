@@ -1,10 +1,12 @@
 <template>
   <div class="terminal-header">
-    <a href="/#/" class="dream-brand" :aria-label="title"><span class="dream-brand-flower" aria-hidden="true">✿</span><span class="dream-brand-title">{{ title }}</span></a>
+    <div class="terminal-dots">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+    </div>
+    <div class="terminal-title">{{ title }}</div>
     <div class="terminal-header-controls">
-      <button type="button" class="header-control motion-btn" :aria-label="motionLabel" :title="motionLabel" :aria-pressed="active" :disabled="reduced" @click="toggle">
-        <span aria-hidden="true">{{ active ? '❋' : '◌' }}</span>
-      </button>
       <button
         type="button"
         class="header-control lang-btn"
@@ -38,7 +40,6 @@ import { useTranslation, currentLang, toggleLanguage } from '../utils/i18n'
 import { useTheme } from '../composables/useTheme'
 import { DEFAULT_SITE_TITLE } from '../utils/constants'
 import { adminAccess } from '../utils/adminAccess.js'
-import { useAmbientMotion } from '../composables/useAmbientMotion'
 
 defineProps({
   title: {
@@ -49,8 +50,6 @@ defineProps({
 
 const { currentTheme, toggleTheme } = useTheme()
 const trans = useTranslation()
-const { active, reduced, toggle } = useAmbientMotion()
-const motionLabel = computed(() => reduced.value ? trans.value.motionReduced : active.value ? trans.value.motionDisable : trans.value.motionEnable)
 const languageSymbol = computed(() => ({ en: 'EN', zh: '中', ja: '日' })[currentLang.value])
 const languageLabel = computed(() => `${trans.value.switchLanguage}: ${trans.value[{
   en: 'languageEnglish', zh: 'languageChinese', ja: 'languageJapanese'

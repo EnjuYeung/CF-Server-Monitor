@@ -30,6 +30,7 @@
     <div class="host-card">
       <div class="host-card-header">
         <div class="host-name">
+          <span class="prompt">root@</span>
           <span v-if="server.region && server.region !== 'xx'" class="country-os-icons">
             <img :src="getPublicAssetUrl('flags/' + getFlagRegionCode(server.region) + '.svg')" :alt="server.region" class="flag-img">
             <OsIcon :os="server.os" />
@@ -39,6 +40,7 @@
             <OsIcon :os="server.os" />
           </span>
           <span>{{ server.name || trans.loading }}</span>
+          <span style="color: var(--text-muted);">:~#</span>
         </div>
         <span class="status-badge" :class="{ online: isOnline, offline: !isOnline }">
           <span class="pulse-dot" :class="{ online: isOnline, offline: !isOnline }"></span>
@@ -320,9 +322,10 @@
 
     <Footer />
 
-    <AppDialog :open="showLoginModal" :title="trans.adminLogin" @close="showLoginModal = false">
+    <div id="loginRequiredModal" class="modal-overlay" :class="{ active: showLoginModal }">
+      <div class="modal-dialog">
         <div class="modal-header">
-          <div class="modal-title">{{ trans.adminLogin }}</div>
+          <div class="modal-title">$ sudo login</div>
           <button class="modal-close" @click="showLoginModal = false">✕</button>
         </div>
         <div class="modal-body-content">
@@ -331,7 +334,8 @@
         <div class="modal-footer flex-justify-between">
                     <button @click="showLoginModal = false" class="btn">{{ trans.cancel }}</button>
         </div>
-    </AppDialog>
+      </div>
+    </div>
 
     <LiveConnectionTimeoutModal
       :show="showLiveTimeoutModal"
@@ -343,7 +347,6 @@
 </template>
 
 <script setup>
-import AppDialog from '../components/AppDialog.vue'
 import { SERVER_METADATA_FIELDS } from '../../shared/metrics.js'
 import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -936,15 +939,15 @@ const initCharts = () => {
 
   const chartTheme = getChartThemeColors()
 
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily
-  Chart.defaults.font.size = 12
+  Chart.defaults.font.family = "'JetBrains Mono', 'Courier New', monospace"
+  Chart.defaults.font.size = 10
   Chart.defaults.color = chartTheme.axis
   Chart.defaults.plugins.tooltip.backgroundColor = chartTheme.tooltipBg
   Chart.defaults.plugins.tooltip.titleColor = chartTheme.tooltipTitle
   Chart.defaults.plugins.tooltip.bodyColor = chartTheme.tooltipBody
   Chart.defaults.plugins.tooltip.borderColor = chartTheme.tooltipBorder
   Chart.defaults.plugins.tooltip.borderWidth = 1
-  Chart.defaults.plugins.tooltip.titleFont = { size: 12, weight: 'bold', family: Chart.defaults.font.family }
+  Chart.defaults.plugins.tooltip.titleFont = { size: 12, weight: 'bold', family: "'JetBrains Mono', monospace" }
   Chart.defaults.plugins.tooltip.bodyFont = { size: 11, family: "'JetBrains Mono', monospace" }
   Chart.defaults.plugins.tooltip.padding = 12
   Chart.defaults.plugins.tooltip.cornerRadius = 2

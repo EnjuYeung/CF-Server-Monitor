@@ -1,5 +1,6 @@
 <template>
-  <AppDialog :open="show" :title="trans.batchEdit" content-class="batch-edit-modal" @close="$emit('close')">
+  <div class="modal-overlay" :class="{ active: show }">
+    <div class="modal-dialog batch-edit-modal">
       <div class="modal-header">
         <div class="modal-title">{{ trans.batchEdit }} [{{ selectedCount }}]</div>
         <button class="modal-close" @click="$emit('close')">×</button>
@@ -160,11 +161,11 @@
         <button @click="$emit('save')" class="btn btn-primary" :disabled="!hasEnabledFields">{{ saving ? trans.saving : trans.save }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
-  </AppDialog>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import AppDialog from '../../../components/AppDialog.vue'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed } from 'vue'
 import BatchEditField from './BatchEditField.vue'

@@ -1,9 +1,0 @@
-{
-  "date": "2026-09-21",
-  "framework": "Vue 3 + Vite 6, JavaScript",
-  "fonts": "Existing JetBrains Mono Google Fonts import; replaced by approved self-hosted LXGW WenKai display and system sans body",
-  "palette": "main.css :root, light.css body.light; retain token contract and business status colors",
-  "motion": "CSS; no animation dependency",
-  "scope": "Dashboard, ServerDetail, admin login/servers/settings/database and shared overlays",
-  "preserve": "Routes, auth, real-time data, chart behavior, custom server tags, emoji, region/group multi-selection"
-}

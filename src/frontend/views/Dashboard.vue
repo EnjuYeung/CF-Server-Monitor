@@ -1,5 +1,5 @@
 <template>
-  <div class="container dashboard-home" :class="{ 'mikus-dashboard': isMikusTheme }">
+  <div class="container" :class="{ 'mikus-dashboard': isMikusTheme }">
     <TerminalHeader :title="sysConfig.site_title || DEFAULT_SITE_TITLE" />
     
     <div v-if="isLoading" class="loading-state" :class="{ 'mikus-loading-state': isMikusTheme }">
@@ -24,6 +24,96 @@
 
     <div v-else-if="appConfig?.is_public === false && !adminAccess.authorized" class="empty-state">{{ trans.privateDashboard }}</div>
     <template v-else>
+    <div class="nav-area">
+      <div class="header-row">
+        <div class="site-title">$ {{ sysConfig.site_title || DEFAULT_SITE_TITLE }}</div>
+        <div class="controls-group">
+          <div class="view-toggle">
+            <button
+              class="toggle-btn"
+              :class="{ active: currentView === 'bar' }"
+              @click="switchView('bar')"
+            >▤ {{ trans.barChart }}</button>
+            <button
+              class="toggle-btn"
+              :class="{ active: currentView === 'ring' }"
+              @click="switchView('ring')"
+            >◌ {{ trans.ringChart }}</button>
+            <button
+              class="toggle-btn"
+              :class="{ active: currentView === 'table' }"
+              @click="switchView('table')"
+            >≡ {{ trans.table }}</button>
+          </div>
+        </div>
+      </div>
+      <div class="filter-wrap" ref="filterWrap">
+        <div class="filter-bar" id="ajax-filters">
+          <button
+            v-for="item in visibleFilterOptions"
+            :key="item.code"
+            type="button"
+            class="filter-tag"
+            :class="{ active: selectedRegions.has(item.code), 'filter-tag-unknown': item.code === 'unknown' }"
+            :aria-pressed="selectedRegions.has(item.code)"
+            :data-filter="item.code"
+            @click="setFilter(item.code)"
+          >
+            <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
+            <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
+            <span class="filter-tag-label">{{ item.label }}</span>
+            <span class="filter-tag-count">{{ item.count }}</span>
+          </button>
+          <div v-if="overflowFilterOptions.length > 0" class="filter-more" :class="{ active: isOverflowFilterActive }">
+            <button
+              type="button"
+              class="filter-tag filter-more-btn"
+              :class="{ active: isOverflowFilterActive }"
+              :aria-expanded="filterMoreOpen"
+              @click.stop="toggleFilterMore"
+            >
+              <span class="filter-tag-label">{{ filterMoreLabel }}</span>
+              <span class="filter-tag-count">{{ overflowFilterOptions.length }}</span>
+            </button>
+            <div v-if="filterMoreOpen" class="filter-more-menu">
+              <button
+                v-for="item in overflowFilterOptions"
+                :key="item.code"
+                type="button"
+                class="filter-tag filter-more-item"
+                :class="{ active: selectedRegions.has(item.code), 'filter-tag-unknown': item.code === 'unknown' }"
+                :aria-pressed="selectedRegions.has(item.code)"
+            :data-filter="item.code"
+                @click="setFilter(item.code)"
+              >
+                <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
+                <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
+                <span class="filter-tag-label">{{ item.label }}</span>
+                <span class="filter-tag-count">{{ item.count }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div ref="filterMeasure" class="filter-measure" aria-hidden="true">
+          <button
+            v-for="item in filterOptionEntries"
+            :key="item.code"
+            type="button"
+            class="filter-tag filter-measure-tag"
+          >
+            <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
+            <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
+            <span class="filter-tag-label">{{ item.label }}</span>
+            <span class="filter-tag-count">{{ item.count }}</span>
+          </button>
+          <button ref="filterMoreMeasure" type="button" class="filter-tag filter-more-btn">
+            <span class="filter-tag-label">{{ filterMoreLabel }}</span>
+            <span class="filter-tag-count">{{ filterOptionEntries.length }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="global-stats" :class="{ 'mikus-global-stats': isMikusTheme }">
       <div v-if="isMikusTheme" class="mikus-stats-mascot" aria-hidden="true">
         <img class="mikus-stats-mascot-img" :src="mikusAsset('QWQ.webp')" alt="">
@@ -46,7 +136,7 @@
           <span class="stat-net-up-color">↑ {{ formatBytes(stats.globalSpeedOut) }}/s</span>
         </div>
       </div>
-      <button type="button"
+      <div
         v-if="sysConfig.show_price"
         class="stat-item stat-action-item"
         @click="financeModalOpen = true"
@@ -56,113 +146,24 @@
           {{ formattedRemainingValue.symbol }}{{ formattedRemainingValue.value }}
           <span class="finance-currency-code">{{ formattedRemainingValue.currency }}</span>
         </div>
-      </button>
+      </div>
     </div>
 
-    <div class="nav-area dashboard-toolbar">
-      <div class="header-row">
-        <div class="controls-group">
-          <ToggleGroup type="single" :model-value="currentView" @update:model-value="value => value && switchView(value)" class="view-toggle" :aria-label="trans.dashboard">
-            <ToggleGroupItem value="bar"
-              class="toggle-btn"
-              :class="{ active: currentView === 'bar' }"
-            >▤ {{ trans.barChart }}</ToggleGroupItem>
-            <ToggleGroupItem value="ring"
-              class="toggle-btn"
-              :class="{ active: currentView === 'ring' }"
-            >◌ {{ trans.ringChart }}</ToggleGroupItem>
-            <ToggleGroupItem value="table"
-              class="toggle-btn"
-              :class="{ active: currentView === 'table' }"
-            >≡ {{ trans.table }}</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-      </div>
-      <div class="dashboard-filter-row dashboard-regions">
-        <div class="filter-wrap" ref="filterWrap">
-          <div class="filter-bar" id="ajax-filters">
-            <button
-              v-for="item in visibleFilterOptions"
-              :key="item.code"
-              type="button"
-              class="filter-tag"
-              :class="{ active: selectedRegions.has(item.code), 'filter-tag-unknown': item.code === 'unknown' }"
-              :aria-pressed="selectedRegions.has(item.code)"
-              :data-filter="item.code"
-              @click="setFilter(item.code)"
-            >
-              <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
-              <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
-              <span class="filter-tag-label">{{ item.label }}</span>
-              <span class="filter-tag-count">{{ item.count }}</span>
-            </button>
-            <div v-if="overflowFilterOptions.length > 0" class="filter-more" :class="{ active: isOverflowFilterActive }">
-              <button
-                type="button"
-                class="filter-tag filter-more-btn"
-                :class="{ active: isOverflowFilterActive }"
-                :aria-expanded="filterMoreOpen"
-                @click.stop="toggleFilterMore"
-              >
-                <span class="filter-tag-label">{{ filterMoreLabel }}</span>
-                <span class="filter-tag-count">{{ overflowFilterOptions.length }}</span>
-              </button>
-              <div v-if="filterMoreOpen" class="filter-more-menu">
-                <button
-                  v-for="item in overflowFilterOptions"
-                  :key="item.code"
-                  type="button"
-                  class="filter-tag filter-more-item"
-                  :class="{ active: selectedRegions.has(item.code), 'filter-tag-unknown': item.code === 'unknown' }"
-                  :aria-pressed="selectedRegions.has(item.code)"
-                  :data-filter="item.code"
-                  @click="setFilter(item.code)"
-                >
-                  <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
-                  <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
-                  <span class="filter-tag-label">{{ item.label }}</span>
-                  <span class="filter-tag-count">{{ item.count }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          <div ref="filterMeasure" class="filter-measure" aria-hidden="true">
-            <button
-              v-for="item in filterOptionEntries"
-              :key="item.code"
-              type="button"
-              class="filter-tag filter-measure-tag"
-            >
-              <span v-if="item.code === 'unknown'" class="filter-tag-icon">🏳️</span>
-              <img v-else-if="item.flagCode" :src="getPublicAssetUrl('flags/' + item.flagCode + '.svg')" :alt="item.code">
-              <span class="filter-tag-label">{{ item.label }}</span>
-              <span class="filter-tag-count">{{ item.count }}</span>
-            </button>
-            <button ref="filterMoreMeasure" type="button" class="filter-tag filter-more-btn">
-              <span class="filter-tag-label">{{ filterMoreLabel }}</span>
-              <span class="filter-tag-count">{{ filterOptionEntries.length }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-      <div v-if="groupFilterOptions.length > 0" class="dashboard-filter-row dashboard-groups">
-        <div class="filter-bar group-filter-bar" role="group" :aria-label="trans.group">
-          <button
-            v-for="group in groupFilterOptions"
-            :key="group.name"
-            type="button"
-            class="filter-tag"
-            :class="{ active: selectedGroups.has(group.name) }"
-            :aria-pressed="selectedGroups.has(group.name)"
-            :title="group.name"
-            :data-group="group.name"
-            @click="setGroupFilter(group.name)"
-          >
-            <span class="filter-tag-label">{{ group.name }}</span>
-            <span class="filter-tag-count">{{ group.count }}</span>
-          </button>
-        </div>
-      </div>
+    <div v-if="groupFilterOptions.length > 0" class="filter-bar group-filter-bar" role="group" :aria-label="trans.group">
+      <button
+        v-for="group in groupFilterOptions"
+        :key="group.name"
+        type="button"
+        class="filter-tag"
+        :class="{ active: selectedGroups.has(group.name) }"
+        :aria-pressed="selectedGroups.has(group.name)"
+        :title="group.name"
+        :data-group="group.name"
+        @click="setGroupFilter(group.name)"
+      >
+        <span class="filter-tag-label">{{ group.name }}</span>
+        <span class="filter-tag-count">{{ group.count }}</span>
+      </button>
     </div>
 
     <div id="view-card" class="view-panel" :class="{ active: isCardView, 'high-density': filteredServers.length > 12 }">
@@ -289,9 +290,10 @@
       <span>{{ trans.loadingRemainingSites }} ({{ sitesRemaining }})</span>
     </div>
 
-    <AppDialog :open="Boolean(hasCorsError)" :title="trans.corsBlocked" @close="hasCorsError = null">
+    <div v-if="hasCorsError" class="modal-overlay active">
+      <div class="modal-dialog">
         <div class="modal-header">
-          <div class="modal-title">{{ trans.corsBlocked }}</div>
+          <div class="modal-title">$ cors --error</div>
           <button class="modal-close" @click="hasCorsError = null">✕</button>
         </div>
         <div v-for="site in hasCorsError" :key="site" class="danger-box mb-4">
@@ -302,11 +304,13 @@
         <div class="modal-footer flex-justify-end">
           <button @click="hasCorsError = null" class="btn">OK</button>
         </div>
-    </AppDialog>
+      </div>
+    </div>
 
-    <AppDialog :open="financeModalOpen" :title="trans.remainingValue" content-class="finance-modal-dialog" @close="financeModalOpen = false">
+    <div v-if="financeModalOpen" class="modal-overlay active" @click.self="financeModalOpen = false">
+      <div class="modal-dialog finance-modal-dialog">
         <div class="modal-header">
-          <div class="modal-title">{{ trans.remainingValue }}</div>
+          <div class="modal-title">$ finance --summary</div>
           <button class="modal-close" @click="financeModalOpen = false">✕</button>
         </div>
 
@@ -357,15 +361,14 @@
         <div class="modal-footer flex-justify-end">
           <button @click="financeModalOpen = false" class="btn">OK</button>
         </div>
-    </AppDialog>
+      </div>
+    </div>
 
     <Footer />
   </div>
 </template>
 
 <script setup>
-import AppDialog from '../components/AppDialog.vue'
-import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 import { adminAccess } from '../utils/adminAccess.js'
 import { ref, computed, inject, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'

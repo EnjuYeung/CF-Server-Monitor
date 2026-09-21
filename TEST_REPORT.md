@@ -1,5 +1,36 @@
 # 最近一次测试报告
 
+## 原版界面恢复上线（2026-09-21）
+
+已于 **2026-09-21 19:31:52（Asia/Shanghai）** 恢复至 https://jm.zedy.cc。本地部署代码提交 `b634679`，候选镜像 `server-monitor:ui-restored-20260921`，镜像 ID `sha256:543bd05395372ccdc72ec96007a9ad938fc25451409b1f0d655b5a226db7de44`。使用当前数据库，未将旧数据库回滚。
+
+| 编号 | 操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| URD01 | 构建候选并核对已测代码与资源 | 106 个源码/清单、313 个资源一致；依赖版本一致，仅 npm 的 4 项 peer 标记规范化；Agent manifest 无变化，source-integrity.json | 通过 |
+| URD02 | 数据备份、回滚准备及断网候选检查 | SQLite integrity=ok；16 节点、5 设置、30 个 Agent 归档；断网生产副本启动且关闭调度，HTTP/资源/版本及配置保留通过 | 通过 |
+| URD03 | 切换服务，端口/挂载/环境保持 | 容器 healthy；31 次探测中 5 次失败，首末失败样本相隔 0.809 秒；deployment.json | 通过 |
+| URD04 | 公网桌面、手机、语言、明暗、登录及 WSS | 原版终端圆点和布局恢复，全局新动效/按钮/品牌元素数量 0；16 卡片、16 批新数据；浏览器错误与失败请求均 0，production-smoke.json；桌面与手机截图已查看 | 通过 |
+| URD05 | 检查数据未丢失且全部节点恢复 | 初检 4/16 节点新上报，等待后复检 16/16；107,458 条旧历史逐条保留，总历史 107,490；节点/设置/30 个归档及环境保持，integrity=ok，重启 0；persistence-final.json | 通过 |
+| URD06 | 继续观察 30 秒并清理隔离副本 | 7 轮内外网健康检查均 200，16 台持续上报，运行错误为空；隔离副本已移除、备份和回滚镜像保留；steady-state.json、cleanup.json | 通过 |
+
+证据：`output/test-results/ui-restore-deploy-20260921/`（不入 Git）。备份：`/opt/1panel/apps/jan_monitor/backups/ui-restored-20260921T113132Z`；回滚镜像：`server-monitor:rollback-ui-restored-20260921t113132z`。直接同步既有分支，不创建 PR。
+
+
+## 恢复原版界面验证（2026-09-21）
+
+用户确认恢复到樱花/星空改版之前的原版 UI。基线取自本机原生产镜像 server-monitor:theme-expiry-20260921，未读取旧数据库覆盖生产。Node 24.21.0 / Go 1.26.8；修改前 npm ci、geoip:download、完整 build，恢复依赖后再次 npm ci 与完整 build。隔离临时 SQLite、回环随机端口、关闭调度，证据在 output/test-results/ui-restore-20260921/。
+
+| 编号 | 操作及预期 | 实测证据 | 状态 |
+| --- | --- | --- | --- |
+| UR01 | 核对首页、详情、后台、弹窗和样式已恢复原版 | 102 个源码文件与原镜像逐字节一致，仅 Dashboard.vue 为保留多选而不同；baseline-comparison.json | 通过 |
+| UR02 | 打开桌面/手机，原版终端页头和字体出现，新装饰/按钮/工具区不再存在 | Chromium 在 320/375/414/768/1440px 验证无横向溢出；3 个终端圆点、原版标题及 JetBrains Mono 字体声明；新 UI 元素数量 0；桌面/手机截图已查看 | 通过 |
+| UR03 | 三种视图、财务弹窗、详情、后台登录/页签/编辑保存、手机弹窗和三语言 | 实际点击及管理 API 核对保存结果；browser.json 的 8 组检查、pageerror=[]；外部汇率请求被测试主动阻断 | 通过 |
+| UR04 | 保持地区/分组多选、并集与交集、溢出菜单连续选择、取消及刷新重置 | 14 项真实浏览器检查通过，multiselect.json；没有退回单选行为 | 通过 |
+| UR05 | 完整回归、真实主控及原生 Agent 验收 | test-all.log：106/106、Agent 配置、Go vet/test；acceptance.log：主控 19/19、原生 6/6；构建成功，git diff --check 通过 | 通过 |
+
+源码中已删除未使用的新 UI 组件、依赖和设计文件；前端字体恢复原版的 Google Fonts 引用和等宽回退。没有新增 Agent 安装、更新或分发逻辑。
+
+
 ## 顶部布局生产部署（2026-09-21）
 
 已于 **2026-09-21 19:01:41（Asia/Shanghai）** 部署至 https://jm.zedy.cc。部署代码提交为 `9313558`，候选镜像 `server-monitor:layout-20260921`，镜像 ID `sha256:bae387e8265d97bc5c043af0c485058adcab95159052b4b78934f77a45d4696a`；生产沿用 `server-monitor:local`。此前未提交的已上线改动一并纳入代码提交，本次相比原生产镜像仅 4 个前端源码文件及两份依赖清单变化。下方“未部署”描述为各轮开发阶段记录，本次已完成上线。

@@ -1,10 +1,9 @@
 <template>
   <div id="login-overlay" class="login-overlay">
-    <TerminalHeader :title="trans.adminLogin" />
     <div class="login-container">
       <div class="login-header">
         <div class="login-icon">🔐</div>
-        <h1 class="login-title">{{ trans.adminLogin }}</h1>
+        <h2 class="login-title">{{ trans.adminLogin }}</h2>
         <p class="login-subtitle">{{ trans.enterCredentials }}</p>
       </div>
       <form @submit.prevent="$emit('login')">
@@ -28,7 +27,7 @@
           <label class="login-label" for="login-password">{{ trans.password }}</label>
           <div class="password-input-wrapper">
             <input id="login-password" :type="passwordVisible.login ? 'text' : 'password'" name="password" autocomplete="current-password" v-model="loginForm.password" required class="login-input" placeholder="••••••••" :disabled="loginLoading">
-            <button type="button" class="password-toggle" :aria-label="trans.password" :aria-pressed="passwordVisible.login" @click="$emit('toggle-password', 'login')">
+            <button type="button" class="password-toggle" @click="$emit('toggle-password', 'login')">
               {{ passwordVisible.login ? '🙈' : '👁️' }}
             </button>
           </div>
@@ -40,7 +39,7 @@
           <button type="button" class="btn btn-sm" :disabled="loginLoading" @click="loginForm.useRecovery = !loginForm.useRecovery; loginForm.code = ''">{{ loginForm.useRecovery ? trans.useAuthenticator : trans.useRecoveryCode }}</button>
         </div>
         <div v-if="loginError" id="login-error" class="login-error" role="alert">{{ loginError }}</div>
-        <Button type="submit" class="login-btn" :disabled="loginLoading" :aria-busy="loginLoading">{{ loginLoading ? '⏳ ' + trans.loading : trans.login }}</Button>
+        <button type="submit" class="login-btn" :disabled="loginLoading">{{ loginLoading ? '⏳' : trans.login }}</button>
       </form>
     </div>
     <Footer />
@@ -49,8 +48,6 @@
 
 <script setup>
 import Footer from '../../../components/Footer.vue'
-import TerminalHeader from '../../../components/TerminalHeader.vue'
-import { Button } from '../../../components/ui/button'
 
 defineProps({
   trans: { type: Object, required: true },

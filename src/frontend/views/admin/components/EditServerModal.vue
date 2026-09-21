@@ -1,5 +1,6 @@
 <template>
-  <AppDialog :open="show" :title="currentServerName" content-class="edit-server-modal" @close="$emit('close')">
+  <div id="editModal" class="modal-overlay" :class="{ active: show }">
+    <div class="modal-dialog edit-server-modal">
       <div class="modal-header">
         <div class="modal-title">{{ currentServerName }}</div>
         <button class="modal-close" @click="$emit('close')">✕</button>
@@ -255,11 +256,11 @@
         <button @click="$emit('save')" class="btn btn-primary" :disabled="hasPingNodeErrors">{{ trans.save }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
-  </AppDialog>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import AppDialog from '../../../components/AppDialog.vue'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'

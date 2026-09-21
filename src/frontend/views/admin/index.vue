@@ -28,7 +28,7 @@
       <div class="main-panel">
         <div class="panel-header">
           <div class="panel-title">
-            {{ trans.adminPanel }}
+            <span class="prompt">$</span> {{ trans.sudoStatus }}
           </div>
           <div class="header-actions">
             <button @click="refreshServers" class="btn" :disabled="adminSiteLoading">↻ {{ trans.refresh }}</button>
@@ -72,23 +72,25 @@
         </div>
       </div>
 
-      <Tabs v-model="activeTab" class="main-panel" :unmount-on-hide="false">
-        <TabsList class="tabs" :aria-label="trans.adminPanel">
-          <TabsTrigger value="servers"
+      <div class="main-panel">
+        <div class="tabs">
+          <button
             class="tab-btn"
             :class="{ active: activeTab === 'servers' }"
-          >{{ trans.servers }}</TabsTrigger>
-          <TabsTrigger value="settings"
+            @click="activeTab = 'servers'"
+          >{{ trans.servers }}</button>
+          <button
             class="tab-btn"
             :class="{ active: activeTab === 'settings' }"
-          >{{ trans.settings }}</TabsTrigger>
-          <TabsTrigger value="database"
+            @click="activeTab = 'settings'"
+          >{{ trans.settings }}</button>
+          <button
             class="tab-btn"
             :class="{ active: activeTab === 'database' }"
-          >{{ trans.dbManagement }}</TabsTrigger>
-        </TabsList>
+            @click="activeTab = 'database'"
+          >{{ trans.dbManagement }}</button>
+        </div>
 
-        <TabsContent value="servers" force-mount>
         <ServerTable
           v-model:new-server-name="newServerName"
           v-model:new-server-group="newServerGroup"
@@ -117,9 +119,7 @@
           @edit="openEditModal"
           @delete="openDeleteModal"
         />
-        </TabsContent>
 
-        <TabsContent value="settings" force-mount>
         <SettingsPanel
           ref="settingsPanelRef"
           :trans="trans"
@@ -140,9 +140,7 @@
           @upload-favicon="uploadFavicon"
           @send-test-notification="sendTestNotification"
         />
-        </TabsContent>
 
-        <TabsContent value="database" force-mount>
         <DatabasePanel
           :trans="trans"
           :active-tab="activeTab"
@@ -150,9 +148,8 @@
           :selected-api-index="selectedApiIndex"
           @open-db-modal="openDbModal"
         />
-        </TabsContent>
 
-      </Tabs>
+      </div>
 
       <EditServerModal
         :trans="trans"
@@ -226,7 +223,8 @@
         @open-edit-from-copy="openEditModalFromCopy"
       />
 
-      <AppDialog :open="showDbModal" :busy="dbLoading" :title="dbOperation === 'clearHistory' ? trans.clearHistory : trans.upgradeDatabase" @close="closeDbModal">
+      <div id="dbModal" class="modal-overlay" :class="{ active: showDbModal }">
+        <div class="modal-dialog">
           <div class="modal-header">
             <div class="modal-title">$ {{ dbOperation === 'clearHistory' ? trans.clearHistory : trans.upgradeDatabase }}</div>
             <button class="modal-close" @click="closeDbModal" :disabled="dbLoading">✕</button>
@@ -264,9 +262,11 @@
             </button>
             <button @click="closeDbModal" class="btn" :disabled="dbLoading">{{ trans.cancel }}</button>
           </div>
-      </AppDialog>
+        </div>
+      </div>
 
-      <AppDialog :open="Boolean(validationError)" :title="trans.validationError" @close="validationError = null">
+      <div v-if="validationError" id="validationErrorModal" class="modal-overlay active">
+        <div class="modal-dialog">
           <div class="modal-header">
             <div class="modal-title">$ {{ trans.validationError }}</div>
             <button class="modal-close" @click="validationError = null">✕</button>
@@ -283,11 +283,13 @@
             <div></div>
             <button @click="validationError = null" class="btn">{{ trans.close }}</button>
           </div>
-      </AppDialog>
+        </div>
+      </div>
 
-      <AppDialog v-if="saveResult" :open="true" :title="trans.settings" @close="saveResult = null">
+      <div v-if="saveResult" class="modal-overlay active">
+        <div class="modal-dialog">
           <div class="modal-header">
-            <div class="modal-title">{{ trans.settings }}</div>
+            <div class="modal-title">$ save --result</div>
             <button class="modal-close" @click="saveResult = null">✕</button>
           </div>
 
@@ -309,11 +311,13 @@
             <div></div>
             <button @click="saveResult = null" class="btn">{{ trans.close }}</button>
           </div>
-      </AppDialog>
+        </div>
+      </div>
 
-      <AppDialog :open="Boolean(alertMessage)" :title="trans.adminPanel" @close="alertMessage = null">
+      <div v-if="alertMessage" class="modal-overlay active">
+        <div class="modal-dialog">
           <div class="modal-header">
-            <div class="modal-title">{{ trans.adminPanel }}</div>
+            <div class="modal-title">$ alert</div>
             <button class="modal-close" @click="alertMessage = null">✕</button>
           </div>
 
@@ -325,7 +329,8 @@
             <div></div>
             <button @click="alertMessage = null" class="btn">{{ trans.close }}</button>
           </div>
-      </AppDialog>
+        </div>
+      </div>
 
       <Footer />
     </div>
@@ -333,8 +338,6 @@
 </template>
 
 <script setup>
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
-import AppDialog from '../../components/AppDialog.vue'
 import { createServerForm, buildServerFormPayload } from '../../utils/serverForm.js'
 import { buildAgentInstallCommand, buildAgentUninstallCommand } from '../../utils/agentCommands.js'
 import { ref, computed, onMounted, watch, nextTick, inject } from 'vue'
