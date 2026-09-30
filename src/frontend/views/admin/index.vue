@@ -359,7 +359,6 @@ import { hasMultipleApiBases } from '../../utils/config.js'
 import { t, useTranslation, normalizeLanguagePreference } from '../../utils/i18n'
 import { PING_NODE_FIELDS, SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../shared/pingNode.js'
 import { normalizeDisplayMode, resolveDisplayMode } from '../../utils/displayMode.js'
-import { applyMikusThemeOptions } from '../../utils/themeOptions.js'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../utils/constants.js'
 import { usePasswordVisibility } from '../../composables/usePasswordVisibility'
 import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../../utils/server.js'
@@ -540,37 +539,12 @@ const isResourceAlertEnabled = (rules) => normalizeResourceAlertRulesSetting(rul
 
 const isNotificationWebhookEnabled = () => settings.value.notification_webhook_enabled === true
 
-const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-
 const normalizePreferredThemeSetting = (value) => {
   const theme = String(value || '').trim().toLowerCase()
   return ['dark', 'light', 'auto'].includes(theme) ? theme : 'auto'
 }
 
 const normalizeDefaultLanguageSetting = normalizeLanguagePreference
-
-const formatThemeOptions = (value) => {
-  const normalized = value === undefined || value === null ? {} : value
-  try {
-    return JSON.stringify(normalized, null, 2)
-  } catch (_) {
-    return '{}'
-  }
-}
-
-const parseThemeOptions = (value) => {
-  const raw = String(value || '').trim()
-  if (!raw) return { valid: true, value: {} }
-  try {
-    const parsed = JSON.parse(raw)
-    if (!isPlainObject(parsed)) {
-      return { valid: false }
-    }
-    return { valid: true, value: parsed }
-  } catch (_) {
-    return { valid: false }
-  }
-}
 
 const isMultipleMode = computed(() => hasMultipleApiBases())
 const apiBases = getApiBases()
@@ -622,7 +596,6 @@ const settings = ref({
   display_mode: 'bar',
   preferred_theme: 'auto',
   default_language: 'auto',
-  theme_options: '{}',
   is_public: false,
   show_price: true,
   show_expire: true,
@@ -1038,7 +1011,6 @@ const loadSettings = async () => {
         display_mode: resolveDisplayMode(settingsData),
         preferred_theme: normalizePreferredThemeSetting(settingsData.preferred_theme),
         default_language: normalizeDefaultLanguageSetting(settingsData.default_language),
-        theme_options: formatThemeOptions(settingsData.theme_options),
         is_public: settingsData.is_public === 'true',
         show_price: settingsData.show_price === 'true',
         show_expire: settingsData.show_expire === 'true',
@@ -1080,7 +1052,6 @@ const loadSettings = async () => {
         csp_static: settingsData.csp_static || '',
         csp_api: settingsData.csp_api || ''
       }
-      applyMikusThemeOptions(settingsData.theme_options)
       changeAdminPassword.value = !String(settings.value.username || '').trim()
       apiSecret.value = data.api_secret || ''
     }
@@ -1155,12 +1126,6 @@ const saveSettings = async () => {
     return
   }
 
-  const themeOptionsResult = parseThemeOptions(settings.value.theme_options)
-  if (!themeOptionsResult.valid) {
-    validationError.value = trans.value.invalidThemeOptionsFormat
-    return
-  }
-
   if (settingsPanelRef.value) {
     const cspStaticValid = settingsPanelRef.value.validateCspField('csp_static')
     const cspApiValid = settingsPanelRef.value.validateCspField('csp_api')
@@ -1184,9 +1149,6 @@ const saveSettings = async () => {
       display_mode: normalizeDisplayMode(settings.value.display_mode),
       preferred_theme: normalizePreferredThemeSetting(settings.value.preferred_theme),
       default_language: normalizeDefaultLanguageSetting(settings.value.default_language),
-      appearance_options: {
-        theme_options: themeOptionsResult.value
-      },
       is_public: settings.value.is_public ? 'true' : 'false',
       show_price: settings.value.show_price ? 'true' : 'false',
       show_expire: settings.value.show_expire ? 'true' : 'false',
@@ -1233,7 +1195,6 @@ const saveSettings = async () => {
     const result = await adminApiForSite(data)
     if (!result.error) {
       saveResult.value = { success: true }
-      applyMikusThemeOptions(themeOptionsResult.value)
       clearAdminPasswordInputs()
       changeAdminPassword.value = false
       if (result.data?.requiresLogin) {

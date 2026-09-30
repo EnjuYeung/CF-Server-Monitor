@@ -90,15 +90,6 @@
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label class="form-label">
-              {{ trans.themeOptions }}
-              <HelpTooltip :text="trans.themeOptionsTip" />
-            </label>
-            <textarea v-model="settings.theme_options" class="form-textarea" rows="5" placeholder='{"mikus":1}'></textarea>
-          </div>
-        </div>
       </div>
 
       <div class="settings-section" v-if="currentOrigin === selectedApiBase">

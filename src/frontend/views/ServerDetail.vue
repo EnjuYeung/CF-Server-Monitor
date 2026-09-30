@@ -365,7 +365,6 @@ import { formatDateTime, normalizeTimestamp as normalizeMetricTimestamp } from '
 import useTheme from '../composables/useTheme'
 import { isDisabledProbeMetric } from '../utils/server.js'
 import { resolvePlaybackCursor } from '../utils/playback.js'
-import { applyMikusThemeOptions } from '../utils/themeOptions.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -1755,22 +1754,19 @@ const getInjectedRuntimeConfig = () => {
   return apiIndex.value === 0 ? appConfig : null
 }
 
-const loadThemeOptionsFromConfig = async () => {
+const loadRuntimeConfig = async () => {
   try {
     const runtimeConfig = getInjectedRuntimeConfig() || await fetchConfig(apiIndex.value)
     frontendWsTimeoutMinutes.value = normalizeLiveSocketTimeoutMinutes(runtimeConfig?.frontend_ws_timeout_minutes)
-    if (runtimeConfig && Object.prototype.hasOwnProperty.call(runtimeConfig, 'theme_options')) {
-      applyMikusThemeOptions(runtimeConfig.theme_options)
-    }
   } catch (e) {
-    console.log('[INFO] Detail theme config pending...', e)
+    console.log('[INFO] Detail config pending...', e)
   }
 }
 
 const init = async () => {
   const [initialData] = await Promise.all([
     fetchCurrentStatus(),
-    loadThemeOptionsFromConfig()
+    loadRuntimeConfig()
   ])
   await initChartsOnMount()
 

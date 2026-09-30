@@ -1,5 +1,46 @@
 # 最近一次测试报告
 
+## 上游局部改造生产部署、清理与分支同步（2026-09-30）
+
+已于 **2026-09-30 18:35:13（Asia/Shanghai）** 部署至 https://jm.zedy.cc。生产镜像继续使用 `server-monitor:local`，对应候选 `server-monitor:upstream-improvements-20260930`，镜像 ID `sha256:2d9f4c6e80bb87d7d2b9e70c6c74b4fdc2a6e2daca2c6b31f59ff3e8f3b5a475`。部署前基于已通过的 115 项 Node 测试、19 项主控验收、6 项原生 Agent 验收及 5 组隔离浏览器检查构建 Docker 镜像；部署沿用生产数据，未回滚数据库。
+
+| 编号 | 用户功能、操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| UPD01 | 构建镜像，确保生产运行已验证代码与资源 | 105 个源码/清单、309 个前端资源哈希一致；依赖版本一致，仅 4 个 peer 元数据标记规范化；当前 Agent manifest 与生产归档相同；`docker-build.log`、`source-integrity.json` | 通过 |
+| UPD02 | 备份数据并用生产副本预先检查新镜像 | SQLite 在线一致性备份 integrity=ok，16 节点、5 项设置、202,318 条历史、30 个 Agent 归档文件；断网候选首页、后台入口、静态资源、版本目录和安装脚本均正常，节点/设置/归档不变；`candidate-smoke.json` | 通过 |
+| UPD03 | 切换容器，保持端口、挂载、网络和环境 | 容器 healthy，端口/挂载/环境核对一致；34 次回环探测中 8 次失败，首末失败样本相隔 1.412 秒，不等同精确中断时长；`deployment.json`、`switch-health-probes.json` | 通过 |
+| UPD04 | 公网桌面/手机页面、明暗和语言切换、真实 WSS 更新 | HTTPS 和本地静态资源哈希匹配，16 张卡片、5 批实时推送、36 个新鲜月流量样本；无页面错误、无主控请求失败、无樱花元素/素材请求，手机无横向溢出，后台登录页正常；截图已查看。一个既有外部图标地址存在 TLS 错误，单独保留记录；`production-smoke.json`、`production-mobile-stable.json` | 主控通过，外部图标异常 |
+| UPD05 | 实际历史查询保持数据语义，旧数据和真实 Agent 持续可用 | 在生产副本对 16 节点的 6/24/168 小时共 48 组查询逐条深比较，全部与旧窗口查询一致；本地/公网 6/24 小时接口均 200、120 点。保留期内历史缺失 0，60 条超过 7 天的数据按原规则清理，16 台 Agent 均有部署后新上报，节点/设置/30 个归档及环境一致；`history-production.json`、`persistence-final.json` | 通过 |
+| UPD06 | 短时观察，区分服务异常和已有客户端失败 | 连续 7 轮、约 30 秒内外网健康检查均 200，16 台持续上报，容器重启 0，无意外运行异常。日志中有超限请求 413 和提前断开；反代日志证实同一来源在切换前已存在 413/499，HTTP 处理与旧镜像逐字节一致，保留原有 2MiB 限额；`steady-state.json`、`request-audit.json`、`http-handler-unchanged.json` | 通过，已有客户端错误另记 |
+| UPD07 | 清理刚才的测试数据，保留生产和回滚能力 | 删除本轮 2 个验收临时目录、2 个对比快照目录、隔离生产副本、开发及部署临时证据目录，以及本轮生成的 3 个公共测试结果文件；生产数据、历史 Agent 归档、旧测试记录和工具链保留；`cleanup.json` | 通过 |
+
+首次公网浏览器检查因把外部图标 TLS 失败计作主控资源故障而失败；首次健康观察因把客户端中断和已有限额拒绝计作内部异常而失败。原始失败记录分别保留为 `production-smoke-initial.log`、`steady-state-initial.json`。后续检查明确记录这些问题并单独核对主控资源、实际数据、健康状态及意外异常，没有将失败请求记录改写为零。手机补拍等待明暗过渡结束，布局正常。
+
+生产备份：`/opt/1panel/apps/jan_monitor/backups/upstream-improvements-20260930T103411Z`，目录 0700、环境与数据库备份 0600。回滚镜像：`server-monitor:rollback-upstream-improvements-20260930t103411z`。部署记录保留在备份的 `verification/`，本轮隔离测试原始数据已按用户要求清除，验收与性能结果保留在本文及部署摘要中；备份、密钥及测试产物均不提交 Git。仅同步 `codex/self-hosted-native-agent`，不新建分支或 PR，不修改 `main`。
+
+## 上游实现局部改造与樱花遗留清理（2026-09-30）
+
+当前分支 `codex/self-hosted-native-agent`，修改前提交 `aa8ca54`；参考主线 `dfb9bf1` 及此前隔离对比结论，仅迁入已验证的长历史索引取样和首页推送聚合思路。保留 Node.js 单主控、SQLite WAL、UUID、7 天滚动历史、通知 Outbox、独立接收时间及现有认证策略。请求超时、短区间丢包峰值处理存在边界问题，本轮保持分支实现。本节为部署前开发验证记录，后续部署和清理见上方记录。
+
+环境：Node.js **24.21.0**、npm **11.19.0**、Go **1.26.8**、Chromium **153.0.8010.12**。修改前按顺序执行 `npm ci --no-audit --no-fund`、`npm run geoip:download`、`npm run build`，均退出 0；GeoIP 为 2026-09 库。主控验收与浏览器使用预先建立的全新临时 SQLite、随机回环端口、测试凭据和关闭的调度器；性能比较使用同一个独立内存数据库。未读取或修改生产数据库、环境文件及 Agent 归档。
+
+| 编号 | 用户功能、实际操作及预期 | 验证方式与实测证据 | 状态 |
+| --- | --- | --- | --- |
+| UP01 | 安装依赖、准备地区库并完整构建，主控及 4 类 Agent 产物可用 | `baseline-install.log`、`baseline-geoip.log`、`baseline-build.log`；完整构建再次通过，`final-build.log` | 通过 |
+| UP02 | 查询 7 天历史，减少区间扫描开销且保持返回结果 | 同一 SQLite、20,160 条记录、120 点，清应用缓存后测 9 次；修改前中位 **17.221ms**、修改后 **0.535ms**，逐条深比较完全相同；查询计划为现有 server/time 覆盖索引取 id，再按整数主键读取完整行；`benchmark.json` | 通过 |
+| UP03 | 历史起止边界、空桶、节点隔离、完整样本及关闭探测按原规则显示 | 新增 `test/history-query.test.js` 用例：包含起止点、排除前后及未来半毫秒样本；保留每桶最后一条、NULL/false、GPU 文本及磁盘数据；短历史仍显示恢复后的 0% 或启用后的 100%；`targeted.log` | 通过 |
+| UP04 | 50 节点集中上报到 10 看板，降低首页消息数，详情仍立即更新 | 实际 Hub 函数、同等模拟订阅：**500→10 帧**，序列化消息 **63,400→49,930 字节**，均送达 500 个样本，详情均 1 帧；逐节点保留 `reportTs`；真实 HTTP/WS 容量验收 A13 也送达 500 个节点更新，批次耗时 262ms；`benchmark.json`、`acceptance.json` | 通过 |
+| UP05 | 集中回放、权限变化、节点重建、停机及读库异常不导致额外丢样本、泄漏或未捕获异常 | `test/frontend-batching.test.js`：450 个样本按 300+150 提前/定时发送；250ms 到期前不发送首页帧，详情即时；隐藏节点、过期会话及变更订阅按发送时状态过滤；删除后同 UUID 重建没有旧数据；关闭先发送待发批次；真实 SQLite 表暂不可读时记录错误、下一轮恢复发送。故障捕获前用例确实失败，修正后通过；`delayed-read-failure-before.log`、`targeted.log`（48/48） | 通过 |
+| UP06 | 删除樱花/Mikus 遗留后，已有用户仍可正常使用原界面 | 浏览器在旧 `theme_options.mikus=1` 配置下验证首页、详情及后台：装饰元素和素材请求均 0；CPU 实时更新到 81/82，375/1440px 无横向溢出，明暗切换、三种视图、地区/分组筛选正常；中英日分别保存设置并关闭成功弹窗；7 天历史 HTTP 200、120 点、11 个图表画布及详情实时更新；`browser.json` 的 UI01–UI05、桌面/手机截图已查看 | 通过 |
+| UP07 | 完整回归覆盖存储、上报、通知、认证及前端既有功能 | `npm run test:all` 退出 0；**115/115 Node 测试**、Agent 配置测试、Go vet/test 全部通过；`test-all.log` | 通过 |
+| UP08 | 用户实际能安装启动、管理节点、查询历史、备份恢复、连接真实 Agent | `npm run test:acceptance` 退出 0；**19/19 主控验收、6/6 原生 Agent 验收**，包括 50 Agent/10 看板、故障上报、重启和通知持久化、真实 HTTP/WS 模式切换；`acceptance.log`、`acceptance.json`、`native-acceptance.json` | 通过 |
+
+开发阶段证据目录：`output/test-results/upstream-improvements-20260930/`，由 Git 忽略，部署后已按要求清理。`validation.json` 记录的最终命令、退出码和时长，以及性能摘要保留于生产备份的 `verification/predeployment-summary.json`。性能数据是本地隔离 SQL/序列化实验，非生产压测；首页聚合增加最多约 250ms 等待，跨窗口分散上报的收益较小。源码、静态资源与构建产物中已无 Mikus/樱花引用，4 个素材共移除 487,090 字节；保留明暗模式和既有后台设置，旧 JSON 不再被内置前端使用。
+
+浏览器用例前几轮因测试假定条形图/一位小数、地区代码大写及漏关闭保存弹窗而超时；截图已确认实际数据正常更新。修正用例、显式选择视图并完成保存弹窗操作后，5 组检查全部通过。开发期间早期日志和截图分别记录为 `browser-initial-failure.*`、`browser-second-failure.*`、`browser-third-failure.*`、`browser-filter-selector-failure.*`、`browser-save-modal-failure.*`，未将失败记录覆盖为通过；这些临时文件现已按清理要求移除。
+
+本轮未修改 Agent 安装、更新、分发源码、Dockerfile 或 Compose；未运行 `test:agent-deployment` 专项。开发验证时未切换生产，后续部署见上方记录。临时测试程序、数据库、截图及日志不提交 Git。
+
 ## 原版界面恢复上线（2026-09-21）
 
 已于 **2026-09-21 19:31:52（Asia/Shanghai）** 恢复至 https://jm.zedy.cc。本地部署代码提交 `b634679`，候选镜像 `server-monitor:ui-restored-20260921`，镜像 ID `sha256:543bd05395372ccdc72ec96007a9ad938fc25451409b1f0d655b5a226db7de44`。使用当前数据库，未将旧数据库回滚。

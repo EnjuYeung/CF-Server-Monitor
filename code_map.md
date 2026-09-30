@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-09-19；版本：3.0.0。
+更新时间：2026-09-30；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -8,6 +8,7 @@
 | HTTP、反代、健康检查 | src/runtime/http.js、src/server.js | test/runtime-http.test.js；D04 |
 | Agent HTTP 上报 | src/handlers/update.js | src/services/ingestion.js、src/database/schema.js；A04 |
 | Agent WS、配置下发 | src/realtime/RealtimeHub.js | src/utils/agentConfig.js、agentConfigNotify.js；A05、D03 |
+| 首页 250ms 推送聚合、详情即时推送 | src/realtime/RealtimeHub.js | 待发队列满时提前发送、独立接收时间、权限过滤、删除/关闭清理、读库故障处理；test/frontend-batching.test.js；UP04–UP05 |
 | 安全入口、登录、权限、会话 | src/utils/adminPath.js、src/middleware/auth.js、src/handlers/admin.js | src/frontend/utils/adminAccess.js；A02、A11、S01/S07/S08 |
 | 2FA 绑定、动态码与恢复码 | src/services/twoFactor.js、src/handlers/twoFactor.js | TwoFactorPanel.vue、AdminLogin.vue；test/admin-security.test.js S02–S06 |
 | 服务器增删改、排序、导入导出 | src/handlers/servers.js | src/services/servers.js、serverInput.js；test/review-regressions.test.js；A03、A03b、A13 |
@@ -22,7 +23,7 @@
 | 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；test/server-tags.test.js；TC03、FS01–FS04 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、地区和分组各自多选取并集，两类筛选取交集，空选择不限；src/frontend/styles/main.css；G01–G08、MS01–MS12 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |
-| 历史曲线与采样 | src/index.js、src/database/schema.js | src/utils/historyFields.js、metrics.js；A07、A14 |
+| 历史曲线与采样 | src/index.js、src/database/schema.js | 超过 1 小时沿用现有索引逐桶取最后完整行；src/utils/historyFields.js、metrics.js；test/history-query.test.js；A07、A14、UP02–UP03 |
 | 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
@@ -30,7 +31,7 @@
 | 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；显式发送状态，无循环依赖 |
 | 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
-| 后台系统、外观、主题配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10 |
+| 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10、UP06 |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | test/frontend-live-socket.test.js、frontend-api-base.test.js |
 | 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、src/utils/csp.js | theme-develop.md；主题商店及 /theme 清单接口已移除 |
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |

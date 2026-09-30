@@ -103,11 +103,29 @@ export async function getMetricsHistory(db, serverId, hours, columns, server = n
   if (cached && Date.now() - cached.timestamp < getCacheDuration(queryHours)) return cached.data;
   const now = Date.now(); const start = now - queryHours * 3600000;
   const interval = Math.max(1000, Math.ceil((now - start + 1) / points));
-  const rows = db.prepare(`WITH ranked AS (
-    SELECT timestamp, ${selected.join(',')}, ROW_NUMBER() OVER (
-      PARTITION BY CAST((timestamp - ?) / ? AS INTEGER) ORDER BY timestamp DESC
-    ) AS rn FROM metrics_history WHERE server_id = ? AND timestamp >= ? AND timestamp <= ?
-  ) SELECT timestamp, ${selected.join(',')} FROM ranked WHERE rn = 1 ORDER BY timestamp`).bind(start, interval, serverId, start, now).all().results;
+  let rows;
+  if (queryHours > 1) {
+    // Seek the last row in each bucket using the existing server/time index.
+    // Keep the same grid, inclusive end and complete-row sampling as short history.
+    const end = now + 1;
+    rows = db.prepare(`WITH RECURSIVE ranges(bucket_start, bucket_end) AS (
+      SELECT ?, MIN(? + ?, ?)
+      UNION ALL
+      SELECT bucket_end, MIN(bucket_end + ?, ?) FROM ranges WHERE bucket_end < ?
+    ) SELECT history.timestamp, ${selected.map(column => `history.${column}`).join(',')}
+      FROM ranges JOIN metrics_history AS history ON history.id = (
+        SELECT id FROM metrics_history
+        WHERE server_id = ? AND timestamp >= ranges.bucket_start
+          AND timestamp < ranges.bucket_end AND timestamp <= ?
+        ORDER BY timestamp DESC LIMIT 1
+      ) ORDER BY history.timestamp`).bind(start, start, interval, end, interval, end, end, serverId, now).all().results;
+  } else {
+    rows = db.prepare(`WITH ranked AS (
+      SELECT timestamp, ${selected.join(',')}, ROW_NUMBER() OVER (
+        PARTITION BY CAST((timestamp - ?) / ? AS INTEGER) ORDER BY timestamp DESC
+      ) AS rn FROM metrics_history WHERE server_id = ? AND timestamp >= ? AND timestamp <= ?
+    ) SELECT timestamp, ${selected.join(',')} FROM ranked WHERE rn = 1 ORDER BY timestamp`).bind(start, interval, serverId, start, now).all().results;
+  }
   const result = rows.map(row => attachDiskMetricsObject(normalizeProbeMetricRow(row)));
   setMetricsHistoryCache(serverId, queryHours, columns, result, points);
   return result;

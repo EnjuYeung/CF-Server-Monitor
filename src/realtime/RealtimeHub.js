@@ -28,6 +28,7 @@ import {
   AGENT_DEFAULT_HISTORY_WRITE_INTERVAL_MS,
   AGENT_MIN_IDLE_WSS_REPORT_INTERVAL_MS,
   AGENT_SERVER_DETAIL_TTL_MS,
+  UPDATE_MAX_BATCH_SAMPLES,
 } from '../utils/config.js';
 
 const MAX_SUBSCRIBE_IDS = 500;
@@ -37,6 +38,7 @@ const AGENT_REPORT_KIND = 'agent-report';
 const AGENT_WSS_SCHEDULE_INACTIVE = 'wss_schedule_inactive';
 const AGENT_WSS_SCHEDULE_DISABLED = 'wss_disabled';
 const ALLOWED_AGENT_REPORT_INTERVALS = new Set([30, 60, 120, 180]);
+const FRONTEND_BATCH_WINDOW_MS = 250;
 function normalizeConfigSchema(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -69,7 +71,10 @@ export class RealtimeHub {
     this.standardAgentWebSocketCount = 0;
     this.standardAgentWebSockets = new Set();
     this.lastAgentRealtimeHintAt = 0;
-
+    this.pendingFrontendUpdates = new Map();
+    this.pendingFrontendSampleCount = 0;
+    this.frontendBroadcastTimer = null;
+    this.closing = false;
   }
 
   _isValidScope(scope) {
@@ -180,6 +185,12 @@ export class RealtimeHub {
     for (const ws of this.standardAgentWebSockets) if (ws.getContext().serverId === id) ws.close(1008, 'server removed');
     this.agentServerDetails.delete(id); this.agentHistoryWrites.delete(id);
     this.latestReports.delete(id); this.resourceAlerts.delete(id);
+    const pending = this.pendingFrontendUpdates.get(id);
+    if (pending) {
+      this.pendingFrontendSampleCount -= pending.samples.length;
+      this.pendingFrontendUpdates.delete(id);
+      if (!this.pendingFrontendSampleCount) this._flushFrontendBroadcast();
+    }
     this.revokeFrontendSessions();
   }
 
@@ -195,6 +206,8 @@ export class RealtimeHub {
   }
 
   async close() {
+    this.closing = true;
+    this._flushFrontendBroadcast();
     for (const ws of [...this.frontendSockets, ...this.standardAgentWebSockets]) ws.close(1001, 'server restarting');
     await Promise.allSettled([...this.processing]);
     for (const [id, state] of this.agentHistoryWrites) {
@@ -639,7 +652,48 @@ export class RealtimeHub {
     if (!Array.isArray(updates) || !updates.length) return;
     for (const update of updates) this.latestReports.set(update.serverId, update.samples, reportTs);
     await this.resourceAlerts.ingest(updates, reportTs);
-    this._broadcastBatch(updates, reportTs);
+    this._broadcastBatch(updates, reportTs, 'single');
+    this._queueFrontendBroadcast(updates, reportTs);
+  }
+
+  _queueFrontendBroadcast(updates, reportTs) {
+    if (this.closing || !this._getFrontendWebSockets().some(ws => ws.getContext()?.scope === 'all')) return;
+    for (const update of updates) {
+      if (!update?.serverId || !Array.isArray(update.samples)) continue;
+      const serverId = String(update.serverId);
+      for (let offset = 0; offset < update.samples.length;) {
+        const pending = this.pendingFrontendUpdates.get(serverId) || { serverId, samples: [], reportTs };
+        const count = Math.min(update.samples.length - offset, UPDATE_MAX_BATCH_SAMPLES - this.pendingFrontendSampleCount);
+        pending.samples.push(...update.samples.slice(offset, offset + count));
+        pending.reportTs = Math.max(pending.reportTs, reportTs);
+        this.pendingFrontendUpdates.set(serverId, pending);
+        this.pendingFrontendSampleCount += count;
+        offset += count;
+        // Flush a full queue rather than dropping samples during a replay burst.
+        if (this.pendingFrontendSampleCount === UPDATE_MAX_BATCH_SAMPLES) this._flushFrontendBroadcast();
+      }
+    }
+    if (this.pendingFrontendSampleCount && this.frontendBroadcastTimer === null) {
+      this.frontendBroadcastTimer = setTimeout(() => this._flushFrontendBroadcast(), FRONTEND_BATCH_WINDOW_MS);
+      this.frontendBroadcastTimer.unref();
+    }
+  }
+
+  _flushFrontendBroadcast() {
+    if (this.frontendBroadcastTimer !== null) {
+      clearTimeout(this.frontendBroadcastTimer);
+      this.frontendBroadcastTimer = null;
+    }
+    if (!this.pendingFrontendSampleCount) return;
+    const updates = Array.from(this.pendingFrontendUpdates.values());
+    this.pendingFrontendUpdates.clear();
+    this.pendingFrontendSampleCount = 0;
+    const ts = Math.max(...updates.map(update => update.reportTs));
+    try {
+      this._broadcastBatch(updates, ts, 'all');
+    } catch (error) {
+      console.error('[ws] homepage broadcast failed:', error.message);
+    }
   }
 
   _getAgentRealtimeState() { return { frontendActive: this._getFrontendSubscriberCount() > 0 }; }
@@ -897,12 +951,14 @@ export class RealtimeHub {
     });
   }
 
-  _broadcastBatch(updates, ts = Date.now()) {
+  _broadcastBatch(updates, ts = Date.now(), audience = 'both') {
     const websockets = this._getFrontendWebSockets();
 
     for (const ws of websockets) {
       const attachment = ws.getContext();
       if (!attachment) continue;
+      if (audience === 'all' && attachment.scope !== 'all') continue;
+      if (audience === 'single' && attachment.scope === 'all') continue;
 
       const scopedUpdates = updates
         .filter(item => this._canView(attachment, item.serverId) && this._shouldDeliver(attachment.scope, item.serverId, attachment.serverIds))

@@ -1,25 +1,10 @@
 <template>
-  <div class="container" :class="{ 'mikus-dashboard': isMikusTheme }">
+  <div class="container">
     <TerminalHeader :title="sysConfig.site_title || DEFAULT_SITE_TITLE" />
     
-    <div v-if="isLoading" class="loading-state" :class="{ 'mikus-loading-state': isMikusTheme }">
-      <template v-if="isMikusTheme">
-        <div class="mikus-loading-inner">
-          <img class="mikus-loading-gif" :src="mikusAsset('loli.gif')" alt="Loading">
-          <div class="mikus-loading-brand">
-            <img class="mikus-loading-logo" :src="mikusAsset('miku.png')" alt="">
-            <span>{{ sysConfig.site_title || 'Komari' }}</span>
-          </div>
-          <div class="mikus-loading-progress" aria-hidden="true">
-            <div class="mikus-loading-progress-fill"></div>
-          </div>
-          <div class="mikus-loading-status">$ {{ trans.loading }}</div>
-        </div>
-      </template>
-      <template v-else>
-        <div class="loading-spinner"></div>
-        <div class="loading-text">$ {{ trans.loading }}</div>
-      </template>
+    <div v-if="isLoading" class="loading-state">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">$ {{ trans.loading }}</div>
     </div>
 
     <div v-else-if="appConfig?.is_public === false && !adminAccess.authorized" class="empty-state">{{ trans.privateDashboard }}</div>
@@ -114,10 +99,7 @@
       </div>
     </div>
 
-    <div class="global-stats" :class="{ 'mikus-global-stats': isMikusTheme }">
-      <div v-if="isMikusTheme" class="mikus-stats-mascot" aria-hidden="true">
-        <img class="mikus-stats-mascot-img" :src="mikusAsset('QWQ.webp')" alt="">
-      </div>
+    <div class="global-stats">
       <div class="stat-item">
         <div class="stat-label">{{ trans.servers }}</div>
         <div class="stat-main-value stat-main-value-sm stat-sub-info">
@@ -387,7 +369,6 @@ import { normalizeDashboardView, normalizeDisplayMode, resolveDisplayMode } from
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
 import { updateLatencyWindow } from '../utils/latencyWindow.js'
 import { reconcileDashboardSnapshot } from '../utils/dashboardSnapshot.js'
-import { getMikusAssetUrl, isMikusThemeEnabled, normalizeThemeOptions, setMikusThemeClass } from '../utils/themeOptions.js'
 import {
   DEFAULT_EXCHANGE_RATES,
   DISPLAY_FINANCE_CURRENCIES,
@@ -416,7 +397,6 @@ const sysConfig = ref({
   custom_bd_name: appConfig?.custom_bd_name || 'BGP',
   display_mode: 'bar',
   site_title: DEFAULT_SITE_TITLE,
-  theme_options: normalizeThemeOptions(appConfig?.theme_options),
   latency_window: appConfig?.latency_window || {
     points: LATENCY_WINDOW.POINTS,
     hours: LATENCY_WINDOW.HOURS
@@ -444,14 +424,6 @@ const router = useRouter()
 
 const trans = useTranslation()
 const financeRateCurrencies = DISPLAY_FINANCE_CURRENCIES
-const isMikusTheme = computed(() => isMikusThemeEnabled(sysConfig.value.theme_options))
-
-const mikusAsset = (filename) => getMikusAssetUrl(filename)
-
-watch(isMikusTheme, (enabled) => {
-  setMikusThemeClass(enabled)
-}, { immediate: true })
-
 const financeSummary = computed(() => calculateFinanceSummary(servers.value, exchangeRates.value, now.value))
 const formattedRemainingValue = computed(() => formatFinanceMetric(financeSummary.value.remainingValueCNY))
 const formattedTotalValue = computed(() => formatFinanceMetric(financeSummary.value.totalValueCNY))
@@ -980,7 +952,6 @@ const loadDashboardConfig = async () => {
       ...sysConfig.value,
       site_title: hasMultipleApiBases() && localTitle ? localTitle : (siteTitle || sysConfig.value.site_title),
       display_mode: resolveDisplayMode(config),
-      theme_options: normalizeThemeOptions(config?.theme_options),
       latency_window: config?.latency_window || sysConfig.value.latency_window
     }
   } catch (e) {
@@ -1018,7 +989,6 @@ const loadDashboardData = async (options = {}) => {
           custom_bd_name: data.sysConfig?.custom_bd_name || sysConfig.value.custom_bd_name,
           display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
           site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
-          theme_options: sysConfig.value.theme_options,
           latency_window: data.sysConfig?.latency_window || sysConfig.value.latency_window
         }
 
