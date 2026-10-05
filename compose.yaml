@@ -2,6 +2,7 @@ services:
   monitor:
     build: .
     image: server-monitor:local
+    container_name: ${CONTAINER_NAME:-jan-monitor}
     restart: unless-stopped
     init: true
     stop_grace_period: 30s

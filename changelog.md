@@ -1,5 +1,10 @@
 # 最近一次改动
 
+## 主控容器改名 jan-monitor（2026-10-05）
+
+- `compose.yaml` 增加 `container_name: ${CONTAINER_NAME:-jan-monitor}`，`.env.example` 说明同机独立测试项目需设置不同名称；服务名仍为 `monitor`，`docker compose ... monitor` 命令不变。
+- 11:46:56（Asia/Shanghai）重新部署，旧容器 `jan_monitor-monitor-1` 由 `jan-monitor` 替换；镜像、端口、数据目录、网络和环境不变。部署前在线备份至 `/opt/1panel/apps/jan_monitor/backups/rename-container-20261005T034642Z`。
+
 ## 首页字体本地化，消除首屏阻塞（2026-10-05）
 
 - 原因：`main.css` 首行 `@import` Google Fonts，样式表和入口模块脚本都要等它结束；`fonts.googleapis.com` 不可达时首页停在 `Initializing`，实测约 20 秒后才请求 `/api/config`，网络挂起时可能一直不进入。主控、反代和数据库响应均在毫秒级，不是原因。

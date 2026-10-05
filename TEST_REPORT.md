@@ -1,5 +1,17 @@
 # 最近一次测试报告
 
+## 主控容器改名部署（2026-10-05）
+
+**2026-10-05 11:46:56（Asia/Shanghai）** 以容器名 `jan-monitor` 重新部署，镜像沿用 `sha256:b06c264d…`（本日字体本地化版本），仅 Compose 增加 `container_name`。
+
+| 编号 | 用户功能、操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| CN01 | 名称默认 `jan-monitor`，同机测试项目可覆盖 | 生产 `.env` 下 `docker compose config` 渲染 `container_name: jan-monitor`；`CONTAINER_NAME=monitor-test` 时渲染为 `monitor-test`；仓库、宿主 cron 和配置中无旧容器名引用 | 通过 |
+| CN02 | 部署前备份数据 | `node:sqlite` 在线备份 23,006 页，integrity=ok，17 节点、5 项设置、204,765 条历史；`.env` 同时备份，目录 0700、文件 0600 | 通过 |
+| CN03 | 替换容器且保留运行参数 | 旧容器移除，仅 `jan-monitor` 运行；healthy、重启 0、`unless-stopped`、init、`127.0.0.1:26129->8080`、`/opt/1panel/apps/jan_monitor/data`、网络 `jan_monitor_monitor` 均与原容器一致 | 通过 |
+| CN04 | 公网访问和数据持续 | 公网 `/`、`/api/config`、`/api/servers`、`/healthz` 均 200；17/17 节点重启后重新上报，历史继续写入，反代无新错误；浏览器首页 `/api/config` 207ms 开始、无 Google 请求 | 通过 |
+| CN05 | 首页实时推送 | 公网 WSS 携带 17 个节点 ID 订阅，548ms 收到首个 `batchUpdate`，10 秒内 23 批、17 节点均更新。首次用空 `ids` 订阅无推送，系 `_shouldDeliver` 既有规则，非本次故障 | 通过 |
+
 ## 首页字体本地化与生产部署（2026-10-05）
 
 已于 **2026-10-05 11:35:43（Asia/Shanghai）** 部署至 https://jm.zedy.cc，镜像 `server-monitor:local` = `sha256:b06c264da36060f778f8996f948d17a216c527262b9cbe9f531ae4155811a4a9`；回滚镜像 `server-monitor:rollback-20261005-before-local-fonts`（`sha256:2d9f4c6e…`，即部署前生产镜像）。仅改前端样式、字体资源和 Vite 配置，不改数据库、接口或 Agent。环境：宿主 Node.js 26.7.0（构建、单元及主控验收），镜像 Node.js 24；宿主无 Go，未运行 `test:agent-native` 和原生 Agent 验收，本次 Agent 代码未改动。
