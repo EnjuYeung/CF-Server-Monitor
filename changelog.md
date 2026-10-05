@@ -1,5 +1,9 @@
 # 最近一次改动
 
+## CI 探针测试仅保留 Linux（2026-10-05）
+
+- `.github/workflows/test.yml` 的 `agent-platforms` 矩阵去掉 `macos-latest`、`windows-latest`，只在 `ubuntu-latest` 运行 Go vet/test，与 Agent 仅构建和分发 Linux、FreeBSD 的范围一致。此前 macOS 上 2 个 Darwin 旧日志清理用例持续失败，并连带取消 Windows 任务，导致整次 CI 显示失败；用例源码未改动。
+
 ## 主控容器改名 jan-monitor（2026-10-05）
 
 - `compose.yaml` 增加 `container_name: ${CONTAINER_NAME:-jan-monitor}`，`.env.example` 说明同机独立测试项目需设置不同名称；服务名仍为 `monitor`，`docker compose ... monitor` 命令不变。

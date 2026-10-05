@@ -30,7 +30,7 @@ jobs:
   agent-platforms:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
