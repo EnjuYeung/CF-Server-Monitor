@@ -1,5 +1,14 @@
 # 最近一次测试报告
 
+## CI 探针测试矩阵仅保留 Linux（2026-10-05）
+
+提交 `d172116` 推送至 `codex/self-hosted-native-agent` 后，GitHub Actions 运行 [37262134043](https://github.com/EnjuYeung/CF-Server-Monitor/actions/runs/37262134043)。
+
+| 编号 | 用户功能、操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| CI01 | 推送后整次 CI 通过，不再被 macOS 专属用例拖累 | 运行结论 success：`test`（构建、`test:all`、`test:acceptance`）97s、`agent-platforms (ubuntu-latest)` 17s、`docker`（amd64/arm64）167s，均 success；矩阵只剩 ubuntu-latest，无取消任务 | 通过 |
+| CI02 | 对比修改前 | 运行 37261343273（`e29c726`）：`test`、`docker`、ubuntu 通过，macOS 因 `TestRemoveInstalledFilesRemovesDarwinLegacyUserLog`、`TestUserUninstallResidualsIncludesDarwinLegacyUserLog` 失败，Windows 被取消，整次 failure；9/30 运行 36705792708 相同 | 已记录 |
+
 ## 主控容器改名部署（2026-10-05）
 
 **2026-10-05 11:46:56（Asia/Shanghai）** 以容器名 `jan-monitor` 重新部署，镜像沿用 `sha256:b06c264d…`（本日字体本地化版本），仅 Compose 增加 `container_name`。
