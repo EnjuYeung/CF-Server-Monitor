@@ -1,5 +1,12 @@
 # 最近一次改动
 
+## 首页字体本地化，消除首屏阻塞（2026-10-05）
+
+- 原因：`main.css` 首行 `@import` Google Fonts，样式表和入口模块脚本都要等它结束；`fonts.googleapis.com` 不可达时首页停在 `Initializing`，实测约 20 秒后才请求 `/api/config`，网络挂起时可能一直不进入。主控、反代和数据库响应均在毫秒级，不是原因。
+- 改动：JetBrains Mono 可变字体 6 个子集（400–700，SIL OFL 1.1，附 `OFL.txt`）放在 `src/frontend/assets/fonts/`，构建为 `/static/` 哈希文件并长期缓存；Vite 不内联字体，避免 CSP `font-src` 拦截 `data:`。CSP 的 Google 字体来源保留，兼容自定义主题。新增 `test/frontend-fonts.test.js`。
+- 11:35:43（Asia/Shanghai）部署至 https://jm.zedy.cc，不涉及数据库和 Agent；回滚镜像 `server-monitor:rollback-20261005-before-local-fonts`。
+- RakSmart（104.233.159.248）的节点已于 2026-09-25 从后台删除，但 Agent 未卸载：上报持续 404，样本缓存只在成功后清空，请求体增长到 54MB，造成大量 413/499。用户 11:24 停止该 Agent 后再无请求；主控无残留节点、历史、状态或待发通知。Agent 缓存无上限的问题未修改。
+
 ## 上游局部改造已上线并清理测试数据（2026-09-30）
 
 - 18:35:13（Asia/Shanghai）部署至 https://jm.zedy.cc，上线长历史索引取样、首页 250ms 推送聚合及樱花遗留删除；保留当前分支结构及此前明确不迁入的边界处理。

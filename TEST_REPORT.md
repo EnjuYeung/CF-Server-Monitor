@@ -1,5 +1,20 @@
 # 最近一次测试报告
 
+## 首页字体本地化与生产部署（2026-10-05）
+
+已于 **2026-10-05 11:35:43（Asia/Shanghai）** 部署至 https://jm.zedy.cc，镜像 `server-monitor:local` = `sha256:b06c264da36060f778f8996f948d17a216c527262b9cbe9f531ae4155811a4a9`；回滚镜像 `server-monitor:rollback-20261005-before-local-fonts`（`sha256:2d9f4c6e…`，即部署前生产镜像）。仅改前端样式、字体资源和 Vite 配置，不改数据库、接口或 Agent。环境：宿主 Node.js 26.7.0（构建、单元及主控验收），镜像 Node.js 24；宿主无 Go，未运行 `test:agent-native` 和原生 Agent 验收，本次 Agent 代码未改动。
+
+| 编号 | 用户功能、操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| FONT01 | 复现：在 `fonts.googleapis.com` 不可达的网络中打开首页 | 部署前浏览器资源计时：主 JS/CSS 在 0.4s 内下载完成，Google Fonts 请求 20,024ms 后失败（status 0），`/api/config` 在 **20,655ms** 才开始；本机经代理请求该域名 3 次均在约 10s 后 TLS 失败。反代日志中用户请求 `/` 后约 20s 才出现 `/api/config`。主控直连 `/api/servers` 约 4ms，经反代约 17ms | 已复现 |
+| FONT02 | 字体随源码本地托管，样式不再引用远程样式表 | 新增 `test/frontend-fonts.test.js` 3 项：源码 CSS 无远程 `@import`/Google Fonts，6 个 woff2 文件存在且魔数为 `wOF2`，构建产物 6 个字体均为 `/static/` 文件且无 `data:`。旧 `main.css` 下前 2 项失败；内联字体的构建下第 3 项失败；修改后 3/3 通过 | 通过 |
+| FONT03 | 完整回归 | `npm test` **118/118** 通过；`node test/acceptance.js` **19/19** 通过（`output/test-results/acceptance.json`）；`npm run build:frontend` 通过 | 通过 |
+| FONT04 | 部署后首页不再等待第三方字体 | 公网浏览器：DOMContentLoaded 321ms，`/api/config` **321ms** 开始，Dashboard 分块 458ms 开始，119 个卡片元素渲染，Google 请求 0；拉丁子集 163ms 内加载，`JetBrains Mono` 生效 | 通过 |
+| FONT05 | 6 个子集均可加载且不违反 CSP | 首次部署时 1.6KB 子集被 Vite 内联为 `data:`，浏览器报 CSP `font-src` 拦截；增加 `assetsInlineLimit` 规则重新构建部署后，主动加载西里尔/希腊/越南/拉丁扩展字符，6 个字体状态均为 `loaded`，CSP 违规 0；公网 6 个字体 200、`font/woff2`、`Cache-Control: public, max-age=31536000, immutable` | 通过 |
+| FONT06 | 容器切换与健康 | `docker compose ... up -d --no-build --force-recreate --wait` 后 healthy、重启 0，日志仅启动和 GeoIP 事件；数据卷、端口与环境沿用 | 通过 |
+
+部署后控制台仍有既有问题：自定义背景图 `ol.zedy.cc` 跳转到 `s3.jgbman.cc`，后者不在 CSP `img-src`，背景被拦截；与本次改动无关，未修改设置。RakSmart Agent 调查结论见 changelog.md 同日记录。
+
 ## 上游局部改造生产部署、清理与分支同步（2026-09-30）
 
 已于 **2026-09-30 18:35:13（Asia/Shanghai）** 部署至 https://jm.zedy.cc。生产镜像继续使用 `server-monitor:local`，对应候选 `server-monitor:upstream-improvements-20260930`，镜像 ID `sha256:2d9f4c6e80bb87d7d2b9e70c6c74b4fdc2a6e2daca2c6b31f59ff3e8f3b5a475`。部署前基于已通过的 115 项 Node 测试、19 项主控验收、6 项原生 Agent 验收及 5 组隔离浏览器检查构建 Docker 镜像；部署沿用生产数据，未回滚数据库。

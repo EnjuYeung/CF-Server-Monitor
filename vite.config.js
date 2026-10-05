@@ -80,6 +80,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'static',
+    // CSP font-src does not allow data:, so fonts must always ship as /static/ files.
+    assetsInlineLimit: filePath => /\.woff2?$/.test(filePath) ? false : undefined,
     emptyOutDir: true,
     rollupOptions: {
       output: {

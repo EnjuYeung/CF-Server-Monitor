@@ -50,7 +50,7 @@ Docker 最终镜像携带 `agent-dist/`，不携带 Go 编译器。`AgentDistrib
 | Scheduler | 每分钟检查离线、资源、流量、到期、WS 时段及历史保留，投递通知；GeoIP 启动检查并每 24 小时更新 |
 | Vue 前端 | 管理、实时看板、详情图表、明暗切换、下载备份 |
 
-前端已恢复樱花／星空改版前的原版界面，沿用 main.css / light.css、原生按钮与原有弹窗结构，不加载 Hallmark 设计变量、Tailwind、shadcn-vue 或全局装饰背景。Mikus 主题层、启动装饰、樱花动画、后台 JSON 开关及对应样式和素材已移除；旧 `theme_options.mikus` 配置不再激活内置前端。地区与分组继续支持多选，标签、实时订阅及后台业务逻辑保留。明暗切换沿用手动/系统模式。
+前端已恢复樱花／星空改版前的原版界面，沿用 main.css / light.css、原生按钮与原有弹窗结构，不加载 Hallmark 设计变量、Tailwind、shadcn-vue 或全局装饰背景。Mikus 主题层、启动装饰、樱花动画、后台 JSON 开关及对应样式和素材已移除；旧 `theme_options.mikus` 配置不再激活内置前端。地区与分组继续支持多选，标签、实时订阅及后台业务逻辑保留。明暗切换沿用手动/系统模式。JetBrains Mono 字体随源码放在 `src/frontend/assets/fonts/` 并构建为 `/static/` 文件，首屏不依赖 Google Fonts；Vite 不内联字体，以符合 CSP `font-src`。
 
 ## 后台入口与双重验证
 
