@@ -1,5 +1,12 @@
 # 最近一次改动
 
+## 工程技能仓库配置（2026-10-08）
+
+- 按用户确认使用 `EnjuYeung/CF-Server-Monitor` 的 GitHub Issues 跟踪问题与规格，启用仓库 Issues 功能；新增 `docs/agents/issue-tracker.md`，记录 gh 操作、任务关系与依赖约定。
+- 采用 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix` 五个默认分流标签；创建缺少的前四个，沿用现有 `wontfix`，其他标签保持原有名称、颜色和说明。角色映射见 `docs/agents/triage-labels.md`。
+- 在现有 `AGENTS.md` 追加工程技能入口，详细配置按需读取；`docs/agents/domain.md` 确定根目录 `GLOSSARY.md` 和 `docs/adr/` 的 single-context 布局，术语表和决策文档在实际需要时创建。
+- 文档结构、引用、已确认草稿一致性与 GitHub 配置实际检查通过，结果见 TEST_REPORT.md。
+
 ## Archify 项目架构图（2026-10-08）
 
 - 新增本地交互式架构图 `.archify/architecture-server-monitor-20261008-190825/server-monitor.html`，展示 Vue 看板、远程与同机原生 Agent、TLS 反代、Docker bridge 单主控、SQLite、通知渠道、Agent 分发归档和本地 GeoIP；补充主控模块、实时/持久化时序、通知重试与 Agent 生命周期说明。

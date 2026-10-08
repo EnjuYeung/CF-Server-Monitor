@@ -1,5 +1,19 @@
 # 最近一次测试报告
 
+## 工程技能配置验证（2026-10-08）
+
+本轮按用户确认配置 Matt Pocock 工程技能：新增三个 `docs/agents/` 配置文件、追加 `AGENTS.md` 入口，并更新本报告及 changelog.md。实际启用 GitHub Issues，补建四个分流标签；以下结果来自文件校验和真实 GitHub CLI/API 调用。
+
+| 编号 | 验收项与实际操作 | 结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| MP01 | 保留项目说明并追加技能入口，逐字核对原 AGENTS.md 与已确认草稿 | 原说明完整保留，`## Agent skills` 恰好一处，三个配置文件与草稿逐字一致 | 通过 |
+| MP02 | 检查入口引用、标签角色映射与领域文档布局 | 三个配置路径全部存在；五个默认角色映射完整；采用 single-context，术语表与 ADR 保持按需创建 | 通过 |
+| MP03 | 启用并实际读取 GitHub Issues | PATCH `repos/EnjuYeung/CF-Server-Monitor` 后 GET 返回 `has_issues: true`；`gh issue list --repo EnjuYeung/CF-Server-Monitor --state open --limit 1 --json number` 退出 0 | 通过 |
+| MP04 | 补建标签后实际查询，并与原有标签逐项比较 | 新增 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`，沿用 `wontfix`；原有十个标签的名称、颜色、说明全部保留 | 通过 |
+| MP05 | 对最终六个改动文件检查格式与范围 | 文件内容及新增配置无行尾空白；暂存后执行 `git diff --cached --check`，只包含 AGENTS.md、三个配置文件及本报告、changelog.md | 通过 |
+
+本轮是文档与仓库协作配置，未修改业务源码、依赖、Agent 产物或部署配置，未重新运行 npm 安装、应用构建或业务验收。原始配置核验回执保存在本次临时草稿目录，未纳入 Git；未创建测试 Issue 或修改现有 Issue。
+
 ## Archify 项目架构图验证（2026-10-08）
 
 本轮交付为架构文档图，类型 `architecture`。产物目录 `.archify/architecture-server-monitor-20261008-190825/`，其中 `candidate.json` 为规格，`server-monitor.html` 为独立交互式 HTML；支持节点/路径查看、明暗切换及导出。未修改业务代码、安装/更新/分发实现或部署配置，因此本轮未运行 `npm ci`、GeoIP 下载、应用构建、`test:all`、`test:acceptance` 或 `test:agent-deployment`，不将图表校验当作应用验收。
