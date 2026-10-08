@@ -25,7 +25,6 @@
           <select :value="deleteTargetOs" class="form-select" @change="$emit('update:delete-target-os', $event.target.value)">
             <option value="linux">Linux (systemd)</option>
             <option value="unix">Linux (OpenWrt/Alpine/Synology DSM)</option>
-            <option value="freebsd">FreeBSD</option>
           </select>
         </div>
 

@@ -1,7 +1,7 @@
 # Native Agent
 
 本目录直接纳入上游 **cfsm-agent v1.0.16** 的 Go 源码和测试，原始提交与许可见
-[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.2.0**。
+[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.3.0**。
 `UPSTREAM_README.md` 只保留上游功能说明和来源，安装与更新请使用本文。
 
 ## 运行结构与功能
@@ -13,8 +13,8 @@ Agent 不需要 Go、Node.js、Docker、Workers 账号或 GitHub 访问权限；
 保留 v1.0.16 的 CPU、内存、Swap、磁盘容量/IO、GPU、负载、进程、连接数、网卡/网速、月流量、
 公网 IP、TCP/ICMP 探测、丢包、四个运营商节点和四个自定义节点。采样、WS 实时上报、HTTP 回退、
 时段协商、配置 schema 7/MD5、时间校准、流量校正与重置、服务安装/卸载及更新后的重启继续使用上游逻辑。
-当前仅发布 Linux 和 FreeBSD 的 amd64/arm64 程序；Linux user service、systemd、OpenRC、procd、
-Synology、FreeBSD 的安装方式和路径保持兼容。上游其他平台源码保留用于来源追踪和兼容性测试，不作为发布目标。
+当前仅发布 Linux 的 amd64/arm64 程序；Linux user service、systemd、OpenRC、procd、
+Synology 的安装方式和路径保持兼容。FreeBSD 专用采集代码已删除；上游其他平台源码保留用于来源追踪和兼容性测试，不作为发布目标。
 
 独立版本的主要调整：
 
@@ -30,7 +30,7 @@ Synology、FreeBSD 的安装方式和路径保持兼容。上游其他平台源�
 使用 `go.mod` 要求的 Go 工具链（当前 1.26.8）。仓库根目录执行：
 
 ```sh
-npm run build                  # 前端 + 全部 4 种 Agent 程序
+npm run build                  # 前端 + 全部 2 种 Linux Agent 程序
 npm run build:frontend         # 仅构建前端
 npm run build:agent            # 仅构建 Agent
 npm run build:agent -- -targets linux/amd64,linux/arm64
@@ -43,9 +43,8 @@ npm run build:agent -- -targets linux/amd64,linux/arm64
 | 系统 | 发布目标 |
 | --- | --- |
 | Linux | amd64、arm64 |
-| FreeBSD | amd64、arm64 |
 
-不构建或分发 macOS、Windows、32 位 x86/ARM、LoongArch 程序；通过 `-targets` 显式指定这些目标也会报错。
+不构建或分发 FreeBSD、macOS、Windows、32 位 x86/ARM、LoongArch 程序；通过 `-targets` 显式指定这些目标也会报错。
 
 输出为 `agent-dist/<version>/`，含二进制、`manifest.json` 和 `checksums.txt`；安装脚本在
 `agent-dist/` 根目录。产物被 Git 忽略，不提交二进制、配置或测试结果。
@@ -53,16 +52,16 @@ npm run build:agent -- -targets linux/amd64,linux/arm64
 ## 安装、指定版本与卸载
 
 优先在后台添加服务器并复制命令，命令已经包含服务器 UUID、主控地址和认证密钥。
-POSIX 系统的通用形式如下；示例中的值必须替换成后台实际参数：
+Linux 系统的通用形式如下；示例中的值必须替换成后台实际参数：
 
 ```sh
 curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
   -id=SERVER_ID -secret='SECRET' -url=https://monitor.example.com/update
 ```
 
-脚本自动识别 OS/CPU，确认属于上述四个目标后才下载并校验程序，再调用原生安装器。
-Linux 专用 cfsm 用户的准备步骤继续由后台生成，其他受支持系统的权限要求沿用原版。
-`--install-version=v1.2.0` 指定主控已提供的版本；留空选最新稳定版。
+脚本自动识别 OS/CPU，确认属于上述两个 Linux 目标后才下载并校验程序，再调用原生安装器。
+Linux 专用 cfsm 用户的准备步骤继续由后台生成，其他 Linux 安装方式的权限要求沿用原版。
+`--install-version=v1.3.0` 指定主控已提供的版本；留空选最新稳定版。
 `--download-url=https://mirror.example.com/agent` 覆盖下载源并保存到本地 `DOWNLOAD_URL`，用于后续自动更新，
 不会改变指标上报目的地。直接执行二进制 `jan-probe install ...` 也受支持。
 
@@ -76,6 +75,17 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- uninstall \
 已有上游 Go Agent 时，执行后台新命令覆盖安装一次即可切换到本项目的更新来源；既有配置和流量文件继续保留。
 上游旧二进制中的自动更新地址不会因主控升级而自行改变。
 
+## 从后台删除节点并自动卸载
+
+Agent v1.3.0 起，后台单台或批量删除会发送经过认证和 HMAC-SHA-256 签名的卸载指令。
+已连接的 WS Agent 立即接收；纯 HTTP Agent 在下次上报时接收。离线节点的删除指令保存在 SQLite，主控重启后仍会补发，不受 7 天监控历史保留期影响。
+
+Agent 校验节点 UUID 和签名后先保存本地删除意图并停止采集、上报及更新，再通过独立卸载进程清理当前账户的程序、配置、流量、日志和新旧服务。systemd 系统服务及用户服务使用独立单元，避免停止原服务时杀死卸载进程。重启时如删除尚未完成，直接继续清理，不恢复采集。普通 404、网络故障和未签名指令不会触发卸载。
+
+旧版 Agent 需先更新至 v1.3.0；尚未升级或清理失败时仍可使用后台提供的手动卸载命令。
+在离线 Agent 收到指令之前，显式导入同一 UUID 会取消未送达的删除意图；已执行卸载后，重新添加节点需重新安装 Agent。
+自测前台进程使用自定义配置时只停止，不允许删除宿主机的安装目录和服务。失败期间采样缓存最多保留最近 300 个样本，与主控接收上限一致，避免长时间离线后请求过大、无法接收删除指令。
+
 ## 更新和历史版本
 
 v1.2.0 将服务名、安装后的程序名、PID 和日志名改为 `jan-probe`。系统安装可用 `systemctl restart jan-probe`，用户安装由安装用户执行 `systemctl --user restart jan-probe`；其他服务管理器沿用安装输出中的命令。
@@ -86,8 +96,9 @@ v1.2.0 将服务名、安装后的程序名、PID 和日志名改为 `jan-probe`
 主控启动时校验并归档随镜像提供的版本到 `data/agent-releases/<version>/`，后续镜像替换会保留旧版本。
 同版本号对应不同产物时拒绝覆盖归档，必须递增版本号。主控版本更新但 Agent 版本不变时不会强制更新 Agent。
 
-v1.1.1 缩减构建平台，使用新版本号避免与已有的 v1.1.0 十六目标归档冲突。已有归档的 manifest 和文件保持原样，
-公开版本目录与下载接口仅提供 Linux/FreeBSD 的 amd64/arm64；不支持的平台即使存在旧归档也返回 404。
+v1.1.1 缩减构建平台，使用新版本号避免与已有的 v1.1.0 十六目标归档冲突。
+
+v1.2.1 移除 FreeBSD 构建、安装和采集支持。公开版本目录与下载接口仅提供 Linux 的 amd64/arm64；不支持的平台即使存在旧归档也返回 404。旧归档的完整 manifest 和文件继续保留，不修改历史版本。
 
 启用 `AUTO_UPDATE=1` 的 Agent 从主控目录选择较新兼容版本，下载、校验并沿用原来的平台更新/重启机制。
 默认 `AUTO_UPDATE=0` 保持手动更新。自动更新不会降级；需要回退时，重新运行安装命令指定已归档版本，
@@ -106,7 +117,7 @@ v1.1.1 缩减构建平台，使用新版本号避免与已有的 v1.1.0 十六�
 | `/agent/latest` | 最新稳定版版本号 |
 | `/agent/releases.json` | 当前及归档版本、平台文件、SHA-256 |
 | `/agent/<version>/manifest.json`、`checksums.txt` | 指定版本元数据 |
-| `/agent/<version>/cf-probe-<os>-<arch>` | 支持的 Linux/FreeBSD amd64/arm64 程序 |
+| `/agent/<version>/cf-probe-linux-<arch>` | Linux amd64/arm64 程序 |
 
 不提供运行时编译、上传或任意文件下载；不存在的版本返回 404，不回退到上游仓库。
 GitHub Release 可以另外托管相同产物，但不是构建、安装或更新的必需环节。
@@ -114,6 +125,6 @@ GitHub Release 可以另外托管相同产物，但不是构建、安装或更�
 ## 验证
 
 仓库根目录执行 `npm run test:all`（主控与 Go vet/test）和 `npm run test:acceptance`。
-原生验收需在 Linux/FreeBSD amd64/arm64 上运行，用隔离主控及实际编译程序验证下载校验、HTTP/WS、配置下发、旧配置读取和重启数据保留。
+原生验收需在 Linux amd64/arm64 上运行，用隔离主控及实际编译程序验证下载校验、HTTP/WS、配置下发、旧配置读取和重启数据保留。
 宿主机验收仅运行前台进程，使用临时配置和锁文件目录，不注册系统服务。安装、卸载和实际自更新在隔离 Linux
-部署环境中验证。macOS/Windows 开发机可执行 Go 单元测试和四目标交叉编译、文件/下载验证，但不能执行这些 ELF 程序；原生验收会明确报错，不作为通过处理。平台 CI 的兼容性单元测试不生成额外发布产物；远端 CI 未执行时不将其记为通过。
+部署环境中验证。macOS/Windows 开发机可执行 Go 单元测试和双目标交叉编译、文件/下载验证，但不能执行这些 ELF 程序；原生验收会明确报错，不作为通过处理。平台 CI 的兼容性单元测试不生成额外发布产物；远端 CI 未执行时不将其记为通过。

@@ -1,4 +1,4 @@
-// Build the controller's supported Linux and FreeBSD 64-bit Agents.
+// Build the controller's supported Linux 64-bit Agents.
 package main
 
 import (
@@ -20,7 +20,6 @@ type target struct{ OS, Arch string }
 
 var targets = []target{
 	{"linux", "amd64"}, {"linux", "arm64"},
-	{"freebsd", "amd64"}, {"freebsd", "arm64"},
 }
 
 type asset struct {
@@ -44,7 +43,7 @@ func main() {
 }
 func build() error {
 	out := flag.String("out", "../agent-dist", "versioned output directory")
-	selection := flag.String("targets", "all", "comma-separated supported targets, e.g. linux/amd64,freebsd/arm64")
+	selection := flag.String("targets", "all", "comma-separated supported targets, e.g. linux/amd64,linux/arm64")
 	version := flag.String("version", "", "override release.json version (for independently versioned builds)")
 	flag.Parse()
 	raw, err := os.ReadFile("release.json")

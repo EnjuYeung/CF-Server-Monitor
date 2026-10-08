@@ -5,9 +5,9 @@ import { resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 
 const VERSION = /^(?:v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?|Snapshot-\d+)$/;
-// Old archives remain immutable; only supported targets are exposed for download.
+// Retain legacy platform names to read immutable archives; publish only Linux.
 const ARCHIVE_ASSET = /^cf-probe-(?:linux-(?:amd64|arm64|386|armv[567]|loong64)|freebsd-(?:amd64|arm64|386|arm)|darwin-(?:amd64|arm64)|windows-(?:amd64|arm64|386)\.exe)$/;
-const ASSET = /^cf-probe-(?:linux|freebsd)-(?:amd64|arm64)$/;
+const ASSET = /^cf-probe-linux-(?:amd64|arm64)$/;
 const noCache = { 'Cache-Control':'no-store' };
 const notFound = () => new Response('Agent artifact not available', {status:404, headers:noCache});
 

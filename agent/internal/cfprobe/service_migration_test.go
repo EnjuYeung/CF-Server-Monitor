@@ -1,11 +1,10 @@
-//go:build linux || freebsd
+//go:build linux
 
 package cfprobe
 
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -26,9 +25,6 @@ func TestJanServiceNamesPreserveExistingDataPaths(t *testing.T) {
 }
 
 func TestOldUserBinaryRestartRequiresMigration(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("systemd user service is Linux-only")
-	}
 	paths := userPaths("fixture", 1000, t.TempDir())
 	legacy := legacyServicePaths(paths)
 	if err := os.MkdirAll(filepath.Dir(legacy.ServiceFile), 0o700); err != nil {

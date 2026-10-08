@@ -3,6 +3,7 @@ package cfprobe
 import (
 	"context"
 	"reflect"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -13,29 +14,39 @@ func TestAutoUpdateChecksAtStartupAndEveryDay(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		var reasons []string
-		go runAutoUpdateChecks(ctx, true, func(reason string) { reasons = append(reasons, reason) })
+		var reasonsMu sync.Mutex
+		go runAutoUpdateChecks(ctx, true, func(reason string) {
+			reasonsMu.Lock()
+			defer reasonsMu.Unlock()
+			reasons = append(reasons, reason)
+		})
+		snapshot := func() []string {
+			reasonsMu.Lock()
+			defer reasonsMu.Unlock()
+			return append([]string(nil), reasons...)
+		}
 		synctest.Wait()
-		if !reflect.DeepEqual(reasons, []string{"startup"}) {
-			t.Fatal(reasons)
+		if got := snapshot(); !reflect.DeepEqual(got, []string{"startup"}) {
+			t.Fatal(got)
 		}
 		time.Sleep(24*time.Hour - time.Second)
 		synctest.Wait()
-		if len(reasons) != 1 {
-			t.Fatalf("checked before daily deadline: %v", reasons)
+		if got := snapshot(); len(got) != 1 {
+			t.Fatalf("checked before daily deadline: %v", got)
 		}
 		time.Sleep(time.Second)
 		synctest.Wait()
 		time.Sleep(24 * time.Hour)
 		synctest.Wait()
-		if !reflect.DeepEqual(reasons, []string{"startup", "daily", "daily"}) {
-			t.Fatal(reasons)
+		if got := snapshot(); !reflect.DeepEqual(got, []string{"startup", "daily", "daily"}) {
+			t.Fatal(got)
 		}
 		cancel()
 		synctest.Wait()
 		time.Sleep(48 * time.Hour)
 		synctest.Wait()
-		if len(reasons) != 3 {
-			t.Fatal("checks continued after shutdown", reasons)
+		if got := snapshot(); len(got) != 3 {
+			t.Fatal("checks continued after shutdown", got)
 		}
 	})
 }

@@ -49,6 +49,9 @@ func Install(opts InstallOptions, version string) error {
 		opts.ConfigMD5 = "none"
 	}
 	normalizeConfigIntervals(&opts.Config)
+	if _, pending := readRemoteUninstallIntent(paths, opts.Config); pending {
+		return errors.New("Agent has a pending controller uninstall; update installation cancelled")
+	}
 	if _, err := agentDownloadBase(opts.Config); err != nil {
 		return err
 	}

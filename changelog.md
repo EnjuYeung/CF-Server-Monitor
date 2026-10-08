@@ -1,5 +1,58 @@
 # 最近一次改动
 
+## Archify 项目架构图（2026-10-08）
+
+- 新增本地交互式架构图 `.archify/architecture-server-monitor-20261008-190825/server-monitor.html`，展示 Vue 看板、远程与同机原生 Agent、TLS 反代、Docker bridge 单主控、SQLite、通知渠道、Agent 分发归档和本地 GeoIP；补充主控模块、实时/持久化时序、通知重试与 Agent 生命周期说明。
+- 依据当前工作区创建隔离源码快照，保留未提交改动并验证 24 处源码引用；链接使用 local-only，避免将独立二开及未提交源码误标为上游 GitHub 版本。原仓库 HEAD、分支和索引保持。
+- Archify showcase 9/9 校验、交付与严格产物检查、真实 Chromium 多视口检查均通过；人工检查四张明暗截图。本轮只生成文档图及记录，没有业务源码或部署改动；详细命令、回执与范围见 TEST_REPORT.md。
+
+## 家庭 OpenWrt 路由器 Agent 升至 v1.3.0（2026-10-08）
+
+- 按用户本次明确授权通过 SSH 别名 router 更新 ImmortalWrt 24.10.6 x86_64 的 Agent，17:58:43–17:58:44（Asia/Shanghai）从 v1.2.0 升至已验收的 v1.3.0；先备份和校验，只原子替换 `/usr/bin/jan-probe` 并重启原有 Agent procd 服务。
+- 原 Agent 配置、服务脚本、自启动链接和月流量周期保留；实际运行程序与主控新上报均为 v1.3.0。网络、DHCP/DNS、防火墙、OpenClash 和 SSH 配置哈希一致，接口/默认路由/防火墙结构及关键网络服务 PID 保持，升级前后的 DNS、HTTPS 和 ping 检查通过。
+- 路由器本轮临时程序已清理，旧程序、配置、流量及启动文件保留在主控受保护备份目录；未修改其他节点、业务源码或路由器软件包，详细检查及范围见 TEST_REPORT.md。
+
+## 自动卸载功能部署生产，11 台 VPS 升至 v1.3.0（2026-10-08）
+
+- 17:26:24（Asia/Shanghai）将已完整验收的镜像 `sha256:862f09e0c4dac25ba496b9c5455269690dcff8a884028de42d493b600375c7a5` 部署至 https://jm.zedy.cc，生产使用 `server-monitor:local`，发布标签 `server-monitor:remote-uninstall-20261008`；最新版 Agent v1.3.0 支持后台删除后的自动停止与卸载。
+- 按本次授权仅排除 SSH 别名 router/unraid，更新 bytevirt、aaitr、lightlayer、netcup、ix-entry、attvps、dmit-lax、dmit-tyo、evoxt、moe、xhosts 共 11 台。严格 SSH 校验全部通过，以已验收且 SHA-256 一致的程序运行原生安装器，17:29:58–17:33:17 全部从 v1.2.1 升至 v1.3.0；配置全文、自动更新设置和月流量周期保留，服务与主控上报均核对正常。
+- 发布前保存在线 SQLite 一致快照、生产配置、历史归档、地区库和回滚镜像，并在断网生产副本上实际检查；上线保持环境、端口、挂载、网络及节点/设置内容，原归档文件不变、新增 4 个。17:36:00 复查主控 healthy、重启 0，17/17 节点近期上报，11 台目标均为 v1.3.0，桌面/手机页面及 WSS 正常。
+- 清理 11 台 VPS 的本轮临时安装目录，配置、流量、服务及旧程序回滚副本保留在受保护生产备份中；部署和升级证据由 Git 忽略，详细结果见 TEST_REPORT.md。本轮没有新增业务源码改动。
+
+## 后台删除节点后自动卸载 Agent（2026-10-08）
+
+- Agent 独立版本递增为 **v1.3.0**。后台单台和批量删除在同一 SQLite 事务中保存删除意图并清除节点/历史；在线 WS 立即发送签名卸载指令，HTTP 或离线 Agent 在下次认证上报时接收，主控重建后仍可补发。显式恢复同 UUID 会取消尚未送达的意图。
+- Agent 校验 UUID、命令 ID 和 HMAC-SHA-256 后先保存本地删除意图、停止采集/上报/更新，再由独立卸载进程清理当前账户的程序、配置、流量、日志和新旧服务。systemd 系统及用户服务使用独立单元，避免原服务停止时杀死清理进程；重启时直接续做清理，不恢复采集。自定义配置的前台运行只停止，不触碰宿主服务。
+- 普通 404、网络故障或无效签名不触发卸载。旧版 Agent 需先升级；删除弹窗保留手动清理命令，中/英/日文和批量确认提示同步说明自动卸载、离线执行与旧版回退。
+- 将失败期间采样缓存限制为最近 300 个样本，与主控接收上限一致，避免长时间离线导致内存和请求体持续增长、无法接收删除指令。修正原有每日更新测试的并发计数同步。
+- 开发与隔离验收结果见 TEST_REPORT.md；后续生产部署及 11 台 VPS Agent 升级见上方记录。
+
+## SSH 更新 9 台生产 Agent 至 v1.2.1（2026-10-08）
+
+- 按用户授权更新 `bytevirt`、`aaitr`、`lightlayer`、`netcup`、`ix-entry`、`attvps`、`dmit-tyo`、`moe`、`xhosts`；排除 router、dmit-lax、unraid，Evoxt 因 SSH 指纹变化及用户要求保留，没有登录或手动更新。
+- 8 台通过重启触发已有自动更新完成安装；ix-entry 的公网程序下载触发 5 分钟超时，改用 SSH 传送已验收、SHA-256 校验一致的程序，并由原生安装器沿用现有配置升级。
+- 16:29:23（Asia/Shanghai）核查 9 台运行程序及主控上报均为 v1.2.1，服务正常、配置全文哈希相同、月流量周期和计数保留；清理本轮 ix-entry 临时安装与配置副本。未修改业务代码、远端 SSH 信任记录或更新策略，详细实测结果见 TEST_REPORT.md。
+
+## Linux 双架构 Agent 已部署生产，删除测试与备份数据（2026-10-08）
+
+- 15:48:13（Asia/Shanghai）开始部署已验收镜像 `sha256:6c759939ceb74192beea544eac4189b1bbb3c6d00c7dc0253092c5fa7a1715b6` 至 https://jm.zedy.cc；生产使用 `server-monitor:local`，发布标签为 `server-monitor:linux-only-20261008`。内置 Agent v1.2.1，仅分发 Linux amd64/arm64。
+- 发布前核对 109 个源码文件、315 个前端资源和 Agent 产物，并用生产数据副本断网检查。上线后配置、环境、端口、挂载和网络保留，保留期内历史缺失 0，原 30 个 Agent 归档文件不变并新增 4 个；容器健康、重启 0，17/17 节点恢复上报，公网 HTTPS/WSS、桌面/手机页面及 Linux 下载校验通过，所有历史版本的 FreeBSD 下载均为 404。
+- 按用户明确要求删除测试输出、临时数据库、生产备份、旧本地 Agent 构建及遗留备份辅助文件，共 1,660 个文件、约 1.23 GiB；移除 5 个废弃测试/旧发布/回滚镜像标签。验证后删除原始日志及截图，汇总保留在 TEST_REPORT.md；生产数据、配置、地区库和 34 个 Agent 归档文件核对保持，当前构建及开发工具链保留。
+
+## Agent 移除 FreeBSD，仅发布 Linux（2026-10-08）
+
+- 镜像和本地完整构建仅生成 Linux amd64/arm64 两种程序；显式请求 FreeBSD 目标会在创建产物前失败。删除 FreeBSD 专用采集文件、安装脚本 OS 分支及其 SHA-256 命令回退，收敛平台测试和原生验收入口。
+- 后台安装、卸载弹窗移除 FreeBSD 选项，中/英/日提示同步为 Linux；公开版本目录、manifest、校验清单和下载接口仅暴露 Linux。保留历史归档读取兼容，旧 FreeBSD 文件不修改、不下载，不影响同版本 Linux 的安装。
+- Agent 独立版本递增至 v1.2.1，避免新构建与现有 v1.2.0 四平台归档发生同版本冲突；更新项目说明、架构和代码地图。上游原始说明及历史测试记录保留来源信息。
+- 完整构建、118 项 Node 回归、Agent 配置及 Go vet/test、19 项主控和 6 项原生 Agent 验收、6 项隔离 Docker 安装/更新/重建/卸载验收全部通过；后台三语言两种宽度的 36 组实际复制检查，以及带真实 v1.2.0 四平台归档的新镜像启动/重建检查通过。实测范围见 TEST_REPORT.md；后续生产部署与清理见上方记录。
+
+## 国家地区旗帜按原地区代码显示（2026-10-08）
+
+- 移除前端 `TW → cn` 强制映射，首页三种视图、地区筛选、详情和后台按原地区代码加载 SVG；恢复 `public/flags/tw.svg` 为 flag-icons v7.5.0 原始素材，与最初导入版本及上游文件逐字节一致。
+- iOS Scriptable 小组件移除 `TW/HK/MO → cn` 强制映射，保留空地区和 `XX` 的原有回退。已有小组件需重新复制更新后的 `scripts/ios-scriptable-widget.js`。
+- 完整构建、118 项 Node 回归、Agent 配置及 Go vet/test、19 项主控和 6 项原生 Agent 验收通过；隔离浏览器 39 项检查及桌面/手机截图通过。
+- 15:20:09（Asia/Shanghai）部署至 https://jm.zedy.cc；复用原生产镜像的运行时和 Agent，仅更新已验证前端资源及对应源码。公网旗帜、首页/详情、HTTPS/WSS 和手机布局实测通过，17 台节点均恢复上报；配置、历史和 Agent 归档保留。备份及回滚信息见 TEST_REPORT.md。
+
 ## CI 探针测试仅保留 Linux（2026-10-05）
 
 - `.github/workflows/test.yml` 的 `agent-platforms` 矩阵去掉 `macos-latest`、`windows-latest`，只在 `ubuntu-latest` 运行 Go vet/test，与 Agent 仅构建和分发 Linux、FreeBSD 的范围一致。此前 macOS 上 2 个 Darwin 旧日志清理用例持续失败，并连带取消 Windows 任务，导致整次 CI 显示失败；用例源码未改动。

@@ -82,7 +82,11 @@ func runAutoUpdateChecks(ctx context.Context, enabled bool, check func(string)) 
 
 func (a *Agent) checkAndScheduleAgentUpdate(reason string) {
 	cfg := a.configSnapshot()
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
 	candidate, ok, err := checkLatestUpdate(ctx, a.version, cfg)
 	if err != nil {
@@ -219,6 +223,12 @@ func expectedUpdateAssetName(goos, goarch string) string {
 func (a *Agent) scheduleAgentUpdate(candidate updateCandidate, reason string, cfg Config) {
 	a.updateMu.Lock()
 	defer a.updateMu.Unlock()
+	if a.ctx != nil && a.ctx.Err() != nil {
+		return
+	}
+	if _, pending := readRemoteUninstallIntent(a.paths, cfg); pending {
+		return
+	}
 
 	lockFile := filepath.Join(a.paths.ConfigDir, "auto_update.lock")
 	now := time.Now().Unix()
@@ -238,6 +248,14 @@ func (a *Agent) scheduleAgentUpdate(candidate updateCandidate, reason string, cf
 	binPath, err := fetchUpdateBinary(a.paths.ConfigDir, candidate, base, usePublicDNSResolver(cfg))
 	if err != nil {
 		a.log.info("auto update download failed target=%s: %v", candidate.TagName, err)
+		return
+	}
+	if a.ctx != nil && a.ctx.Err() != nil {
+		_ = os.Remove(binPath)
+		return
+	}
+	if _, pending := readRemoteUninstallIntent(a.paths, cfg); pending {
+		_ = os.Remove(binPath)
 		return
 	}
 

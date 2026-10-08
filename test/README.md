@@ -33,11 +33,15 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 
 ## 同仓库原生 Agent
 
-先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 4 个 Agent 目标（Linux/FreeBSD 各 amd64/arm64）；`npm run build:frontend` 仅构建前端。
-`test/agent-build-targets.test.js` 使用完整构建的产物，实际验证四个 ELF 程序的 OS/CPU、HTTP 下载、SHA-256 和归档；`test/agent-install-platforms.test.js` 使用明确标注的 shell 测试载荷验证平台选择、校验与不支持的平台在下载前失败，不将该测试视为 Linux/FreeBSD 程序运行验收。
-`npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，需要 Linux/FreeBSD amd64/arm64 主机，使用对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。macOS/Windows 上原生阶段会明确报错；可单独执行 `node test/acceptance.js` 验证主控，但不得将其当作完整原生验收通过。
+先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 2 个 Agent 目标（Linux amd64/arm64）；`npm run build:frontend` 仅构建前端。
+`test/agent-build-targets.test.js` 使用完整构建的产物，实际验证两个 Linux ELF 程序的 OS/CPU、HTTP 下载、SHA-256 和归档；`test/agent-install-platforms.test.js` 使用明确标注的 shell 测试载荷验证平台选择、校验与不支持的平台在下载前失败（包括 FreeBSD amd64/arm64），不将该测试视为 Linux 程序运行验收。
+`npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，需要 Linux amd64/arm64 主机，使用对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。其他系统上原生阶段会明确报错；可单独执行 `node test/acceptance.js` 验证主控，但不得将其当作完整原生验收通过。
 
 `npm run test:agent-deployment` 要求 Docker 和预先构建的 `server-monitor:agent-native` 镜像（`docker build -t server-monitor:agent-native .`）。它预建隔离环境，在 internal bridge 中验证 TLS 下载、原生安装、v1.0.99 测试版本实际自更新到当前版本、主控重建及卸载。v1.0.99 仅为验收编译的旧版本，不是对外发布版本。证据保存在 `output/test-results/agent-integration/`，默认清理自己的测试容器和网络。
 可通过 `TEST_DOCKER_CLI` 指定 Docker 包装命令，通过 `AGENT_TEST_IMAGE` 指定测试镜像。`AGENT_KEEP_TEST_ENV=1` 仅用于接续浏览器核验；使用后须按 browser-fixture.json 记录清理测试容器和网络。
 
 Agent v1.2.0 的每日检查由 Go `testing/synctest` 推进 24/48/72 小时，验证启用、关闭及取消边界；没有实际等待数天。部署套件覆盖 `jan-probe` 安装、更新、配置和流量保留、关闭自动更新及卸载。设置 `AGENT_LEGACY_DIST` 为保留的旧版发布目录（包含 manifest 和对应程序，例如 `agent-dist/v1.1.1`），可实际验证旧 `cf-probe` 自动升级为 `jan-probe`；应在修改源码前构建并保留该旧版本，不能用新源码冒充旧版迁移验收。没有指定时使用新源码构建低版本号载荷，仅验证新版更新流程。
+
+`test/agent-removal.test.js` 实连 HTTP/WS，覆盖在线删除、离线补发、重启保留、认证拒绝、同 UUID 恢复及批量删除回滚。Go 测试覆盖签名校验、普通 404 不卸载、HTTP/WS 停止、本地意图与自定义配置隔离、失败采样缓存上限。NA07 用真实前台 Agent 验证删除后停止和重启不采集；不在宿主机安装或卸载服务。
+
+部署 ND07–ND08 在隔离容器实测 WSS 自动卸载、HTTP 离线删除和主控重建；指定修改前真实 `AGENT_LEGACY_DIST` 时增加 ND09 旧版兼容及手动清理。可预建含 systemd、dbus-user-session、curl、ca-certificates、procps 的 Debian 测试镜像，通过 `AGENT_SYSTEMD_TEST_IMAGE` 启用 ND10–ND11。该可选测试使用独立 privileged 容器和私有 cgroup namespace，不挂载宿主 cgroup 或系统目录，验证真正的 systemd 系统服务及 cfsm 用户服务卸载。所有镜像及隔离环境在用例开始前准备。

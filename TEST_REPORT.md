@@ -1,5 +1,205 @@
 # 最近一次测试报告
 
+## Archify 项目架构图验证（2026-10-08）
+
+本轮交付为架构文档图，类型 `architecture`。产物目录 `.archify/architecture-server-monitor-20261008-190825/`，其中 `candidate.json` 为规格，`server-monitor.html` 为独立交互式 HTML；支持节点/路径查看、明暗切换及导出。未修改业务代码、安装/更新/分发实现或部署配置，因此本轮未运行 `npm ci`、GeoIP 下载、应用构建、`test:all`、`test:acceptance` 或 `test:agent-deployment`，不将图表校验当作应用验收。
+
+测试前复用已安装的 Chromium `/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`，使用本地文件验证，不启动或访问生产主控。当前工作区有既有未提交改动，隔离源码快照固定为 `2fc4ad477ddfbe019c151038184f3c4dab2e9947`；33 个文件与原工作区逐字节核对，来源保存在 `source-provenance.json`，不引用未经验证的上游行号。原仓库 HEAD、分支和索引没有改动。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| AR01 | 架构与当前源码对应，核对部署入口、协议、存储及服务职责 | `finalize --repo-root .../source-snapshot --quality showcase`：24 处引用、固定快照、本地链接验证成功；33 个源码文件与快照提交内容相同 | 通过 |
+| AR02 | 独立 HTML 可交付，节点、路由、标签与边界布局有效 | `finalize` 的 validate、deliver、严格 check 均 pass；showcase 9/9、0 errors、0 warnings，交叉、模糊通道、箭头及标签冲突为 0。`server-monitor.finalize-summary.json`、`server-monitor.finalize.json`、`server-monitor.delivery.json` | 通过 |
+| AR03 | 浏览器能实际显示，桌面视口不溢出、文字可读、主题和查看器控件正常 | 同一 `finalize` 的 browser-check 为 pass；浅色 1440×900、1600×1000、1920×1080、2048×1320，深色两端视口均通过；1440 下最小投影文字约 7.57px。`server-monitor.browser-check.json` | 通过 |
+| AR04 | 人工复核截图中的中文、布局、连线与主题，预期无裁切或遮挡 | `visual-check --require-provenance --summary` 通过；实际读取 1440×900 和 2048×1320 的明暗四张 PNG，中文正常、全部节点及连线可见，主控边界清楚、无标签重叠。人工 `visual_review: passed`，布局修正 0 轮。`visual-check/server-monitor.visual-check.json` 和同目录联系页/PNG | 通过 |
+
+实际命令（在项目根目录，先 finalize 再 visual-check）：
+
+```bash
+ARCHIFY_CHROME=/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome node /root/.agents/skills/archify/bin/archify.mjs finalize architecture .archify/architecture-server-monitor-20261008-190825/candidate.json .archify/architecture-server-monitor-20261008-190825/server-monitor.html --repo-root .archify/architecture-server-monitor-20261008-190825/source-snapshot --quality showcase --json
+ARCHIFY_CHROME=/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome node /root/.agents/skills/archify/bin/archify.mjs visual-check .archify/architecture-server-monitor-20261008-190825/server-monitor.html --out-dir .archify/architecture-server-monitor-20261008-190825/visual-check --summary --require-provenance
+```
+
+最终规格 SHA-256：`0bd16312399f566b39b329859e1c3c984eaf834fddbaa8b4b3c3c64a93f7758f`；HTML SHA-256：`4a88a3690ffa54cdf4f4f0cc76116f22113b2f89d4a04f3f8e1e5f06d35da594`。早期校验发现隔离快照缺 origin 和一处引用超出文件末行，均已修正；首次浏览器发现未自动定位 Chromium，指定已安装路径后完整重跑通过。截图成功和人工视觉复核分别记录，没有将机器截图结果直接作为人工通过结论。产物为本地生成文件，不提交源码快照或测试截图。
+
+## 家庭 OpenWrt 路由器 Agent 升级（2026-10-08）
+
+按用户本次明确授权，仅通过 SSH 别名 **router** 更新家庭路由器的 Agent。系统为 **ImmortalWrt 24.10.6、Linux x86_64**，原生 procd 服务，主控节点 **ImmortalWRT**；Agent 于 **17:58:43–17:58:44（Asia/Shanghai）** 从 **v1.2.0 升至 v1.3.0**。使用此前生产阶段已完整验收和发布的同一 Linux amd64 程序，SHA-256 为 `9d98e1278f418161be86ec6065d3240b5a5b30bfe874fcf0ff59892ddd7e97e8`。沿用已通过的 Node/Go、主控、原生 Agent 及 11 项隔离部署专项验收；本轮没有业务源码改动或路由器软件包安装。
+
+升级前只读检查架构、磁盘、内存、Agent 进程/配置/服务和网络。保存旧程序、配置、月流量、原 procd 脚本及两个自启动链接，并核对归档内程序/配置/服务 SHA-256。通过 SSH 传送压缩的已验收程序，先校验大小、哈希并实际运行 `version`；同目录原子替换 `/usr/bin/jan-probe`，仅执行原有 `/etc/init.d/jan-probe restart`。保留原服务脚本与全部配置，脚本包含 Agent 检查失败时恢复旧程序的回退；实际升级成功，未触发回退。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| OR01 | 先确认兼容性、资源及正确节点，保留可回滚副本 | Linux x86_64，原程序及运行进程为 v1.2.0；配置 UUID 匹配主控 ImmortalWRT、无删除意图；overlay 可用约 684 MiB、内存可用约 14.9 GiB。受保护压缩备份 3,131,523 字节，程序、配置、服务内容哈希及启动链接核对通过。`before.json`、`state.json`、备份 `router-agent-before.tar.gz` | 通过 |
+| OR02 | 原子更新 Agent，保持原安装和 procd 自启动 | 上传 3,136,429 字节 gzip，解压程序 7,573,666 字节；运行新版 `version` 后替换，仅重启 Agent；安装与运行进程 SHA-256 均为已验收值，procd 实例 running，PID 19556。配置全文、325 字节原服务脚本及两个自启动链接完全一致，AUTO_UPDATE 保持 1。`upgrade.json`、`after.json`、`verification.json` | 通过 |
+| OR03 | 家庭网络配置、接口、路由、防火墙和关键服务保持 | `/etc/config/network`、`dhcp`、`firewall`、`openclash`、`dropbear` 共 5 项内容 SHA-256 完全相同；LAN/loopback/modem/WAN 接口状态及地址保持，IPv4/IPv6 默认路由和 IPv4 策略规则相同，防火墙结构哈希相同，boot ID 未变。procd、ubusd、netifd、dnsmasq、odhcpd、rpcd、pppd、clash PID 均保持，SSH 主守护进程仍在。`before.json`、`after.json`、`verification.json` | 通过 |
+| OR04 | 升级后 DNS 和外网仍可用，Agent 正常上报且月流量保留 | 升级前后均实际执行本机 DNS 查询、HTTPS 健康请求和 1.1.1.1 ping，全部通过；18:00:44 核查主控已收到安装完成后的 v1.3.0 新报告，距检查 57 秒。流量 PERIOD_START 相同，RX/TX 周期计数均不下降；Agent RSS 14,080 KiB、9 线程。`verification.json`、`agent-resources.txt` | 通过 |
+| OR05 | 清理本轮临时程序，保存私密回滚与执行记录 | 原程序、配置、流量、服务和启动链接备份及重启日志归档保留在主控受保护目录；路由器 `/tmp/jan-router-agent-v130-*` 和 `/usr/bin/.jan-probe-router-*` 本轮临时文件为 0，Agent 服务仍正常；清理首次失败备份产生的空目录。`cleanup.json` | 通过 |
+
+备份目录：`/opt/1panel/apps/jan_monitor/backups/router-agent-20261008T095500Z/`，目录 0700、文件 0600。证据目录：`output/test-results/router-agent-20261008/`，Git 忽略；未提交密钥、设备配置或测试产物。原程序 SHA-256 为 `4fdbe75c8e3053cd7e6a78e4ee34962355069b919ac29fe2921353b725ec2c46`。
+
+首次备份 SSH 传输中断；重连核对 boot ID、网络关键 PID 和 Agent 版本保持后，重新传输并校验成功。首次上传准备因本地内存输入对象不支持子进程 stdin 而失败，改用字节输入后完成；两次均发生在程序替换之前。防火墙比较使用 `nft -s -t list ruleset` 排除包计数及动态集合元素，接口/IPv6 路由比较排除自然递减的有效期。验证范围为路由器接口、关键服务和规则状态，以及本机 DNS、外网 HTTPS/ICMP；未从家庭终端发起端到端访问测试。没有修改或重启网络、DNS、代理和防火墙服务，也没有重启路由器。
+
+## 自动卸载功能生产部署与 11 台 VPS Agent 升级（2026-10-08）
+
+按用户授权先部署生产主控，再更新 SSH 配置中的 VPS，排除 **router、unraid**。主控于 **17:26:24（Asia/Shanghai）** 启动新版本，访问地址 https://jm.zedy.cc；生产镜像 `server-monitor:local` 与已通过下节完整回归、验收和真实 systemd 卸载测试的候选完全一致，ID 为 **`sha256:862f09e0c4dac25ba496b9c5455269690dcff8a884028de42d493b600375c7a5`**，发布标签 `server-monitor:remote-uninstall-20261008`。原生 Agent 最新版本为 **v1.3.0**。
+
+SSH 升级于 **17:29:58–17:33:17** 完成，11 台均从 v1.2.1 升至 v1.3.0，实际平台为 Linux amd64。全部使用严格 SSH 主机密钥校验；Evoxt 本次已有信任记录正常，未改动 SSH 配置或信任记录。程序经 SSH 传送、校验 SHA-256 后，运行原生 `install` 沿用已有配置；ix-entry 传输约 3 分钟，校验完成后才安装。amd64 程序 SHA-256：`9d98e1278f418161be86ec6065d3240b5a5b30bfe874fcf0ff59892ddd7e97e8`。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| RP01 | 将已完整验收的程序发布生产，确认镜像与工作区一致 | 镜像 Node 24.21.0；逐文件核对源码、前端、入口及 Agent 产物共 432 个文件，差异 0，manifest 仅 Linux amd64/arm64。`candidate-files.json` | 通过 |
+| RP02 | 发布前保留生产数据和回滚版本 | 使用 Node SQLite 在线 backup 得到一致快照，integrity=ok，17 节点、5 项设置、185,396 条历史；备份生产环境、容器元数据、Compose、34 个既有 Agent 归档文件和地区库，保留旧镜像回滚标签。`state.json`、受保护备份中的 `database-before.json`、`files-before.json` | 通过 |
+| RP03 | 新镜像先在生产数据副本上实际启动，验证迁移和文件保留 | 独立容器 `--network none`、关闭调度；健康、首页、后台入口、配置、版本和 manifest 接口均 200；节点/设置内容哈希一致，固定范围 184,373 条历史内容哈希一致，原 35 个归档/地区库文件未变，新删除意图表为空，新版本归档增加 4 个文件。`production-copy-result.json`、`copy-database.json` | 通过 |
+| RP04 | 生产替换容器，沿用端口、环境、数据和网络，节点恢复上报 | 使用既有 Compose、项目与生产 `.env` 执行 `up -d --no-build monitor`；环境、端口、挂载、网络、重启策略完全一致。17:36:00 复查 healthy、重启 0、integrity=ok，17/17 节点收到近期上报；节点/设置及固定范围历史哈希保持，历史为 185,439 条，原文件不变，Agent 归档合计 38 个文件。`deployment-result.json`、`database-after-deploy.json`、`database-final.json`、`final-result.json` | 通过 |
+| RP05 | 公网 HTTPS 能访问新版本并实际下载两个架构 | 健康、首页、配置、latest、目录和 manifest 均 200，latest=v1.3.0；两架构程序实际下载，大小及 SHA-256 与已验收本地产物一致，历史版本仍在目录，仅公开 Linux。`public-verification.json` | 通过 |
+| RP06 | 只更新授权 SSH 范围，核对节点身份后执行 | 13 个配置别名中排除 router/unraid，剩余 11 台全部严格校验登录、匹配既有 SERVER_ID 和主控地址，无待执行删除意图；上传程序先验大小及 SHA-256，再运行原生安装器。`ssh-preflight.json`、`ssh-upgrade.json` | 通过 |
+| RP07 | 升级后程序运行、原配置和月流量保留，主控收到新版报告 | 安装后及最终再次 SSH 核对 11 台：程序与运行进程哈希一致，jan-probe.service active，配置全文 SHA-256 相同、权限 0600，AUTO_UPDATE=1 保持，PERIOD_START 相同，RX/TX 周期计数不下降。17:36:00 主控 11/11 版本 v1.3.0，均有安装完成后的新上报，距检查 8–38 秒。各节点 `*-before.json`、`*-after.json`、`*-final.json`、`final-result.json` | 通过 |
+| RP08 | 真实生产看板在桌面/手机显示节点并接收实时消息 | Chromium 实际打开 HTTPS 看板，1440/375px 各显示 17 个节点，页面异常、HTTP 错误和横向溢出均 0；WSS 收到 hello/subscribed/batchUpdate。已查看桌面截图。`browser.json`、`production-dashboard-*.png` | 通过 |
+| RP09 | 完成升级后清理临时程序，保留私密回滚副本 | 11 台本轮 `/tmp/jan-agent-upgrade-v130-*` 均清理，服务仍 active；原配置、流量、服务单元和安装日志归档到本地受保护备份，另保留经哈希核对的旧程序。生产副本容器、复制数据和临时环境文件清理完成。`ssh-cleanup.json`、各节点 `*-cleanup.json` | 通过 |
+
+| SSH 别名 | 主控节点 | 运行程序 / 主控上报版本 | 状态 |
+| --- | --- | --- | --- |
+| bytevirt | ByteVirt | v1.3.0 / v1.3.0 | 通过 |
+| aaitr | AaITR-LAX | v1.3.0 / v1.3.0 | 通过 |
+| lightlayer | Lightlayer-HKG | v1.3.0 / v1.3.0 | 通过 |
+| netcup | netcup-VIE | v1.3.0 / v1.3.0 | 通过 |
+| ix-entry | QCloud-CAN | v1.3.0 / v1.3.0 | 通过 |
+| attvps | ATTVPS-LAX | v1.3.0 / v1.3.0 | 通过 |
+| dmit-lax | DMIT-LAX | v1.3.0 / v1.3.0 | 通过 |
+| dmit-tyo | DMIT-TYO | v1.3.0 / v1.3.0 | 通过 |
+| evoxt | Evoxt-KUL | v1.3.0 / v1.3.0 | 通过 |
+| moe | Moe-LON | v1.3.0 / v1.3.0 | 通过 |
+| xhosts | xHosts-LHR | v1.3.0 / v1.3.0 | 通过 |
+
+发布备份：`/opt/1panel/apps/jan_monitor/backups/remote-uninstall-20261008T092301Z/`，目录 0700，环境、容器元数据、SQLite 及节点配置归档 0600；回滚镜像标签 `server-monitor:rollback-remote-uninstall-20261008t092301z`。证据目录：`output/test-results/remote-uninstall-production-20261008/`，Git 忽略。保留期历史比较固定在备份 ID 范围，并给 7 天过期边界留出 1 小时，避免正常滚动清理造成假失败。
+
+首次生产副本 HTTP 检查因夹具使用错误的版本目录路径、未归一化后台路径而失败，修正 `smoke.py` 后通过，生产切换在最终检查通过后进行。汇总时修正了归档计数表达式，只统计文件，不将版本目录计入；实际为 34 个既有文件加 4 个新版文件。自动卸载执行证据沿用下节隔离 HTTP/WSS 及真实 systemd 的 11 项部署专项验收；本轮生产保持全部 17 个节点，仅验证发布、升级与恢复上报。未改动业务源码或其他 VPS 的更新策略。
+
+## 后台删除节点自动卸载 Agent（2026-10-08）
+
+本节记录主控删除指令和原生 Agent **v1.3.0** 的开发、构建及隔离验收；后续生产部署与 11 台 VPS 升级见上方记录。Agent 需升级至 v1.3.0 才能自动卸载。在线 WS 在删除时执行，HTTP 在下次上报执行，离线 Agent 重连后执行。普通 404、网络故障和无效签名不会触发卸载。
+
+环境：Node.js **24.21.0**、Go **1.26.8**、Docker **29.8.2**，Chromium **153.0.8010.12**。开发前依次执行 `npm ci`、`npm run geoip:download`、`npm run build`，保留修改前真实 v1.2.1 程序用于旧版兼容和实际升级。使用全新临时 SQLite、专用测试凭据、隔离 internal bridge、TLS 反代和独立 Agent 容器；systemd 环境预建测试镜像，私有 cgroup namespace，不挂载宿主系统目录或 cgroup。仅测试容器安装/卸载服务。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| RU01 | 安装依赖和 IP 库后完整构建，保留两个 Linux 目标 | 修改前 v1.2.1 和修改后 v1.3.0 的完整构建退出 0；候选 Docker 构建退出 0，镜像 manifest 与最终本地 manifest 逐字节一致，仅 Linux amd64/arm64。`npm-ci.log`、`baseline-geoip.log`、`baseline-build.log`、`build.log`、`final-agent-build.log`、`docker-build.log`、`image-agent-manifest.json` | 通过 |
+| RU02 | GUI 单台/批量删除后在线发送，离线及重启后补发；恢复和失败输入正确 | RM01–RM05 真实 HTTP、WS、SQLite 全通过：已认证 WS 关闭前收到签名命令，HTTP 下次请求收到同一命令，主控重建不丢失；错误密钥、未知/缺失 UUID 无卸载命令，同 UUID 恢复取消意图，批量失败整批回滚，未登录删除无效。`removal-controller.log`、`test-all.log` | 通过 |
+| RU03 | Agent 校验卸载意图并停止，普通错误不误删，失败缓存不持续增长 | Go 使用 Node 生成的固定 HMAC 向量，实连 HTTP/WS 验证取消和本地意图，校验错误签名/UUID/时间/命令 ID 拒绝，检查文件 0600、重配置意图失效及自定义前台配置隔离；450 次实际采样后仅 300 个样本，请求低于 2 MiB。Go vet/test 及额外 `go test -race ./internal/cfprobe` 退出 0。`test-all.log`、`final-agent-tests.log`、`go-race.log` | 通过 |
+| RU04 | 完整回归及真实主控、原生 Agent 仍可使用 | `npm run test:all` 退出 0：124/124 Node、Agent 配置、Go vet/test 通过；`npm run test:acceptance` 退出 0：19/19 主控及 7/7 原生验收通过，新增 NA07 确认删除后真实 HTTP Agent 退出，重启直接停止，不触碰宿主服务。`test-all.log`、`acceptance.log`、`controller-acceptance.json`、`native-acceptance.json` | 通过 |
+| RU05 | 在 TLS 容器实际安装、升级、WSS 删除、HTTP 离线删除、重建及旧版回退 | `npm run test:agent-deployment` 最终退出 0，ND01–ND09 全部通过；修改前真实 v1.2.1 自更新到 v1.3.0；ND07 WSS 删除后程序、配置、进程及临时卸载器消失；ND08 暂停纯 HTTP Agent、批量删除并重建主控，恢复后自行卸载；ND09 真旧版仍运行，手动卸载回退可用。`agent-deployment.log`、`deployment.json` | 通过 |
+| RU06 | 真正 systemd 系统服务和 cfsm 用户服务可自行卸载 | 启用 `AGENT_SYSTEMD_TEST_IMAGE` 后，ND10–ND11 实际在 systemd PID 1 容器安装、上报并删除，独立卸载单元完成清理；系统/用户服务文件、程序和配置移除，未再运行 Agent。与 ND01–ND09 合计 11/11。`agent-deployment.log`、`deployment.json` | 通过 |
+| RU07 | 用户从浏览器确认删除，桌面/手机及三语言提示可用 | Chromium 实际登录隔离 HTTPS 后台，中/英/日文 × 1440/375px 共 6 组检查自动卸载提示、旧版手动命令、弹窗宽度和确认按钮；最后实际点击删除，随后检查容器程序/配置和 Agent 进程已清除。页面异常 0，已查看中文桌面和日文手机截图。`browser.json`、`browser.log`、`delete-*.png` | 通过 |
+
+部署专项命令使用修改前真实 `AGENT_LEGACY_DIST=.../baseline-agent/v1.2.1` 和预建 `AGENT_SYSTEMD_TEST_IMAGE=server-monitor:remote-uninstall-systemd-test`。候选镜像 `server-monitor:agent-native`，ID **`sha256:862f09e0c4dac25ba496b9c5455269690dcff8a884028de42d493b600375c7a5`**。证据目录：`output/test-results/remote-uninstall-20261008/`；构建产物、日志和隔离数据库由 Git 忽略，未提交。
+
+初始额外 race 检查发现原有每日更新测试的共享计数未同步，已修正测试同步并重跑 Go vet/test 和 race 检查通过；日志保留为 `go-race-initial.log`。初次 systemd 验收因服务不继承 `SSL_CERT_FILE` 而无法信任测试自签名证书，第二次准备证书时遇到 systemd 启动清理 `/tmp` 的时序；改为用例开始前等待 systemd 启动完成并安装测试 CA，重跑全部 11 项通过。初始失败保留于 `initial-agent-deployment.log`、`initial-deployment.json` 和 `preparation-ca-initial.log`。没有改产品逻辑绕过 TLS 校验。
+
+本轮创建的测试容器、隔离网络和临时安装/systemd 镜像已清理，记录在 `cleanup.json`；保留候选镜像和 Git 忽略的证据目录供核验。
+
+实际运行平台为 Linux amd64；arm64 完成交叉编译、ELF/下载与 SHA-256 检查，未在 arm64 真机执行。OpenRC/procd/Synology 的独立卸载进程路径未做实机验收，systemd-run 不可用时的单元文件回退未做实际验收。删除指令只针对本版本主控记录的新删除事件；升级前已删除且没有删除意图记录的节点仍需手动清理。用户自定义前台运行只停止，不自动删除宿主服务。
+
+## SSH 批量升级 9 台生产 Agent（2026-10-08）
+
+按用户明确授权更新本机 SSH 配置中的节点，排除 `router`、`dmit-lax`、`unraid`。`evoxt` 首次连接因 SSH 主机密钥与既有记录不一致而被严格校验拒绝；用户随后明确选择保留 Evoxt，本轮没有登录或手动升级该节点。最终更新范围为下表 9 台，全部从 v1.2.0 升至 **v1.2.1**。
+
+使用当前已验收的 Linux amd64 程序，SHA-256 为 `92d7d7f63f7fd16d5f821169374998a403e3d4c0d002c45796f7886d0c4a486e`。8 台通过重启原生服务触发已有自动更新，16:16:19–16:16:34（Asia/Shanghai）完成安装；ix-entry 的公网下载超时后，通过 SSH 传送同一已校验程序，16:27:29 使用原生安装器沿用已有配置完成升级。
+
+| SSH 别名 | 主控节点 | 实际升级方式 | 运行程序及主控上报版本 | 状态 |
+| --- | --- | --- | --- | --- |
+| bytevirt | ByteVirt | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| aaitr | AaITR-LAX | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| lightlayer | Lightlayer-HKG | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| netcup | netcup-VIE | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| ix-entry | QCloud-CAN | SSH 传送、校验及原生安装 | v1.2.1 / v1.2.1 | 通过 |
+| attvps | ATTVPS-LAX | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| dmit-tyo | DMIT-TYO | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| moe | Moe-LON | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+| xhosts | xHosts-LHR | 启动检查、自动下载及安装 | v1.2.1 / v1.2.1 | 通过 |
+
+| 编号 | 用户功能、实际操作及预期 | 实测证据 | 状态 |
+| --- | --- | --- | --- |
+| PA01 | SSH 连接目标并核对既有安装，确保升级正确节点 | 9 台均为 Linux x86_64、root 系统服务；读取白名单配置匹配主控 SERVER_ID；旧程序和运行进程 SHA-256 均对应 v1.2.0，本地 AUTO_UPDATE=1 | 通过 |
+| PA02 | 重启触发已有自动更新，完成下载、校验、安装及重启 | 8 台执行 `systemctl restart jan-probe.service` 成功；journalctl 记录 target=v1.2.1、systemd-run、60 秒延迟及新版启动；再次启动检查均记录 current version is up to date | 通过 |
+| PA03 | ix-entry 自动从公网下载新版，确认实际结果 | `/agent/latest` 返回 v1.2.1，版本目录 HTTP 200；程序下载持续增长至约 6.3 MB，但 16:20:19 日志为 `auto update download failed target=v1.2.1: context deadline exceeded`，未完成安装 | 失败，已用 PA04 完成升级 |
+| PA04 | 对下载超时的 ix-entry 通过 SSH 分发同一程序，并沿用现有配置安装 | 本机和传送后的 7,536,802 字节程序 SHA-256 均匹配上述发布校验值；`new.bin install` 退出 0，服务 active/running，程序版本和 `/proc/MainPID/exe` 均为已校验 v1.2.1 | 通过 |
+| PA05 | 升级后实际服务可用，配置、自动更新和月流量保留 | 9 台 service 均 active/running；安装文件和运行进程 SHA-256 匹配新版；配置全文哈希与升级前相同，AUTO_UPDATE=1 保留；traffic.dat 的 PERIOD_START 不变、RX_PERIOD/TX_PERIOD 均未减少 | 通过 |
+| PA06 | 从主控确认所有目标以新版本恢复认证上报 | 16:29:23 通过 Node SQLite `readOnly:true` 查询，9/9 节点 server_latest 的 agent_version 均为 v1.2.1，认证接收时间为 16:28:23–16:28:40 | 通过 |
+| PA07 | 清理本轮 ix-entry 的临时程序与配置副本 | 确认安装文件及运行进程 SHA-256 后删除本轮唯一临时目录，4 个文件、15,074,595 字节；目录不存在，安装后程序仍返回 v1.2.1 | 通过 |
+
+没有修改 Agent、主控业务代码、自动更新策略或远端 SSH 信任记录。使用此前完整构建、回归及隔离安装/更新验收通过的同一 v1.2.1 程序，本轮未重新构建或重跑完整测试套件；本节仅报告上述生产 SSH、服务、程序校验、持久配置/流量及真实上报的实际验证。没有生成本地测试产物或提交密钥，原生日志保留在各机器 journal 中。Evoxt 未经本轮手动更新，但截至 16:29:23 主控也已收到它的 v1.2.1 上报。
+
+## GUI 仍显示 Agent v1.2.0 的只读核查（2026-10-08）
+
+2026-10-08 16:01–16:03（Asia/Shanghai）核查生产版本接口、SQLite 最新上报及同机原生 Agent。主控已提供 v1.2.1，17 台节点仍实际运行并上报 v1.2.0；后台版本列读取节点上报的 `agent_version`。现有自动更新在 Agent 启动时检查，随后每 24 小时检查；主控部署不会主动触发各节点升级。本节仅记录诊断，没有修改业务代码、重启服务或升级生产 Agent。
+
+| 编号 | 核查项、实际操作及预期 | 实测结果 | 状态 |
+| --- | --- | --- | --- |
+| AV01 | curl 查询主控回环和公网 `/agent/latest`，确认新版已发布 | `http://127.0.0.1:26129/agent/latest`、`https://jm.zedy.cc/agent/latest` 均成功返回 `v1.2.1` | 通过 |
+| AV02 | 使用 Node SQLite `readOnly:true` 查询节点最新版本、接收时间和后台更新标记 | 08:01:59 UTC 查询：17/17 节点最新版本均为 `v1.2.0`，认证接收时间均在 08:01:20–08:01:22 UTC，后台 `auto_update` 均为 `1` | 通过 |
+| AV03 | 查询同机 systemd 服务、程序版本、白名单配置及更新日志 | `jan-probe.service` 正在运行，`jan-probe version` 返回 v1.2.0；本地 `AUTO_UPDATE=1`。11:22:58 启动检查访问主控失败，日志为 `connect: connection refused`；此后没有新的自动更新检查记录 | 通过 |
+
+同机 Agent 未重启时，按现有 24 小时间隔，下一次检查约为 10 月 9 日 11:23（Asia/Shanghai）。其他节点的本地配置及更新日志未远程核查，后台勾选值不能证明它们安装时已启用本地更新；具体检查时间取决于各节点进程。已启用本地自动更新的 systemd 节点可通过重启 `jan-probe` 触发启动检查，成功下载后按现有 60 秒延迟安装。这是只读诊断，未运行构建、完整回归或隔离部署测试，未将既有验收结果计作本轮通过。
+
+## Linux 双架构 Agent 生产部署及测试、备份数据清理（2026-10-08）
+
+已于 **2026-10-08 15:48:13（Asia/Shanghai）** 开始切换至已验收镜像，15:48:44 完成部署及节点恢复检查；15:55:16 完成用户要求的清理。生产地址：https://jm.zedy.cc。`server-monitor:local` 和发布标签 `server-monitor:linux-only-20261008` 指向 `sha256:6c759939ceb74192beea544eac4189b1bbb3c6d00c7dc0253092c5fa7a1715b6`；内置 Agent 为 **v1.2.1**，仅发布 Linux amd64/arm64。
+
+部署直接使用此前完整构建、118 项 Node 回归、Agent 配置/Go vet/test、19 项主控、6 项原生和 6 项隔离 Docker 验收通过的镜像，没有重新生成未验收的程序。发布前逐文件核对 109 个源码文件、315 个前端资源、入口、package.json、安装脚本和 Agent manifest；与工作区验收版本一致。镜像 npm 安装/裁剪只规范化 package-lock 中 chart.js、picomatch、vite、vue 的 4 个 peer 元数据标记，其余锁定内容完全一致。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果 | 状态 |
+| --- | --- | --- | --- |
+| LXP01 | 发布前用生产数据库及归档副本运行候选，确认新版本不破坏既有数据 | SQLite 在线一致性快照 integrity=ok；断网隔离容器的 5 个 HTTP 路由均 200，latest=v1.2.1，公开目录仅 Linux，各历史版本 FreeBSD 下载均 404；17 节点、5 项设置、185,207 条历史及旧归档保持一致 | 通过 |
+| LXP02 | 使用原 Compose 环境、卷、端口和网络替换主控，保存配置及历史 | 容器 healthy、重启 0；环境变量逐值一致，端口仍为 127.0.0.1:26129→8080，生产数据卷、网络、init 和 unless-stopped 均保留；节点/设置完整内容哈希一致，历史 185,207→185,213，7 天保留期内缺失 0 | 通过 |
+| LXP03 | 历史 Agent 文件继续保留，新版本正确归档，公网仅提供 Linux | 原 30 个归档文件 SHA-256 全部不变，新增 v1.2.1 的 4 个文件，共 34 个；公网 6 个主控/安装/目录路由均 200，latest=v1.2.1，两个新 Linux 程序实际下载后大小和 SHA-256 正确；所有公开历史版本的 FreeBSD amd64/arm64 下载均 404 | 通过 |
+| LXP04 | 真实节点重新连接，公网看板、移动布局及登录入口可用 | 17/17 个部署前活跃节点均有切换后认证上报；Chromium 实际显示 17 张卡片，1440px/375px 页面正常且手机无横向溢出，收到 WSS batchUpdate，页面异常 0，桌面/手机截图已查看；后台接受现有用户名/密码并正确要求二步验证 | 通过 |
+| LXP05 | 按用户要求删除测试和备份数据，保留生产配置、历史及 Agent 归档 | 删除工作区 output、生产 backups、6 个 /tmp 测试夹具、旧本地 v1.1.1/v1.2.0 构建目录及生产卷中的 2 个遗留 .backup SQLite 辅助文件；共 1,660 个文件、1,319,629,696 字节（约 1.23 GiB）。移除 5 个测试/旧发布/回滚镜像标签；仅保留当前 local 和 linux-only 发布标签 | 通过 |
+| LXP06 | 删除后再次确认真实服务与数据完整，测试/备份路径确已消失 | 全部目标路径不存在，生产容器仍 healthy、重启 0；数据库 integrity=ok，17 节点、5 项设置的内容哈希及 34 个归档文件完全一致，历史已增至 185,256；公网健康、节点、最新 Agent 接口继续返回 200 | 通过 |
+
+本轮曾因 package-lock 原始字节哈希与 npm 规范化后的 peer 元数据不同而暂停发布，确认其余锁定内容完全一致后继续；初次公网夹具读取仅登录后可见的版本字段，以及等待二步验证后的列表，均属夹具假设错误，调整为公开版本接口和实际二步验证入口后通过。未修改凭据、二步验证配置或消耗验证码/恢复码。生产后台验证到既有二步验证入口；登录后的安装/卸载交互由此前隔离环境的 36 组浏览器检查及生产资源一致性验证覆盖。
+
+原始日志、截图、隔离数据库及临时生产快照已按用户明确要求删除，验证汇总保留于本文；历史章节中的 output 证据路径保留为当时执行记录，相关文件本轮已清理。生产 `.env`、SQLite/WAL、GeoIP 和 Agent 历史归档保持在原卷中，Node/Go 开发工具链及当前构建产物保留。没有手动安装或强制升级生产机器上的 Agent；已启用本地自动更新的节点仍按既有启动/24 小时检查机制获取新版。
+
+## Agent 仅保留 Linux：FreeBSD 代码与分发清理（2026-10-08）
+
+Agent 独立版本从 **v1.2.0** 递增为 **v1.2.1**，默认构建和镜像只携带 Linux amd64/arm64。删除 FreeBSD 专用采集文件、安装识别分支、校验命令回退和后台选项，公开接口不再暴露任何版本的 FreeBSD 程序。历史归档读取兼容保留，避免移除平台导致同版本 Linux 历史程序也不可用；归档文件不自动删除。原始上游说明和既有历史报告保留原文。
+
+使用独立工具目录中的 Node.js **24.21.0**、Go **1.26.8**、Docker **29.8.2** 和 Chromium **153.0.8010.12**。开发前依次运行 `npm ci --no-audit --no-fund`、`npm run geoip:download`、`npm run build`，保留修改前实际构建的 v1.2.0 四平台产物供归档升级验证；GeoIP 为 2026-10 库。测试预建全新 SQLite、专用夹具凭据、随机回环端口或独立 Docker bridge，关闭浏览器和归档升级夹具的调度；未使用生产数据。
+
+| 编号 | 用户功能、操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| LX01 | 准备依赖/IP 库后完整构建，镜像仅携带两个 Linux 程序 | 修改前、后完整构建及 `docker build --progress=plain -t server-monitor:agent-native .` 均退出 0；镜像 `/app/agent-dist/` 仅 `install.sh`、`v1.2.1`，版本目录仅两个程序及 manifest/checksums，本地与镜像 manifest 完全一致，运行时无 Go 编译器。`npm-ci.log`、`baseline-geoip.log`、`baseline-build.log`、`build.log`、`docker-build.log`、`archive-upgrade.json` | 通过 |
+| LX02 | 拒绝 FreeBSD 构建/安装，Linux 两架构及其 uname 别名正常 | 实际执行 `-targets freebsd/amd64`、`freebsd/arm64`、混合 `linux/amd64,freebsd/arm64` 均退出 1、报告 unsupported target，未创建输出目录。Shell 平台用例验证 Linux x86_64/amd64、aarch64/arm64，FreeBSD amd64/arm64 等不支持目标在任何下载前失败。`reject-targets.json`、`test-all.log` | 通过 |
+| LX03 | 当前和历史 Linux 可下载，FreeBSD 不出现在目录且不可下载 | 回归实际检查两个 64 位 Linux ELF 的 CPU/OS、大小、SHA-256、HTTP 和归档；混合平台旧归档完整保留并只公开 Linux，只有 FreeBSD 的版本不参与 latest/目录且文件、manifest/checksums 均返回 404。`test-all.log` | 通过 |
+| LX04 | 实际后台安装/卸载只提供 Linux，三语言桌面和手机复制可用 | Chromium 实际登录隔离 HTTPS 主控，在中/英/日文、1440/375px 下检查选项恰为 Linux systemd、其他 Linux；逐一切换当前用户/专用用户/其他 Linux 的安装和卸载方式，共 36 组剪贴板逐字比较通过，安装复制后关闭弹窗，提示无 FreeBSD，页面异常 0。`browser.json`、`browser.log`、`install-mobile.png`（已查看） | 通过 |
+| LX05 | 完整回归及真实主控、Agent 核心流程可用 | `npm run test:all` 退出 0：118/118 Node、Agent 配置、Go vet/test 全部通过；`npm run test:acceptance` 退出 0：19/19 主控、6/6 原生验收，覆盖下载、HTTP/WS、配置下发、配置/流量/历史保留及坏下载拒绝。`test-all.log`、`acceptance.log`、`controller-acceptance.json`、`native-acceptance.json` | 通过 |
+| LX06 | 在隔离容器中实际安装、更新、重建、关闭更新及卸载 | `npm run test:agent-deployment` 退出 0，ND01–ND06 全部通过；TLS/WSS 实连，v1.0.99 测试程序实际自更新到 v1.2.1，服务仍为 jan-probe，配置/月流量保留；主控重建后旧版本/数据保留且探针重新上报，卸载后程序和配置消失。目录仅两个 Linux 目标，FreeBSD 下载为 404。`agent-deployment.log`、`deployment.json`、`linux-install.log`、`linux-update.log`、`linux-uninstall.log` | 通过 |
+| LX07 | 已有 v1.2.0 四平台归档升级和再次重建，历史完整且 Linux 可继续安装 | 在全新隔离数据卷预置修改前实际构建的 v1.2.0，然后启动和重建新镜像；两轮均健康，latest=v1.2.1，公开两个版本各仅 Linux 两目标；每轮四个 Linux 文件实际下载校验通过，旧/新版本 FreeBSD GET/HEAD 均 404，旧归档 6 个文件 SHA-256 完全不变，新版本正确归档。`archive-upgrade.json` | 通过 |
+
+首次浏览器夹具使用 HTTP，实际复制被页面既有 HTTPS 要求阻止；改用预建隔离 HTTPS 反代后通过，失败证据保留在 `browser-initial-http.*`。首次归档升级夹具将端口直接发布到 Docker internal 网络，Docker 未提供公开端口；调整为独立 bridge 加回环发布后通过，初始记录保留在 `archive-upgrade-initial-internal.*`。两次均为测试环境问题，没有修改产品逻辑来绕过。
+
+开发阶段证据目录：`output/test-results/linux-only-agent-20261008/`（Git 忽略，后续按用户要求删除）。测试镜像 ID：`sha256:6c759939ceb74192beea544eac4189b1bbb3c6d00c7dc0253092c5fa7a1715b6`。本轮创建的容器和网络已清理；后续生产部署与清理见本文顶部记录。原生实际运行平台为 Linux amd64，arm64 完成交叉编译、ELF 检查和下载校验，未在 arm64 真机执行；Docker 使用后台进程模式和合成 v1.0.99 旧版本，不将本轮记为真实 systemd 用户服务或旧 cf-probe 服务迁移验收。
+
+## 国家地区旗帜恢复与生产部署（2026-10-08）
+
+已于 **2026-10-08 15:20:09（Asia/Shanghai）** 部署至 https://jm.zedy.cc。生产镜像 `server-monitor:local` 对应候选 `server-monitor:region-flags-20261008`，镜像 ID 为 `sha256:cee2dbb7aa362dfed5f70e91b3987c05aa0b8324d4a1278edaee8448a8336ffe`。仅移除地区旗帜强制映射、恢复台湾 SVG，并同步修正 Scriptable 脚本；GeoIP 更新机制和地区数据未改动。
+
+开发环境使用独立工具目录中的 Node.js **24.21.0**、Go **1.26.8** 和缓存的 Chromium **153.0.8010.12**。修改前依次完成 `npm ci --no-audit --no-fund`、`npm run geoip:download` 和 `npm run build`；宿主默认 Node 26 的首次安装产生引擎提示，随后以 Node 24 重做安装。测试预先准备全新临时 SQLite、专用测试凭据和随机回环端口；浏览器和容器夹具关闭调度，不使用生产数据。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| FL01 | 安装依赖、准备 IP 库、完整构建后可正常启动 | Node 24 安装和修改前/后完整构建退出 0；生成 Linux/FreeBSD amd64/arm64 四类 Agent 及前端；GeoIP 为 2026-10 库。`npm-ci-node24.log`、`baseline-geoip.log`、`baseline-build.log`、`build.log` | 通过 |
+| FL02 | TW/HK/MO/CN/US 分别显示对应旗帜 | 实际创建 5 台隔离节点并上报，检查条形/环形/列表三种首页视图、地区筛选、详情、后台，图片路径分别为 tw/hk/mo/cn/us，图片加载成功；375px 无横向溢出，桌面和手机截图已查看。修改前 TW 加载 cn，修改后加载 tw。`baseline-browser.json`、`fixed-browser.json`、`fixed-desktop.png`、`fixed-mobile.png` | 通过 |
+| FL03 | 原始台湾 SVG 与小组件地区映射恢复 | HTTP `/flags/tw.svg` 与上游 v7.5.0 及最初导入文件一致，SHA-256 `931757f06b9ee751fd1a0cc8dd7cf862e21fdcaf894d10ed7bcc68dabcca59ad`；实际执行 Scriptable 源码中的映射函数，TW/HK/MO/CN/US、带空格小写、空值和 XX 共 8 项通过。连同 FL02 共 39 项检查，页面异常 0。`fixed-browser.json` | 通过；未使用实体 iOS 设备 |
+| FL04 | 完整回归与实际主控/Agent 验收 | `npm run test:all` 退出 0，118/118 Node 测试、Agent 配置及 Go vet/test 全部通过；`npm run test:acceptance` 退出 0，19/19 主控及 6/6 原生 Agent 验收通过。`test-all.log`、`acceptance.log` | 通过 |
+| FL05 | 部署已测试产物且保留数据和运行参数 | 候选镜像 315 个资源哈希与已测试 dist 一致，Agent manifest 与原生产完全一致；断网隔离容器检查 5 个 HTTP 路由和 5 张旗帜成功。部署前在线 SQLite 备份 integrity=ok；部署后 17 台节点、5 项设置的完整内容哈希一致，历史 184,689→184,703，Agent 归档逐文件一致；端口、挂载、网络、环境变量值保留，容器 healthy、重启 0。`docker-build.log`、`deployment.json` | 通过 |
+| FL06 | 公网用户可正常看到旗帜且节点继续上报 | 首页、配置、节点接口及健康检查均 200；公网 5 张旗帜与源码哈希一致，首页 TW/HK/CN/US 及台湾详情图片实际加载成功，375px 无横向溢出，收到真实 WSS batchUpdate，页面异常 0；17/17 节点均有部署后新上报。台湾节点截图已查看。`production.json`、`production-taiwan.png` | 通过 |
+
+首次浏览器检查在连续改变详情 hash 路由时读取了上一节点内容；夹具改为每个详情页从空白页独立进入后通过，初始记录保留在 `baseline-browser-initial.*`、`baseline-browser-navigation.*`。首次候选构建受根目录 `.dockerignore` 排除 dist 影响，改用只含已测试 dist 和对应源码的独立构建上下文后通过。首次上线按原顺序比较环境变量数组未通过，触发自动回滚；改为排序后逐值核对重新上线通过，初始失败记录保留在 `deployment-initial.json`、`release-initial.log`。没有将失败记录覆盖为通过。
+
+证据目录：`output/test-results/region-flags-20261008/`，由 Git 忽略。生产备份：`/opt/1panel/apps/jan_monitor/backups/region-flags-20261008T072001Z`（目录 0700、环境文件和 SQLite 备份 0600）；回滚镜像：`server-monitor:rollback-region-flags-20261008t072001z`。部署记录也保留在备份的 `verification/deployment.json`。本次没有改动 Agent 安装、更新或分发，无需运行 `test:agent-deployment` 专项；实体 iOS 小组件需由用户重新复制更新后的脚本验证。
+
 ## CI 探针测试矩阵仅保留 Linux（2026-10-05）
 
 提交 `d172116` 推送至 `codex/self-hosted-native-agent` 后，GitHub Actions 运行 [37262134043](https://github.com/EnjuYeung/CF-Server-Monitor/actions/runs/37262134043)。

@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-09-30；版本：3.0.0。
+更新时间：2026-10-08；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -12,6 +12,7 @@
 | 安全入口、登录、权限、会话 | src/utils/adminPath.js、src/middleware/auth.js、src/handlers/admin.js | src/frontend/utils/adminAccess.js；A02、A11、S01/S07/S08 |
 | 2FA 绑定、动态码与恢复码 | src/services/twoFactor.js、src/handlers/twoFactor.js | TwoFactorPanel.vue、AdminLogin.vue；test/admin-security.test.js S02–S06 |
 | 服务器增删改、排序、导入导出 | src/handlers/servers.js | src/services/servers.js、serverInput.js；test/review-regressions.test.js；A03、A03b、A13 |
+| 删除节点后自动卸载 Agent | src/services/agentRemoval.js、servers.js、handlers/update.js、realtime/RealtimeHub.js | agent_removals 持久意图、签名指令、HTTP/WS 补发；agent/internal/cfprobe/remote_uninstall*.go；test/agent-removal.test.js、原生 NA07、部署 ND07–ND11 |
 | 修改凭证与会话撤销 | src/services/adminSettings.js、src/handlers/admin.js | 版本前置条件、同步事务、2FA 保留；test/credential-change.test.js |
 | 认证上报接收时间与在线判定 | src/realtime/LatestReports.js、src/services/serverPresence.js | server_presence；HTTP/WS、离线告警、看板及后台统计 |
 | 最新回放与资源告警窗口 | src/realtime/LatestReports.js、ResourceAlertWindows.js | RealtimeHub 组合调用；test/realtime-hub.test.js |
@@ -38,7 +39,7 @@
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |
 | Agent 每日更新与 jan-probe 服务迁移 | agent/internal/cfprobe/update.go、service_migration.go、install.go、platform_unix.go | 本地 AUTO_UPDATE 开关、24 小时调度、新旧服务互斥与配置保留；update_schedule_test.go、service_migration_test.go、test/agent-deployment.js |
-| Agent 多平台构建 | agent/tools/build/main.go、scripts/agent.js | Linux/FreeBSD 各 amd64/arm64 共 4 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |
+| Agent 多架构构建 | agent/tools/build/main.go、scripts/agent.js | Linux amd64/arm64 共 2 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |
 | 构建 | scripts/build.js、vite.config.js | npm run build、Dockerfile、.github/workflows/test.yml |
 
 ## 测试入口

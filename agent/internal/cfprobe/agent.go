@@ -20,12 +20,15 @@ import (
 )
 
 type Agent struct {
-	cfg     Config
-	cfgMu   sync.RWMutex
-	paths   Paths
-	log     logger
-	version string
-	ctx     context.Context
+	cfg                Config
+	cfgMu              sync.RWMutex
+	paths              Paths
+	log                logger
+	version            string
+	ctx                context.Context
+	cancel             context.CancelFunc
+	uninstallMu        sync.Mutex
+	uninstallRequested bool
 
 	mu         sync.RWMutex
 	probes     ProbeSnapshot
@@ -65,12 +68,15 @@ const (
 	metricsProbeWindowSampleCount = 6
 	metricsProbeSampleCount       = 1
 	configStateReportInterval     = time.Minute
-	agentWSSModeHeader            = "X-Agent-Wss-Mode"
-	agentWSSReasonHeader          = "X-Agent-Wss-Reason"
-	agentWSSModeActive            = "active"
-	agentWSSModeInactive          = "inactive"
-	agentWSSScheduleInactive      = "wss_schedule_inactive"
-	agentWSSScheduleEmpty         = "wss_schedule_empty"
+	// The controller accepts at most 300 samples per report. Keep failed HTTP
+	// reports bounded so a long-offline Agent can still receive uninstall intent.
+	agentSampleBufferLimit   = 300
+	agentWSSModeHeader       = "X-Agent-Wss-Mode"
+	agentWSSReasonHeader     = "X-Agent-Wss-Reason"
+	agentWSSModeActive       = "active"
+	agentWSSModeInactive     = "inactive"
+	agentWSSScheduleInactive = "wss_schedule_inactive"
+	agentWSSScheduleEmpty    = "wss_schedule_empty"
 )
 
 type timedProbeResult struct {
@@ -171,14 +177,19 @@ func Run(configFile string, debug bool, version string) error {
 		return errors.New("配置缺失: SERVER_ID/SECRET/CONTROLLER_URL 不能为空")
 	}
 	normalizeConfigIntervals(&cfg)
+	if _, pending := readRemoteUninstallIntent(paths, cfg); pending {
+		return scheduleRemoteUninstall(paths, cfg)
+	}
 	if scheduled, err := scheduleLegacyUserServiceMigration(defaultPaths(), configFile, debug); err != nil {
 		fmt.Printf("[WARN] Service name migration could not be scheduled: %v\n", err)
 	} else if scheduled {
 		fmt.Println("[INFO] Service migration cf-probe -> jan-probe scheduled")
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
+	signalCtx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
 
 	a := &Agent{
 		cfg:          cfg,
@@ -186,6 +197,7 @@ func Run(configFile string, debug bool, version string) error {
 		log:          newLogger(debug),
 		version:      version,
 		ctx:          ctx,
+		cancel:       cancel,
 		prevNet:      readNetBytes(cfg.Interface),
 		prevTime:     time.Now(),
 		wake:         make(chan struct{}, 1),
@@ -211,7 +223,13 @@ func Run(configFile string, debug bool, version string) error {
 	} else {
 		a.log.info("auto update disabled: local AUTO_UPDATE=0")
 	}
-	return a.loop(ctx)
+	if err := a.loop(ctx); err != nil {
+		return err
+	}
+	if _, pending := readRemoteUninstallIntent(paths, a.configSnapshot()); pending {
+		return scheduleRemoteUninstall(paths, a.configSnapshot())
+	}
+	return nil
 }
 
 func (a *Agent) loop(ctx context.Context) error {
@@ -407,6 +425,9 @@ func (a *Agent) handleWSSRuntimeHeaders(headers http.Header) {
 }
 
 func (a *Agent) tick() {
+	if a.ctx != nil && a.ctx.Err() != nil {
+		return
+	}
 	now := time.Now()
 	cfg := a.configSnapshot()
 	reportInterval := time.Duration(cfg.ReportInterval) * time.Second
@@ -467,6 +488,11 @@ func (a *Agent) tick() {
 	}
 	m := a.buildMetrics(cfg, cpu, netNow, rxSpeed, txSpeed, a.monthlyRX, a.monthlyTX, a.diskIO)
 	if shouldSample {
+		if len(a.samples) >= agentSampleBufferLimit {
+			copy(a.samples, a.samples[len(a.samples)-agentSampleBufferLimit+1:])
+			clear(a.samples[agentSampleBufferLimit-1:])
+			a.samples = a.samples[:agentSampleBufferLimit-1]
+		}
 		a.samples = append(a.samples, metricSample{
 			at:      now,
 			metrics: sampleMetricsToMap(m),
@@ -744,6 +770,9 @@ func (a *Agent) handleReportResponse(statusCode int, respBody []byte, headers ht
 }
 
 func (a *Agent) handleTimedReportResponse(statusCode int, respBody []byte, headers http.Header, started, received time.Time) {
+	if a.handleRemoteUninstall(respBody) {
+		return
+	}
 	a.log.debugf("report response http=%d body=%s", statusCode, strings.TrimSpace(string(respBody)))
 	if statusCode < 200 || statusCode >= 300 {
 		return

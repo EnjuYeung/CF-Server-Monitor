@@ -65,6 +65,9 @@ export async function initDatabase(db) {
         server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
         last_seen INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS agent_removals (
+        server_id TEXT PRIMARY KEY, command_id TEXT NOT NULL, deleted_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS runtime_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS notification_outbox (
         id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL,

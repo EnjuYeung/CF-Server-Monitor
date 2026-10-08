@@ -72,7 +72,7 @@ test('restricted platform downloads preserve immutable mixed-platform archives',
   const binary = Buffer.from('archived Agent fixture');
   const sha256 = createHash('sha256').update(binary).digest('hex');
   const linux = 'cf-probe-linux-amd64';
-  const removed = ['cf-probe-linux-386','cf-probe-linux-armv7','cf-probe-freebsd-arm','cf-probe-darwin-amd64','cf-probe-windows-amd64.exe'];
+  const removed = ['cf-probe-linux-386','cf-probe-linux-armv7','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64','cf-probe-freebsd-arm','cf-probe-darwin-amd64','cf-probe-windows-amd64.exe'];
   async function release(version,names) {
     await mkdir(join(bundled,version),{recursive:true});
     const manifest = {schema_version:1,version,published_at:'2026-09-16T00:00:00Z',assets:names.map(name=>({name,size:binary.length,sha256}))};
@@ -82,6 +82,7 @@ test('restricted platform downloads preserve immutable mixed-platform archives',
   await release('v1.1.0',[linux,...removed]);
   await release('v1.1.1',[linux]);
   await release('v9.0.0',['cf-probe-darwin-arm64']);
+  await release('v9.1.0',['cf-probe-freebsd-amd64','cf-probe-freebsd-arm64']);
   await writeFile(join(bundled,'install.ps1'),'legacy installer');
   const registry = new AgentDistribution(bundled);
   await registry.archiveTo(archive);
@@ -96,6 +97,7 @@ test('restricted platform downloads preserve immutable mixed-platform archives',
   assert.equal(catalog.length,2);
   for (const item of catalog) assert.deepEqual(item.assets.map(asset=>asset.name),[linux]);
   for (const name of removed) assert.equal((await request('v1.1.0/'+name)).status,404);
+  for (const name of ['manifest.json','checksums.txt','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64']) assert.equal((await request('v9.1.0/'+name)).status,404);
   assert.equal((await request('install.ps1')).status,404);
   assert.equal((await request('v1.1.0/'+linux)).status,200);
   assert.deepEqual((await (await request('v1.1.0/manifest.json')).json()).assets.map(asset=>asset.name),[linux]);

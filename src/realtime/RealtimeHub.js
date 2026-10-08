@@ -4,6 +4,7 @@ import { maskPublicIpUpdate } from '../utils/publicMetrics.js';
 import { LatestReports } from './LatestReports.js';
 import { saveMetricsHistory } from '../database/schema.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
+import { getAgentUninstallCommand } from '../services/agentRemoval.js';
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
 import {
   AGENT_CONFIG_LEGACY_SCHEMA_VERSION,
@@ -181,8 +182,11 @@ export class RealtimeHub {
     for (const ws of this.frontendSockets) ws.close(1008, 'configuration changed');
   }
 
-  removeServer(id) {
-    for (const ws of this.standardAgentWebSockets) if (ws.getContext().serverId === id) ws.close(1008, 'server removed');
+  removeServer(id, command = null) {
+    for (const ws of this.standardAgentWebSockets) if (ws.getContext().serverId === id) {
+      if (command) this._sendWsJson(ws, command);
+      ws.close(1008, 'server removed');
+    }
     this.agentServerDetails.delete(id); this.agentHistoryWrites.delete(id);
     this.latestReports.delete(id); this.resourceAlerts.delete(id);
     const pending = this.pendingFrontendUpdates.get(id);
@@ -386,7 +390,12 @@ export class RealtimeHub {
     }
 
     const serverDetail = await this._getAgentServerDetail(serverId);
-    if (!serverDetail) { this._closeWsWithError(ws, 'Server not found', 404); return null; }
+    if (!serverDetail) {
+      const command = getAgentUninstallCommand(this.env, serverId);
+      if (command) this._sendWsJson(ws, command);
+      this._closeWsWithError(ws, 'Server not found', 404);
+      return null;
+    }
 
     const agentVersion = normalizeAgentVersion(
       data.agent_version ??

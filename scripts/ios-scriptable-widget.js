@@ -42,7 +42,6 @@ function requiredServerId() {
 function getFlagRegionCode(region) {
   const code = String(region || "").trim().toUpperCase();
   if (!code || code === "XX") return "";
-  if (code === "TW" || code === "HK" || code === "MO") return "cn";
   return code.toLowerCase();
 }
 

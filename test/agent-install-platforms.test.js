@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 
 const exec = promisify(execFile);
 
-test('POSIX bootstrap selects exactly the four supported platform artifacts', async t => {
+test('bootstrap selects only Linux amd64/arm64 artifacts and rejects unsupported platforms before download', async t => {
   const root = await mkdtemp(join(tmpdir(),'agent-bootstrap-platforms-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   const bin = join(root,'bin'); await mkdir(bin);
@@ -35,7 +35,7 @@ esac
   });
   for (const [os,arch,asset] of [
     ['Linux','x86_64','cf-probe-linux-amd64'], ['Linux','aarch64','cf-probe-linux-arm64'],
-    ['FreeBSD','amd64','cf-probe-freebsd-amd64'], ['FreeBSD','arm64','cf-probe-freebsd-arm64']
+    ['Linux','amd64','cf-probe-linux-amd64'], ['Linux','arm64','cf-probe-linux-arm64']
   ]) {
     await writeFile(join(root,'requests'),'');
     const result = await run(os,arch,asset);
@@ -44,7 +44,7 @@ esac
     assert.equal(requests.length,3);
     assert.equal(requests.at(-1),`https://fixture.invalid/agent/v1.1.1/${asset}`);
   }
-  for (const [os,arch] of [['Darwin','arm64'],['MINGW64_NT','x86_64'],['Linux','i686'],['Linux','armv5l'],['Linux','armv6l'],['Linux','armv7l'],['Linux','loongarch64'],['FreeBSD','i386'],['FreeBSD','armv7']]) {
+  for (const [os,arch] of [['Darwin','arm64'],['MINGW64_NT','x86_64'],['Linux','i686'],['Linux','armv5l'],['Linux','armv6l'],['Linux','armv7l'],['Linux','loongarch64'],['FreeBSD','amd64'],['FreeBSD','arm64'],['FreeBSD','i386'],['FreeBSD','armv7']]) {
     await writeFile(join(root,'requests'),'');
     await assert.rejects(run(os,arch,'not-available'),error=>error.code!==0 && /unsupported (OS|architecture)/.test(error.stderr));
     assert.equal(await readFile(join(root,'requests'),'utf8'),'','unsupported platforms must fail before any download');

@@ -11,8 +11,8 @@ import { WebSocket } from 'ws';
 import { createController } from '../src/server.js';
 
 // Isolated runtime prepared before testing. Never installs a service on the host.
-if (!['linux','freebsd'].includes(platform()) || !['x64','arm64'].includes(arch())) {
-  throw new Error('Native Agent acceptance requires Linux or FreeBSD on amd64/arm64. Run this suite on a supported host; macOS and Windows artifacts are no longer published.');
+if (platform() !== 'linux' || !['x64','arm64'].includes(arch())) {
+  throw new Error('Native Agent acceptance requires Linux on amd64/arm64. Run this suite on a supported host.');
 }
 const root = await mkdtemp(join(tmpdir(),'native-agent-acceptance-'));
 const evidence = resolve('output/test-results/agent-integration');
@@ -120,6 +120,19 @@ try {
       await assert.rejects(run('sh',[bootstrap,'version',...args],{timeout:30000}),error=>error.code!==0);
     }
     return {checksumRejected:true,missingVersionRejected:true};
+  });
+  await step('NA07','删除后停止 HTTP 上报','删除正在上报的节点，再用原配置启动测试前台进程','进程退出，保存卸载指令，重启不采集；自测程序不触碰宿主服务',async()=>{
+    const ended=once(agent,'exit',{signal:AbortSignal.timeout(45000)});
+    await admin({action:'delete',id});
+    assert.equal((await ended)[0],0);
+    const intent=JSON.parse(await readFile(join(root,'remote-uninstall.json'),'utf8'));
+    assert.equal(intent.type,'agent_uninstall');assert.equal(intent.server_id,id);
+    assert.ok(logs.includes('remote uninstall accepted'));
+    await readFile(binary);
+    logs='';startAgent();
+    assert.equal((await once(agent,'exit',{signal:AbortSignal.timeout(10000)}))[0],0);
+    assert.ok(!logs.includes('Jan Monitor Probe started'));
+    return {reportingStopped:true,restartDoesNotCollect:true,hostServicesUntouched:true};
   });
 } finally {
   await stopAgent();viewer?.terminate();await controller.close();badMirror.closeAllConnections();await new Promise(resolve=>badMirror.close(resolve));agentLogs.end();

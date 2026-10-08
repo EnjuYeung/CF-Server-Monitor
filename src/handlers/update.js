@@ -4,6 +4,8 @@ import { createErrorResponse, createUnauthorizedResponse, createNotFoundResponse
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
 import { AGENT_CONFIG_MD5_HEADER, AGENT_CONFIG_SCHEMA_HEADER, describeAgentConfig, normalizeAgentConfigSchemaVersion, serializeCorrection } from '../utils/agentConfig.js';
 import { scheduleAgentConfigChanged } from '../utils/agentConfigNotify.js';
+import { getAgentUninstallCommand } from '../services/agentRemoval.js';
+import { isValidUUID } from '../services/serverInput.js';
 import { normalizeAgentVersion, normalizeCorrectionValue, normalizeMetricSamples, getReportMetrics, getHistoryMetrics, toBroadcastSamples } from '../services/ingestion.js';
 const logUpdateBadRequest = (reason, details) => console.warn('[Update]', reason, details);
 const AGENT_WSS_MODE_HEADER = 'X-Agent-Wss-Mode';
@@ -25,6 +27,7 @@ export async function handleUpdate(request, env, ctx) {
     if (secret !== env.API_SECRET) {
       return createUnauthorizedResponse('Invalid secret');
     }
+    if (!isValidUUID(id)) return createBadRequestResponse('Invalid server ID');
 
     const regionCode = env.GEOLOCATION.lookup(request.clientIp, data.metrics?.ip_v4 || data.metrics?.ip_v6);
     const agentVersion = normalizeAgentVersion(request.headers.get('X-Agent-Version'));
@@ -32,6 +35,8 @@ export async function handleUpdate(request, env, ctx) {
     const serverDetail = await getServerDetail(env.DB, id, true);
 
     if (!serverDetail) {
+      const command = getAgentUninstallCommand(env, id);
+      if (command) return Response.json({ error: 'Server removed', code: 404, ...command }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
       return createNotFoundResponse('Server not found');
     }
 

@@ -12,7 +12,6 @@
           <select :value="targetOs" class="form-select" @change="$emit('update:target-os', $event.target.value)">
             <option value="linux">Linux (systemd)</option>
             <option value="unix">Linux (OpenWrt/Alpine/Synology DSM)</option>
-            <option value="freebsd">FreeBSD</option>
           </select>
           <p class="text-secondary text-sm mt-2">{{ trans.agentSupportedPlatforms }}</p>
         </div>

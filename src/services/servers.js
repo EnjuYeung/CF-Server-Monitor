@@ -1,6 +1,7 @@
 import { normalizeServerInput, isValidUUID } from './serverInput.js';
 import { clearMetricsHistoryCache, clearServersListCache } from '../utils/cache.js';
 import { clearDashboardLatencyHistoryCache } from '../database/schema.js';
+import { getAgentUninstallCommand } from './agentRemoval.js';
 
 export function validateServerIds(db, ids) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 50 || new Set(ids).size !== ids.length || ids.some(id => !isValidUUID(id))) throw new Error('invalidServerIdInList');
@@ -17,7 +18,11 @@ export function createServer(db, input, settings) {
   if (!Number.isSafeInteger(timestamp) || timestamp < 0) throw new Error('invalidTimestamp');
   const row = { id: input.id, ...fields, sort_order: order, timestamp };
   const keys = Object.keys(row);
-  db.prepare(`INSERT INTO servers (${keys.map(key => `"${key}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).bind(...Object.values(row)).run();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO servers (${keys.map(key => `"${key}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).bind(...Object.values(row)).run();
+    // Explicitly restoring the same UUID cancels a command not yet received.
+    db.prepare('DELETE FROM agent_removals WHERE server_id=?').bind(input.id).run();
+  });
   clearServersListCache();
   return input.id;
 }
@@ -40,11 +45,16 @@ export function sortServers(db, ids) {
 
 export function deleteServers(env, ids) {
   validateServerIds(env.DB, ids);
-  env.DB.transaction(() => ids.forEach(id => env.DB.prepare('DELETE FROM servers WHERE id=?').bind(id).run()));
+  env.DB.transaction(() => {
+    for (const id of ids) {
+      env.DB.prepare('INSERT OR REPLACE INTO agent_removals (server_id,command_id,deleted_at) VALUES (?,?,?)').bind(id, crypto.randomUUID(), Date.now()).run();
+      env.DB.prepare('DELETE FROM servers WHERE id=?').bind(id).run();
+    }
+  });
   for (const id of ids) {
     clearMetricsHistoryCache(id);
     clearDashboardLatencyHistoryCache(id);
-    env.REALTIME_HUB?.removeServer(id);
+    env.REALTIME_HUB?.removeServer(id, getAgentUninstallCommand(env, id));
   }
   clearServersListCache();
 }

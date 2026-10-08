@@ -413,6 +413,10 @@ func (r *reportTransport) readLoop(ctx context.Context, conn *webSocketConn) err
 			continue
 		}
 		switch frame.Type {
+		case "agent_uninstall":
+			if r.agent.handleRemoteUninstall(payload) {
+				return context.Canceled
+			}
 		case "ack":
 			persisted := false
 			if frame.Persisted != nil {

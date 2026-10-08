@@ -38,6 +38,11 @@ func Execute(args []string, buildVersion string) error {
 		return Uninstall(buildVersion)
 	case "upgrade-apply":
 		return ApplyScheduledUpdate(buildVersion)
+	case "remote-uninstall":
+		if err := parseUninstallArgs(args[1:]); err != nil {
+			return err
+		}
+		return executeRemoteUninstall(buildVersion)
 	case "version", "-v", "--version":
 		fmt.Printf("Jan Monitor Probe %s\n", buildVersion)
 		return nil

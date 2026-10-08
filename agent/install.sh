@@ -44,8 +44,7 @@ detect_os() {
     os="$(uname -s 2>/dev/null || printf unknown)"
     case "$os" in
         Linux) printf linux ;;
-        FreeBSD) printf freebsd ;;
-        *) die "unsupported OS: $os (supported: Linux and FreeBSD)" ;;
+        *) die "unsupported OS: $os (supported: Linux)" ;;
     esac
 }
 
@@ -169,10 +168,8 @@ if command -v sha256sum >/dev/null 2>&1; then
     actual="$(sha256sum "$tmp" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then
     actual="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-elif command -v sha256 >/dev/null 2>&1; then
-    actual="$(sha256 -q "$tmp")"
 else
-    die "SHA-256 verification requires sha256sum, shasum, or sha256"
+    die "SHA-256 verification requires sha256sum or shasum"
 fi
 [ "$actual" = "$expected" ] || die "SHA-256 mismatch for $asset"
 chmod +x "$tmp"

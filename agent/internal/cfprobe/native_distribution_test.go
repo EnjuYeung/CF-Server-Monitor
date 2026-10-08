@@ -153,8 +153,5 @@ func TestARMUpdateUsesBuiltVariant(t *testing.T) {
 		if got := expectedUpdateAssetName("linux", "arm"); got != "cf-probe-linux-armv"+arm {
 			t.Fatal(got)
 		}
-		if got := expectedUpdateAssetName("freebsd", "arm"); got != "cf-probe-freebsd-arm" {
-			t.Fatal(got)
-		}
 	}
 }

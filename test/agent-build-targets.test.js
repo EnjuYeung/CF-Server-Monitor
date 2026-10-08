@@ -7,12 +7,12 @@ import { createHash } from 'node:crypto';
 import { createController } from '../src/server.js';
 import { AgentDistribution } from '../src/services/agentDistribution.js';
 
-test('built release serves and archives exactly four verified 64-bit ELF Agents', async t => {
+test('built release serves and archives exactly two verified Linux 64-bit ELF Agents', async t => {
   const root = await mkdtemp(join(tmpdir(),'agent-built-platforms-'));
   let controller;
   t.after(async () => { await controller?.close(); await rm(root,{recursive:true,force:true}); });
   const version = JSON.parse(await readFile('agent/release.json','utf8')).version;
-  const expected = ['cf-probe-linux-amd64','cf-probe-linux-arm64','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64'].sort();
+  const expected = ['cf-probe-linux-amd64','cf-probe-linux-arm64'].sort();
   const archive = join(root,'agent-releases');
   const registry = new AgentDistribution(resolve('agent-dist'));
   await registry.archiveTo(archive);
@@ -37,10 +37,10 @@ test('built release serves and archives exactly four verified 64-bit ELF Agents'
     assert.equal(binary.subarray(0,4).toString('hex'),'7f454c46');
     assert.equal(binary[4],2,'ELF must be 64-bit');
     assert.equal(binary[5],1,'ELF must be little-endian');
-    assert.equal(binary[7],asset.name.includes('freebsd')?9:0);
+    assert.equal(binary[7],0);
     assert.equal(binary.readUInt16LE(18),asset.name.endsWith('amd64')?62:183);
   }
-  for (const name of ['cf-probe-linux-386','cf-probe-linux-armv5','cf-probe-linux-armv6','cf-probe-linux-armv7','cf-probe-linux-loong64','cf-probe-freebsd-386','cf-probe-freebsd-arm','cf-probe-darwin-amd64','cf-probe-darwin-arm64','cf-probe-windows-amd64.exe','cf-probe-windows-arm64.exe','cf-probe-windows-386.exe']) {
+  for (const name of ['cf-probe-linux-386','cf-probe-linux-armv5','cf-probe-linux-armv6','cf-probe-linux-armv7','cf-probe-linux-loong64','cf-probe-freebsd-amd64','cf-probe-freebsd-arm64','cf-probe-freebsd-386','cf-probe-freebsd-arm','cf-probe-darwin-amd64','cf-probe-darwin-arm64','cf-probe-windows-amd64.exe','cf-probe-windows-arm64.exe','cf-probe-windows-386.exe']) {
     assert.equal((await fetch(`${base}/${version}/${name}`)).status,404);
   }
   assert.equal((await fetch(`${base}/install.ps1`)).status,404);

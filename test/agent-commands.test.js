@@ -9,7 +9,7 @@ import { validatePingNode } from '../src/shared/pingNode.js';
 import { validatePingNode as agentValidatePingNode } from '../src/utils/agentConfig.js';
 
 test('native commands remain shell-safe for all supported install modes', () => {
-  for (const targetOs of ['linux', 'unix', 'freebsd']) for (const installMode of ['current-user', 'cfsm-user']) {
+  for (const targetOs of ['linux', 'unix']) for (const installMode of ['current-user', 'cfsm-user']) {
     const command = buildAgentInstallCommand({ selectedApiBase: 'https://monitor.example', copyServerId: 'fixture-id', apiSecret: "fixture'\"$` secret", targetOs, installMode, collectInterval: 2, reportInterval: 180, connectionMode: 'auto', pingMode: 'icmp', resetDay: 1, autoUpdate: true, customCt: '', node1: '[2001:db8::1]:443', explicitEmptyNodes: { custom_ct: true }, rxCorrection: 0, txCorrection: 10 }, {});
     assert.equal(spawnSync('sh', ['-n'], { input: command, encoding: 'utf8' }).status, 0);
     assert.match(command, /\/agent\/install\.sh/);
