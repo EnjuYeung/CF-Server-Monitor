@@ -10,12 +10,14 @@
 | NP02 | 用候选镜像启动断网生产数据副本；实测健康、首页/后台及 Agent 版本下载，再比较数据 | HTTP 均 200，原配置、节点和固定范围历史保持，Agent v1.3.0 两架构程序正常；副本/容器及环境临时文件已清理。`production-copy-result.json` | 通过 |
 | NP03 | 使用原 Compose 发布同一镜像并比较运行参数、数据和原归档 | healthy、restart 0；环境、端口、挂载、网络及停止/重启策略一致；SQLite integrity ok、固定范围 178501 条历史保持，原 39 文件不变。`deployment-result.json` | 通过 |
 | NP04 | 公网 Chromium 1440/375、三视图和实际 WSS；再检查节点新上报 | 16 张卡片，无页面横向溢出、HTTP/JS 错误；hello/subscribed/batchUpdate 正常；**16/16 节点**启动后收到新上报。`browser.json`、`database-final.json` | 通过 |
+| NP05 | 通过本机 SSH 密钥推送指定分支并核对远端提交 | GitHub SSH 认证为 EnjuYeung；实现提交 `6eaa4e1563004a43769e7ee25f3568d9d720cf81` 快进推送至 `codex/self-hosted-native-agent`，ls-remote 与本机一致，工作区清洁。`push-result.json` | 通过 |
+| NP06 | 推送核对后清理本项目旧镜像和备份，保留完整回滚，再复查生产 | **5 个旧镜像、6 个旧标签、3 份旧备份**清理完成；备份文件合计 **607080487 字节（约 579 MiB）**。当前/发布/回滚镜像及本次完整备份保留，其他容器和镜像不变；生产 healthy、restart 0、公网 200、16/16 近期上报，数据完整性及配置/固定历史保持。`cleanup-result.json`、`after-cleanup.json` | 通过 |
 
 15:50 首次发布后，最终提交检查修正新文件末尾空行，并补验规则中显式 null 与省略字段的区别；补充输入拒绝断言后，完整测试及浏览器重新通过，再构建和发布上述最终镜像。公网复核首次复用了已退出 Chromium 的旧 DevTools 端口，改为一次性 profile 后完整复验通过，生产容器未出现对应故障。
 
 生产证据在 Git 忽略的 `output/test-results/notification-config-production-20261009/`。回滚镜像 **`server-monitor:rollback-notification-config-20261009t074852z`**；完整回滚备份 **`/opt/1panel/apps/jan_monitor/backups/notification-config-20261009T074852Z/`**。备份包含敏感环境，保存在受保护目录，不提交仓库。
 
-清理计划仅针对本项目：本次生产及发布镜像、新回滚镜像和该完整备份保留；原数据、历史、`agent-releases` 和其他应用不纳入清理。执行结果由 `cleanup-result.json` 记录，须在 SSH 推送与远端提交核对成功后执行。
+**16:09:58–16:10:02（Asia/Shanghai）**，在 SSH 推送与远端提交核对成功后执行本项目清理：旧测试/工具镜像、先前回滚镜像及两份中间候选镜像删除；旧 architecture、remote-uninstall、router-agent 备份删除。只保留本次生产/发布镜像、上述回滚镜像及完整备份；生产数据、7 天历史、`agent-releases` 历史归档和其他应用保持。清理记录同步到仓库文档，未将含环境或 SQLite 的备份/证据提交仓库。
 
 ## 共用通知配置模块验收（2026-10-09）
 

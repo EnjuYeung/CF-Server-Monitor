@@ -1,5 +1,11 @@
 # 最近一次改动
 
+## SSH 推送与旧镜像、备份清理（2026-10-09）
+
+- 按用户要求，使用本机 `/root/.ssh/github` 对 GitHub 进行 SSH 认证并推送 `codex/self-hosted-native-agent`；实现提交 `6eaa4e1` 与远端核对一致。代码及生产发布记录一起推送，测试证据和敏感备份仍由 Git 排除。
+- 在推送成功后，于 16:09:58–16:10:02（Asia/Shanghai）清理本项目 **5 个旧镜像、6 个旧标签及 3 份旧备份**；备份文件合计约 **579 MiB**。保留当前生产/发布镜像、`server-monitor:rollback-notification-config-20261009t074852z` 和 `/opt/1panel/apps/jan_monitor/backups/notification-config-20261009T074852Z/` 完整回滚副本。
+- 清理后主控 healthy、重启 0、公网 200、16/16 节点近期上报；配置、固定范围历史、Agent 历史归档及其他应用的容器/镜像保持。实测结果见 TEST_REPORT.md。
+
 ## 通知配置重构部署生产（2026-10-09）
 
 - 按用户授权，于 **16:04:07（Asia/Shanghai）**将已完整验收的通知配置重构部署至 https://jm.zedy.cc；使用候选原镜像，发布标签 `server-monitor:notification-config-20261009`。保持生产环境、数据卷、端口和网络。
