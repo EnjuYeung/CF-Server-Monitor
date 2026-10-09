@@ -418,10 +418,11 @@
             <span class="resource-alert-toggle-text">{{ resourceAlertToggleText }}</span>
           </button>
           <HelpTooltip :text="trans.resourceAlertTip" />
-          <button type="button" class="btn btn-primary btn-sm" @click="addResourceAlertRule">+ {{ trans.resourceAlertAddRule }}</button>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="resourceAlertRules.length >= RESOURCE_ALERT_RULES_MAX" @click="addResourceAlertRule">+ {{ trans.resourceAlertAddRule }}</button>
         </div>
 
         <div v-if="resourceAlertExpanded" class="resource-alert-body">
+          <p v-if="resourceAlertRules.length >= RESOURCE_ALERT_RULES_MAX" class="text-muted text-sm">{{ trans.resourceAlertRulesLimit }}</p>
           <div v-if="resourceAlertRules.length === 0" class="resource-alert-empty text-muted text-sm">
             {{ trans.resourceAlertEmpty }}
           </div>
@@ -465,6 +466,7 @@
                     {{ resourceAlertServerSelectLabel(rule) }}
                   </summary>
                   <div class="resource-alert-server-menu">
+                    <button type="button" class="btn btn-sm" :disabled="getResourceAlertRuleServerIds(rule).length === 0" @click="rule.servers = []">{{ trans.resourceAlertAllServers }}</button>
                     <label v-for="server in resourceAlertServerOptions" :key="server.id" class="resource-alert-server-option">
                       <input
                         type="checkbox"
@@ -616,6 +618,7 @@ import HelpTooltip from '../../../components/HelpTooltip.vue'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
 import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
+import { RESOURCE_ALERT_RULES_MAX, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, normalizeResourceAlertThreshold, getResourceAlertThresholdMax } from '../../../../shared/notificationConfig.js'
 
 const props = defineProps({
   trans: { type: Object, required: true },
@@ -776,22 +779,7 @@ const notificationChannel = computed({
   }
 })
 
-const ensureResourceAlertRules = () => {
-  if (!Array.isArray(props.settings.resource_alert_rules)) {
-    props.settings.resource_alert_rules = []
-  }
-  const serverIds = props.servers.map(server => String(server.id || '').trim()).filter(Boolean)
-  if (serverIds.length > 0) {
-    for (const rule of props.settings.resource_alert_rules) {
-      if (!Array.isArray(rule.servers) || rule.servers.length === 0) {
-        rule.servers = [...serverIds]
-      }
-    }
-  }
-  return props.settings.resource_alert_rules
-}
-
-const resourceAlertRules = computed(() => ensureResourceAlertRules())
+const resourceAlertRules = computed(() => Array.isArray(props.settings.resource_alert_rules) ? props.settings.resource_alert_rules : [])
 const resourceAlertExpanded = ref(false)
 const resourceAlertRuleNameInputs = new Map()
 const resourceAlertToggleText = computed(() => {
@@ -820,8 +808,8 @@ const resourceAlertMetricOptions = computed(() => [
 ])
 
 const resourceAlertIntervalOptions = computed(() => (
-  Array.from({ length: 6 }, (_, index) => {
-    const minutes = index + 5
+  Array.from({ length: RESOURCE_ALERT_WINDOW_MAX - RESOURCE_ALERT_WINDOW_MIN + 1 }, (_, index) => {
+    const minutes = index + RESOURCE_ALERT_WINDOW_MIN
     const label = props.trans.resourceAlertIntervalMinutes
       ? props.trans.resourceAlertIntervalMinutes.replace('{minutes}', minutes)
       : `${minutes} min`
@@ -849,11 +837,12 @@ const getResourceAlertRuleServerIds = (rule) => (
 )
 
 const resourceAlertRuleHasServer = (rule, serverId) => (
-  getResourceAlertRuleServerIds(rule).includes(String(serverId))
+  getResourceAlertRuleServerIds(rule).length === 0 || getResourceAlertRuleServerIds(rule).includes(String(serverId))
 )
 
 const isLastResourceAlertRuleServer = (rule, serverId) => {
-  const selected = getResourceAlertRuleServerIds(rule)
+  const configured = getResourceAlertRuleServerIds(rule)
+  const selected = configured.length ? configured : resourceAlertServerOptions.value.map(server => server.id)
   return selected.length === 1 && selected[0] === String(serverId)
 }
 
@@ -861,7 +850,8 @@ const toggleResourceAlertRuleServer = (rule, serverId, checked) => {
   const id = String(serverId || '').trim()
   if (!id) return
 
-  const selected = getResourceAlertRuleServerIds(rule)
+  const configured = getResourceAlertRuleServerIds(rule)
+  const selected = configured.length ? configured : resourceAlertServerOptions.value.map(server => server.id)
   const selectedSet = new Set(selected)
   if (checked) {
     selectedSet.add(id)
@@ -883,21 +873,20 @@ const closeResourceAlertServerDropdowns = (event) => {
 }
 
 const resourceAlertServerSelectLabel = (rule) => {
+  if (getResourceAlertRuleServerIds(rule).length === 0) return props.trans.resourceAlertAllServers
   const options = resourceAlertServerOptions.value
   const total = options.length
   if (total === 0) return props.trans.noServers || 'No servers'
 
   const optionMap = new Map(options.map(server => [server.id, server.name]))
   const selected = getResourceAlertRuleServerIds(rule).filter(id => optionMap.has(id))
-  if (selected.length === total) return `${props.trans.all || 'All'} (${total})`
   if (selected.length === 1) return optionMap.get(selected[0])
   return `${selected.length}/${total} ${props.trans.servers || 'Servers'}`
 }
 
 const createRuleId = () => `rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-const isNetworkAlertMetric = metric => metric === 'netIn' || metric === 'netOut'
-const resourceAlertThresholdPlaceholder = metric => isNetworkAlertMetric(metric) ? '100' : '80'
-const resourceAlertThresholdMax = metric => isNetworkAlertMetric(metric) ? 100000 : 100
+const resourceAlertThresholdPlaceholder = metric => normalizeResourceAlertThreshold(undefined, metric)
+const resourceAlertThresholdMax = getResourceAlertThresholdMax
 
 const normalizeRuleThreshold = (rule) => {
   const threshold = Number(rule.threshold)
@@ -908,8 +897,10 @@ const normalizeRuleThreshold = (rule) => {
 }
 
 const addResourceAlertRule = () => {
+  if (resourceAlertRules.value.length >= RESOURCE_ALERT_RULES_MAX) return
   resourceAlertExpanded.value = true
-  const rules = ensureResourceAlertRules()
+  if (!Array.isArray(props.settings.resource_alert_rules)) props.settings.resource_alert_rules = []
+  const rules = props.settings.resource_alert_rules
   const metric = 'cpu'
   const rule = {
     id: createRuleId(),
@@ -917,7 +908,7 @@ const addResourceAlertRule = () => {
     metric,
     threshold: resourceAlertThresholdPlaceholder(metric),
     servers: resourceAlertServerOptions.value.map(server => server.id),
-    intervalMinutes: '5',
+    intervalMinutes: String(RESOURCE_ALERT_WINDOW_MIN),
     mode: 'average'
   }
   rules.push(rule)
@@ -929,7 +920,7 @@ const addResourceAlertRule = () => {
 }
 
 const removeResourceAlertRule = (index) => {
-  ensureResourceAlertRules().splice(index, 1)
+  props.settings.resource_alert_rules?.splice(index, 1)
 }
 
 const pingNodeErrorMessage = computed(() => (

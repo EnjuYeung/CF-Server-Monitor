@@ -1,3 +1,4 @@
+import { NOTIFICATION_FIELDS, prepareNotificationConfig } from '../shared/notificationConfig.js';
 import { handleServerAction, SERVER_ACTIONS } from './servers.js';
 import { PING_NODE_FIELDS, normalizePingNodeFields } from '../services/serverInput.js';
 import { getServerLastSeen, isServerOffline } from '../services/serverPresence.js';
@@ -7,7 +8,7 @@ import { commitAdminSettings, upgradePasswordHash } from '../services/adminSetti
 import { handleTwoFactorAction } from './twoFactor.js';
 import { getLatestMetricsForAllServers } from '../database/schema.js';
 import { getAllServers } from '../utils/cache.js';
-import { isValidThemeOptions, isWssReportEnabled, normalizeBooleanSetting, normalizeDefaultLanguage, normalizeDisplayMode, normalizeExpireNotificationTime, normalizeExpireReminder, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, normalizeNotificationTemplate, normalizeNotificationTimezone, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod, normalizePreferredTheme, normalizeResourceAlertRules, normalizeTgNotify, normalizeWssReportHours, saveThemeOptions, SITE_FIELDS, APPEARANCE_FIELDS } from '../utils/settings.js';
+import { isValidThemeOptions, isWssReportEnabled, normalizeBooleanSetting, normalizeDefaultLanguage, normalizeDisplayMode, normalizeFrontendWsTimeoutMinutes, normalizeLongHistoryPoints, normalizePreferredTheme, normalizeWssReportHours, saveThemeOptions, SITE_FIELDS, APPEARANCE_FIELDS } from '../utils/settings.js';
 import { mergeMetricsIntoServer } from '../utils/metrics.js';
 import { hashPassword } from '../utils/common.js';
 import { createSuccessResponse, createBadRequestResponse, createUnauthorizedResponse, createErrorResponse } from '../utils/errors.js';
@@ -330,42 +331,11 @@ async function handleListAction({ env }) {
 }
 
 async function handleSendTestNotificationAction({ data }) {
-  const {
-    tg_bot_token,
-    tg_chat_id,
-    notification_webhook_enabled,
-    notification_webhook_url,
-    notification_webhook_method,
-    notification_webhook_format,
-    notification_webhook_headers,
-    notification_webhook_body,
-    notification_template,
-    notification_timezone,
-    expire_notification_time
-  } = data;
-  const webhookEnabled = normalizeBooleanSetting(notification_webhook_enabled) === 'true';
-  if (webhookEnabled) {
-    if (!notification_webhook_url || String(notification_webhook_url).trim().length === 0) {
-      return createBadRequestResponse('notificationWebhookUrlRequired');
-    }
-  } else if (!tg_bot_token || tg_bot_token.trim().length === 0) {
-    return createBadRequestResponse('tgBotTokenRequired');
-  }
+  const notification = prepareNotificationConfig({ input: data, intent: 'test' });
+  if (!notification.ok) return createBadRequestResponse(notification.issues[0].code);
   try {
     const testMsg = '这是一条来自 CF Server Monitor 的测试消息。';
-    const result = await sendNotification({
-      tg_bot_token,
-      tg_chat_id: tg_chat_id || '',
-      notification_webhook_enabled: normalizeBooleanSetting(notification_webhook_enabled),
-      notification_webhook_url: notification_webhook_url || '',
-      notification_webhook_method: normalizeNotificationWebhookMethod(notification_webhook_method),
-      notification_webhook_format: normalizeNotificationWebhookFormat(notification_webhook_format),
-      notification_webhook_headers: normalizeNotificationWebhookHeaders(notification_webhook_headers),
-      notification_webhook_body: normalizeNotificationWebhookBody(notification_webhook_body),
-      notification_template: normalizeNotificationTemplate(notification_template),
-      notification_timezone: normalizeNotificationTimezone(notification_timezone),
-      expire_notification_time: normalizeExpireNotificationTime(expire_notification_time)
-    }, testMsg, {
+    const result = await sendNotification(notification.config, testMsg, {
       event: '测试通知',
       emoji: '✅',
       clients: ['CF Server Monitor'],
@@ -429,42 +399,10 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
         return createBadRequestResponse('invalidThemeUrl');
       }
 
-      // 如果 tg_notify 或 expire_reminder 开启，验证 tg_bot_token 不为空
+      const notification = prepareNotificationConfig({ current: sys, input: settings });
+      if (!notification.ok) return createBadRequestResponse(notification.issues[0].code);
       const hasResourceAlertRulesInput = settings.resource_alert_rules !== undefined;
-      const tgNotify = settings.tg_notify !== undefined
-        ? normalizeTgNotify(settings.tg_notify)
-        : normalizeTgNotify(sys?.tg_notify);
-      const expireReminder = settings.expire_reminder !== undefined
-        ? normalizeExpireReminder(settings.expire_reminder)
-        : normalizeExpireReminder(sys?.expire_reminder);
-      const currentResourceAlertRules = normalizeResourceAlertRules(sys?.resource_alert_rules);
-      const normalizedResourceAlertRules = hasResourceAlertRulesInput
-        ? normalizeResourceAlertRules(settings.resource_alert_rules)
-        : currentResourceAlertRules;
-      const resourceAlertEnabled = normalizedResourceAlertRules.length > 0;
-      const trafficReportEnabled = normalizeBooleanSetting(
-        settings.traffic_report_enabled !== undefined
-          ? settings.traffic_report_enabled
-          : sys?.traffic_report_enabled
-      ) === 'true';
-      if (tgNotify !== '0' || expireReminder !== '0' || resourceAlertEnabled || trafficReportEnabled) {
-        const webhookEnabled = settings.notification_webhook_enabled !== undefined
-          ? normalizeBooleanSetting(settings.notification_webhook_enabled) === 'true'
-          : normalizeBooleanSetting(sys?.notification_webhook_enabled) === 'true';
-        const effectiveWebhookUrl = settings.notification_webhook_url !== undefined
-          ? settings.notification_webhook_url
-          : sys?.notification_webhook_url;
-        const effectiveTgBotToken = settings.tg_bot_token !== undefined
-          ? settings.tg_bot_token
-          : sys?.tg_bot_token;
-        if (webhookEnabled) {
-          if (!effectiveWebhookUrl || String(effectiveWebhookUrl).trim().length === 0) {
-            return createBadRequestResponse('notificationWebhookUrlRequired');
-          }
-        } else if (!effectiveTgBotToken || String(effectiveTgBotToken).trim().length === 0) {
-          return createBadRequestResponse('tgBotTokenRequired');
-        }
-      }
+      const resourceAlertEnabled = notification.config.resource_alert_rules.length > 0;
 
       const pingNodes = normalizePingNodeFields(settings);
       if (!pingNodes.valid) {
@@ -508,8 +446,9 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
         }
       }
 
-      const siteOptions = {};
+      const siteOptions = { ...notification.patch };
       for (const field of SITE_FIELDS) {
+        if (NOTIFICATION_FIELDS.includes(field)) continue;
         if (settings[field] !== undefined) {
           if (field === 'password') {
             if (settings[field] && settings[field].length > 0) {
@@ -517,40 +456,16 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
             }
           } else if (PING_NODE_FIELDS.includes(field)) {
             siteOptions[field] = pingNodes.values[field];
-          } else if (field === 'tg_notify') {
-            siteOptions[field] = tgNotify;
-          } else if (field === 'expire_reminder') {
-            siteOptions[field] = expireReminder;
           } else if (field === 'long_history_points') {
             siteOptions[field] = normalizeLongHistoryPoints(settings[field]);
           } else if (field === 'frontend_ws_timeout_minutes') {
             siteOptions[field] = normalizeFrontendWsTimeoutMinutes(settings[field]);
-          } else if (field === 'resource_alert_rules') {
-            siteOptions[field] = normalizedResourceAlertRules;
           } else if (field === 'wss_report_enabled') {
             siteOptions[field] = normalizeBooleanSetting(settings[field]);
           } else if (field === 'wss_report_hours') {
             siteOptions[field] = normalizeWssReportHours(settings[field]);
           } else if (field === 'show_three_net_details') {
             siteOptions[field] = normalizeBooleanSetting(settings[field]);
-          } else if (field === 'notification_timezone') {
-            siteOptions[field] = normalizeNotificationTimezone(settings[field]);
-          } else if (field === 'expire_notification_time') {
-            siteOptions[field] = normalizeExpireNotificationTime(settings[field]);
-          } else if (field === 'traffic_report_enabled') {
-            siteOptions[field] = normalizeBooleanSetting(settings[field]);
-          } else if (field === 'notification_webhook_enabled') {
-            siteOptions[field] = normalizeBooleanSetting(settings[field]);
-          } else if (field === 'notification_webhook_method') {
-            siteOptions[field] = normalizeNotificationWebhookMethod(settings[field]);
-          } else if (field === 'notification_webhook_format') {
-            siteOptions[field] = normalizeNotificationWebhookFormat(settings[field]);
-          } else if (field === 'notification_webhook_headers') {
-            siteOptions[field] = normalizeNotificationWebhookHeaders(settings[field]);
-          } else if (field === 'notification_webhook_body') {
-            siteOptions[field] = normalizeNotificationWebhookBody(settings[field]);
-          } else if (field === 'notification_template') {
-            siteOptions[field] = normalizeNotificationTemplate(settings[field]);
           } else if (field === 'theme_url') {
             siteOptions[field] = normalizedThemeUrl;
           } else {

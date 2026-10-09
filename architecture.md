@@ -53,12 +53,17 @@ Docker 最终镜像携带 `agent-dist/`，不携带 Go 编译器。`AgentDistrib
 | Scheduler | 每分钟检查离线、资源、流量、到期、WS 时段及历史保留，投递通知；GeoIP 启动检查并每 24 小时更新 |
 | Vue 前端 | 管理、实时看板、详情图表、明暗切换、下载备份 |
 | DashboardState | 首页看板快照、回放、采样/接收/显示时间、统计和会话生命周期；浏览器 adapter 提供 HTTP/WS、计时与恢复事件 |
+| NotificationConfig | 浏览器与主控共用的纯计算通知配置 module；兼容读取、原始输入校验、部分更新、节点范围、规则上限及所选渠道依赖 |
 
 前端已恢复樱花／星空改版前的原版界面，沿用 main.css / light.css、原生按钮与原有弹窗结构，不加载 Hallmark 设计变量、Tailwind、shadcn-vue 或全局装饰背景。Mikus 主题层、启动装饰、樱花动画、后台 JSON 开关及对应样式和素材已移除；旧 `theme_options.mikus` 配置不再激活内置前端。地区与分组继续支持多选，标签、实时订阅及后台业务逻辑保留。明暗切换沿用手动/系统模式。JetBrains Mono 字体随源码放在 `src/frontend/assets/fonts/` 并构建为 `/static/` 文件，首屏不依赖 Google Fonts；Vite 不内联字体，以符合 CSP `font-src`。
 
 首页由 `state/dashboardState.js` 持有看板实时状态，interface 仅包含只读 `state`、`start()` 与 `stop()`；`composables/useDashboardState.js` 是浏览器 adapter，页面继续负责筛选、视图、路由、财务和弹窗。看板快照按来源决定节点集合与顺序，失败来源保留原集合；实时包只更新该来源已有节点。回放与最新采样按「来源 + UUID」隔离，快照删除节点会清除其缓存并使旧订阅回调失效。采样时间决定指标先后与历史补取，接收时间决定在线，显示时间按实际经过时间推进。
 
 首页保持每秒回放及每分钟完整补取，隐藏时保留连接；可见切回和 focus 复用健康连接，online、resume 和 bfcache 恢复强制重连。快照请求共用一个进行中的任务；停止会中止请求、清理事件/计时器/连接并忽略晚到回调。详情页保持独立策略：隐藏断开、配置连接寿命及有限重试，未并入首页模块。
+
+通知配置由 `src/shared/notificationConfig.js` 的 `readNotificationConfig(stored)` 与 `prepareNotificationConfig({current,input,intent})` 统一形成。读取旧配置保留回退、别名和模板迁移，不修改输入；保存先检查新值，再以当前配置补足省略字段，返回有效配置、仅本次修改的通知字段或带字段/规则位置的错误。测试通知校验参与发信的草稿字段，要求所选渠道目标，不保存草稿，也不要求启用告警。
+
+资源告警规则的空节点列表表示全部当前及未来节点，显式列表保持指定范围；表单只在手动改选时写出新列表，并提供恢复动态全部的选项。最多 20 条规则，编辑器阻止继续新增，保存拒绝超限及无效阈值/评估窗口，不静默截断新输入。UI 翻译、焦点和展开状态留在表单，鉴权/凭据保存与原子事务留在后台，告警评估、到期去重、模板渲染和 outbox 投递保持现有流程；共享纯计算 seam 无需新增 adapter。
 
 ## 后台入口与双重验证
 

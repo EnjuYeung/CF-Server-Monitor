@@ -3,7 +3,7 @@ import test from 'node:test';
 import { RealtimeHub } from '../src/realtime/RealtimeHub.js';
 import { getHistoryMetrics } from '../src/services/ingestion.js';
 import { buildResourceAlertNotificationPayloads } from '../src/services/notifications/resource.js';
-import { clearSiteSettingsCache, DEFAULT_NOTIFICATION_TEMPLATE, normalizeNotificationTemplate, normalizeResourceAlertRules } from '../src/utils/settings.js';
+import { clearSiteSettingsCache } from '../src/utils/settings.js';
 import { SQLiteDatabase } from '../src/database/sqlite.js';
 function makeBroadcaster(webSockets = [], env = {}) {
   const db = new SQLiteDatabase();
@@ -551,28 +551,6 @@ test('resource alert notification payloads group metrics by server and split lon
   assert.equal(payloads.some(payload => payload.msg.includes('shared-server  CPU 1.05%  RAM 42.7%')), true);
   assert.equal(payloads.some(payload => payload.msg.includes('cpu-server  CPU 90.0%')), true);
   assert.equal(payloads.every(payload => payload.msg.length <= 3200), true);
-});
-
-test('legacy default notification template normalizes to concise default', () => {
-  const legacy = '{{emoji}}【CF Server Monitor】{{event}}\n服务器: {{client}}\n详情:\n{{message}}\n时间: {{time}}';
-  const previousConcise = '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n时间: {{time}}';
-  assert.equal(normalizeNotificationTemplate(legacy), DEFAULT_NOTIFICATION_TEMPLATE);
-  assert.equal(normalizeNotificationTemplate(previousConcise), DEFAULT_NOTIFICATION_TEMPLATE);
-  assert.equal(DEFAULT_NOTIFICATION_TEMPLATE.includes('服务器:'), false);
-  assert.equal(DEFAULT_NOTIFICATION_TEMPLATE.includes('时间:'), false);
-  assert.equal(DEFAULT_NOTIFICATION_TEMPLATE.includes('{{message}}'), true);
-});
-
-test('resource alert rule ids remain unique when duplicate ids are already max length', () => {
-  const id = 'a'.repeat(64);
-  const rules = normalizeResourceAlertRules([
-    { id, metric: 'cpu', threshold: 80, servers: ['server-1'], intervalMinutes: 5 },
-    { id, metric: 'ram', threshold: 80, servers: ['server-1'], intervalMinutes: 5 }
-  ]);
-
-  assert.equal(rules.length, 2);
-  assert.notEqual(rules[0].id, rules[1].id);
-  assert.equal(rules.every(rule => rule.id.length <= 64), true);
 });
 
 test('resource alert cache accepts payload samples from WSS broadcasts', async () => {

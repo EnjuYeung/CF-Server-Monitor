@@ -1,6 +1,7 @@
 import { enqueueNotification } from '../outbox.js';
 import { getAllServers } from '../../utils/cache.js';
-import { getResourceAlertConfig, getResourceAlertRuleThresholds, loadSiteSettings } from '../../utils/settings.js';
+import { getResourceAlertConfig, getResourceAlertRuleThresholds } from '../../shared/notificationConfig.js';
+import { loadSiteSettings } from '../../utils/settings.js';
 import { RESOURCE_ALERT_EVALUATE_RULE_BATCH_SIZE, RESOURCE_ALERT_EVALUATE_SERVER_BATCH_SIZE, RESOURCE_ALERT_NOTIFICATION_SOFT_LIMIT } from '../../utils/config.js';
 import { formatNotificationTime } from './time.js';
 import { hasNotificationTarget } from './delivery.js';

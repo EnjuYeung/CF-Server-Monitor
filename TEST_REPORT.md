@@ -1,5 +1,61 @@
 # 最近一次测试报告
 
+## 通知配置重构生产发布（2026-10-09）
+
+按用户授权，**16:04:07（Asia/Shanghai）**启动最终生产容器，**16:04:16**健康检查通过。https://jm.zedy.cc 使用已验收镜像 **`sha256:ba153c19375c7309c6d6b8f4a2743106d510f0fdfa90a6ab77f9fcacd5ce5a8c`**，生产标签 `server-monitor:local`，发布标签 `server-monitor:notification-config-20261009`。Agent 仍为 v1.3.0，未操作远程节点。
+
+| 编号 | 操作与预期 | 实测结果及证据 | 状态 |
+| --- | --- | --- | --- |
+| NP01 | 备份在线 SQLite、环境/Compose、归档/地区库和旧镜像，验证备份可启动 | 一致快照 integrity ok，16 节点、5 设置、39 文件；备份目录及文件为 0700/0600。`prepare-result.json` | 通过 |
+| NP02 | 用候选镜像启动断网生产数据副本；实测健康、首页/后台及 Agent 版本下载，再比较数据 | HTTP 均 200，原配置、节点和固定范围历史保持，Agent v1.3.0 两架构程序正常；副本/容器及环境临时文件已清理。`production-copy-result.json` | 通过 |
+| NP03 | 使用原 Compose 发布同一镜像并比较运行参数、数据和原归档 | healthy、restart 0；环境、端口、挂载、网络及停止/重启策略一致；SQLite integrity ok、固定范围 178501 条历史保持，原 39 文件不变。`deployment-result.json` | 通过 |
+| NP04 | 公网 Chromium 1440/375、三视图和实际 WSS；再检查节点新上报 | 16 张卡片，无页面横向溢出、HTTP/JS 错误；hello/subscribed/batchUpdate 正常；**16/16 节点**启动后收到新上报。`browser.json`、`database-final.json` | 通过 |
+
+15:50 首次发布后，最终提交检查修正新文件末尾空行，并补验规则中显式 null 与省略字段的区别；补充输入拒绝断言后，完整测试及浏览器重新通过，再构建和发布上述最终镜像。公网复核首次复用了已退出 Chromium 的旧 DevTools 端口，改为一次性 profile 后完整复验通过，生产容器未出现对应故障。
+
+生产证据在 Git 忽略的 `output/test-results/notification-config-production-20261009/`。回滚镜像 **`server-monitor:rollback-notification-config-20261009t074852z`**；完整回滚备份 **`/opt/1panel/apps/jan_monitor/backups/notification-config-20261009T074852Z/`**。备份包含敏感环境，保存在受保护目录，不提交仓库。
+
+清理计划仅针对本项目：本次生产及发布镜像、新回滚镜像和该完整备份保留；原数据、历史、`agent-releases` 和其他应用不纳入清理。执行结果由 `cleanup-result.json` 记录，须在 SSH 推送与远端提交核对成功后执行。
+
+## 共用通知配置模块验收（2026-10-09）
+
+先执行 `npm ci`、`npm run geoip:download`、`npm run build`，使用隔离数据目录、假凭据、关闭 Scheduler 的真实主控及回环 HTTP 通知接收端；再执行新公共 interface 契约、真实 HTTP/SQLite 请求及 Chromium 表单操作。工具链 Node **24.21.0**、Go **1.26.8**。测试证据由 Git 忽略，位于 `output/test-results/notification-config-refactor/`。
+
+| 编号 | 功能、操作与预期 | 实测结果及证据 | 状态 |
+| --- | --- | --- | --- |
+| NC01–NC05 | 读取旧配置、模板迁移、重复最长 ID、20/21 条及旧别名，再编辑/保存/重读；不改写原输入或范围 | 兼容值正确，ID 唯一稳定，动态空列表与显式列表保留；20 条完整、21 条拒绝，非对象新规则拒绝。`targeted-tests.log` | 通过 |
+| NC06–NC10 | 保存/测试时区小时、规则阈值/窗口边界、部分更新渠道依赖、未保存草稿及无关字段隔离 | 新无效值报错并携带字段/规则位置；省略字段保留当前值；测试强制要求所选目标并忽略无关规则；鉴权字段不进入通知 patch。 | 通过 |
+| NC11 | 真实保存请求提交无效输入/21 条/空目标，再做部分更新并重启；失败原子回滚且范围保留 | 400 请求未写入任何字段；重启后动态/指定范围、原凭据与新时区均正确。 | 通过 |
+| NC12 | 真实测试通知请求先提交无效草稿，再提交有效未保存模板；只向回环接收端投递 | 无效请求 400 且接收 0；有效请求接收 1，使用新模板，SQLite 设置内容不变。 | 通过 |
+| NB01–NB03 | Chromium 真登录、打开/保存动态全部，新增节点 C，手动勾选范围，再恢复全部 | 持久空列表保留；新增 C 默认勾选，手动改选保存显式两节点，再恢复空列表。 | 通过 |
+| NB04–NB05 | 浏览器连续新增至 20 条并保存，再输入超范围阈值 | 新增按钮禁用，20 条全部持久；规则 #1 错误可见，错误保存请求 0。 | 通过 |
+| NB06–NB07 | 输入无效自定义时区分别保存/测试；有效渠道测试未保存模板并保留无关无效规则 | 无效时区保存/测试请求均 0，接收 0；有效测试接收 1，模板匹配，设置内容未保存。 | 通过 |
+| NB08 | 1440/390 视口截图、DOM 宽度与 JS 异常检查，人工阅读两张截图 | scrollWidth 1432/390；无横向溢出、运行异常 0。 | 通过 |
+| NV01 | 新契约、三语言与凭据事务定向回归 | **18/18**，失败/跳过 0。`targeted-tests.log` | 通过 |
+| NV02 | `npm run test:all` | **160/160 Node**，Agent 配置、Go vet/test 成功。`test-all-final.log` | 通过 |
+| NV03 | `npm run test:acceptance` | **主控 19/19、原生 Agent 7/7**；真实告警、通知失败重试、50 Agent/10 看板、7 天历史与重启恢复通过。`acceptance-final.log`、两份 acceptance.json | 通过 |
+| NV04 | 完整构建、Docker 构建与源码/产物 SHA-256 比较 | 镜像 **`sha256:ba153c19375c7309c6d6b8f4a2743106d510f0fdfa90a6ab77f9fcacd5ce5a8c`**；**114 个源码 / 315 个静态文件**全部一致。`build-final.log`、`docker-build-release.log`、`source-parity.json` | 通过 |
+
+新契约位于 `test/notification-config.test.js`。旧模板和重复 ID 的两项孤立函数测试从 `realtime-hub.test.js` 移到公共配置往返契约；告警评估、到期去重、outbox 重试及凭据事务回滚测试保留。最终浏览器证据 `browser-2026-10-09T08-02-10-131Z/results.json`，脚本 `browser-acceptance.mjs`，**8/8**，测试主控、回环接收端与 Chromium 均已清理。
+
+浏览器前置曾修正 add 返回值取法、规则计数误包含 Webhook 表单框，以及自定义时区表达式/发送测试按钮选择器；没有因此修改业务实现。最终脚本完整重跑，上述全部检查通过。没有调用真实第三方通知或修改生产通知配置。原生 Agent 版本及安装/更新/分发源码未变，本轮不运行 `test:agent-deployment`。
+
+## 第 3 项通知配置架构探索（2026-10-09）
+
+本轮是实施前的源码调查和设计验证。使用 Node **24.21.0**、现有依赖中的真实 Vue `reactive/computed` 与当前源码函数片段搭建隔离夹具；没有启动主控、调用通知发送或访问生产。复现脚本与结果位于 Git 忽略的 `output/test-results/notification-config-exploration/verify-current-functions.mjs`、`current-function-facts.json`。
+
+| 编号 | 操作与预期核实项 | 实际结果 | 状态 |
+| --- | --- | --- | --- |
+| NC-E01 | 空节点规则加载当前 A/B，只读取原表单 computed，再形成保存载荷；比较新增 C 后的实际告警目标 | 空列表变为显式 A/B；原范围为 A/B/C，保存后范围为 A/B。未手动勾选节点。 | 已复现 |
+| NC-E02 | 20 条规则调用原新增方法，再运行保存使用的前端正规化与后端正规化 | 编辑器 21 条，载荷与后端均为 20 条；新增 ID 不在载荷中。没有发起 HTTP 保存。 | 已复现 |
+| NC-E03 | 对无效时区及旧 HH:MM 小时格式比较保存条件与测试通知载荷 | 无效时区保存拒绝，测试载荷回退 UTC；旧小时格式保存拒绝，测试载荷提取小时。仅计算条件和载荷。 | 已核实 |
+| NC-E04 | 重复最长 ID、非对象规则、旧间隔/节点别名、零间隔与极小阈值输入前后端正规化 | 确认结果差异；普通 get_settings 已先经过后端正规化，因此没有将重复 ID 差异称为正常 UI 的已发生故障。 | 已核实 |
+| NC-E05 | Chromium 加载临时 HTML，检查 Mermaid、桌面/手机布局及异常，并阅读桌面截图 | 1440/390 视口无页面横向溢出；图渲染 1/1，无图语法错误、运行异常或网络失败。修正初版过小的图后，最终图高 330px。 | 通过 |
+
+复现命令：`source /tmp/jan-monitor-architecture-tools-ydbd_k9g/env.sh`，然后运行 `node output/test-results/notification-config-exploration/verify-current-functions.mjs`。临时设计稿 `/tmp/architecture-review-notification-config-20261009-1526.html`；校验命令 `node /tmp/dashboard-state-design.validate.mjs /tmp/architecture-review-notification-config-20261009-1526.html`；同名前缀 `.validation.json`、`.png`、`.mobile.png` 和 `.dom.html` 保存浏览器证据。
+
+当前只补充领域术语与探索记录，业务源码和测试源码未修改；未运行 `test:all`、`test:acceptance` 或部署验收。夹具不是完整浏览器编辑/保存验收，尚不能宣称问题已修复。共用模块与行为方案等待用户确认后实施。
+
 ## 架构重构生产发布（2026-10-09）
 
 按用户授权，将前两项已验收的架构重构一起部署生产：https://jm.zedy.cc。**14:15:27（Asia/Shanghai）**启动新容器，14:15:36 健康检查通过；**14:17:08**完成数据、上报与公网复核。生产 `server-monitor:local` 和发布标签 `server-monitor:architecture-20261009` 指向完整验收的镜像 **`sha256:b32c0ce3d386c2954e68011517abf675e26fdbf41e91d9a76e20ff8069e4576f`**，未重新构建另一份发布产物。原生 Agent 仍为 v1.3.0，两架构文件与既有生产归档 SHA-256 相同。

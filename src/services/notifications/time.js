@@ -1,4 +1,4 @@
-import { normalizeNotificationTimezone, normalizeExpireNotificationTime } from '../../utils/settings.js';
+import { normalizeNotificationTimezone, normalizeExpireNotificationTime } from '../../shared/notificationConfig.js';
 const DAY_MS = 86400000;
 
 export function getZonedDateParts(timestamp = Date.now(), timezone = 'UTC') {

@@ -357,6 +357,7 @@ import { getAuthToken } from '../../utils/http'
 import { adminApi, login, logout as apiLogout, clearHistory, getApiBases, fetchConfig } from '../../utils/api'
 import { hasMultipleApiBases } from '../../utils/config.js'
 import { t, useTranslation, normalizeLanguagePreference } from '../../utils/i18n'
+import { readNotificationConfig, prepareNotificationConfig } from '../../../shared/notificationConfig.js'
 import { PING_NODE_FIELDS, SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../shared/pingNode.js'
 import { normalizeDisplayMode, resolveDisplayMode } from '../../utils/displayMode.js'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../utils/constants.js'
@@ -376,58 +377,6 @@ const getMessage = (msg) => {
     return translated !== msg ? translated : msg
   }
   return ''
-}
-
-const normalizeTgNotifySetting = (value) => {
-  if (value === true || value === 'true') return '5'
-  if (value === false || value === 'false' || value === undefined || value === null || value === '') return '0'
-
-  const minutes = Number(value)
-  if (Number.isInteger(minutes) && (minutes === 0 || (minutes >= 2 && minutes <= 30))) {
-    return String(minutes)
-  }
-
-  return '0'
-}
-
-const isTgNotifyEnabled = (value) => normalizeTgNotifySetting(value) !== '0'
-
-const normalizeExpireReminderSetting = (value) => {
-  if (value === true || value === 'true') return '7'
-  if (value === false || value === 'false' || value === undefined || value === null || value === '') return '0'
-
-  const days = Number(value)
-  if (Number.isInteger(days) && days >= 0 && days <= 7) {
-    return String(days)
-  }
-
-  return '0'
-}
-
-const isExpireReminderEnabled = (value) => normalizeExpireReminderSetting(value) !== '0'
-
-const isValidNotificationTimezone = (value) => {
-  const timezone = String(value || '').trim()
-  if (!timezone || timezone.length > 64) return false
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date(0))
-    return true
-  } catch (_) {
-    return false
-  }
-}
-
-const normalizeNotificationTimezoneSetting = (value) => {
-  const timezone = String(value || '').trim()
-  return isValidNotificationTimezone(timezone) ? timezone : 'UTC'
-}
-
-const normalizeExpireNotificationTimeSetting = (value) => {
-  const raw = String(value ?? '').trim()
-  if (!raw) return '12'
-  const legacyTimeMatch = raw.match(/^([01]?\d|2[0-3]):[0-5]\d$/)
-  const hour = Number(legacyTimeMatch ? legacyTimeMatch[1] : raw)
-  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? String(hour) : '12'
 }
 
 const normalizeLongHistoryPointsSetting = (value) => {
@@ -471,73 +420,10 @@ const normalizeWssReportHoursSetting = (value) => {
     .sort((a, b) => a - b)
 }
 
-const normalizeResourceAlertModeSetting = (value) => {
-  const mode = String(value || '').trim().toLowerCase()
-  return mode === 'continuous' ? 'continuous' : 'average'
+const formatNotificationIssue = issue => {
+  const message = trans.value[issue.code] || trans.value.invalidNotificationConfig
+  return issue.index === undefined ? message : `${trans.value.resourceAlertRule} #${issue.index + 1}: ${message}`
 }
-
-const normalizeResourceAlertIntervalSetting = (value) => {
-  const minutes = Number(value)
-  if (Number.isInteger(minutes) && minutes >= 5 && minutes <= 10) {
-    return String(minutes)
-  }
-  return '5'
-}
-
-const normalizeResourceAlertMetricSetting = (value) => {
-  const metric = String(value || '').trim()
-  return ['cpu', 'ram', 'disk', 'netIn', 'netOut'].includes(metric) ? metric : 'cpu'
-}
-
-const defaultResourceAlertThreshold = (metric) => (
-  metric === 'netIn' || metric === 'netOut' ? '100' : '80'
-)
-
-const normalizeResourceAlertThresholdSetting = (value, metric) => {
-  if (value === undefined || value === null || value === '') return defaultResourceAlertThreshold(metric)
-  const number = Number(value)
-  const max = metric === 'netIn' || metric === 'netOut' ? 100000 : 100
-  if (!Number.isFinite(number) || number <= 0 || number > max) return defaultResourceAlertThreshold(metric)
-  return String(Math.round(number * 100) / 100)
-}
-
-const normalizeResourceAlertServersSetting = (value) => {
-  if (!Array.isArray(value)) return []
-  const seen = new Set()
-  return value.map(item => String(item || '').trim()).filter(id => {
-    if (!id || id.length > 64 || !/^[A-Za-z0-9._:-]+$/.test(id) || seen.has(id)) return false
-    seen.add(id)
-    return true
-  })
-}
-
-const normalizeResourceAlertRulesSetting = (value) => {
-  let rules = Array.isArray(value) ? value : []
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value)
-      rules = Array.isArray(parsed) ? parsed : []
-    } catch (_) {
-      rules = []
-    }
-  }
-  return rules.map((rule, index) => {
-    const metric = normalizeResourceAlertMetricSetting(rule?.metric)
-    return {
-      id: String(rule?.id || `rule_${index + 1}`).replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 64) || `rule_${index + 1}`,
-      name: String(rule?.name || '').trim().slice(0, 80) || `Resource Alert ${index + 1}`,
-      metric,
-      threshold: normalizeResourceAlertThresholdSetting(rule?.threshold, metric),
-      servers: normalizeResourceAlertServersSetting(rule?.servers || rule?.serverIds),
-      intervalMinutes: normalizeResourceAlertIntervalSetting(rule?.intervalMinutes || rule?.windowMinutes),
-      mode: normalizeResourceAlertModeSetting(rule?.mode)
-    }
-  }).slice(0, 20)
-}
-
-const isResourceAlertEnabled = (rules) => normalizeResourceAlertRulesSetting(rules).length > 0
-
-const isNotificationWebhookEnabled = () => settings.value.notification_webhook_enabled === true
 
 const normalizePreferredThemeSetting = (value) => {
   const theme = String(value || '').trim().toLowerCase()
@@ -605,21 +491,9 @@ const settings = ref({
   wss_report_hours: Array.from({ length: 24 }, (_, hour) => hour),
   frontend_ws_timeout_minutes: 0,
   long_history_points: String(HISTORY.DEFAULT_LONG_RANGE_POINTS),
-  tg_notify: '0',
-  expire_reminder: '0',
-  resource_alert_rules: [],
-  tg_bot_token: '',
-  tg_chat_id: '',
-  notification_timezone: 'UTC',
-  expire_notification_time: '12',
+  ...readNotificationConfig(),
   traffic_report_enabled: false,
   notification_webhook_enabled: false,
-  notification_webhook_url: '',
-  notification_webhook_method: 'POST',
-  notification_webhook_format: 'json',
-  notification_webhook_headers: '',
-  notification_webhook_body: '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
-  notification_template: '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
   username: '',
   password: '',
   confirm_password: '',
@@ -1001,6 +875,7 @@ const loadSettings = async () => {
     if (!result.error) {
       const data = result.data
       const settingsData = data.settings || {}
+      const notification = readNotificationConfig(settingsData)
       settings.value = {
         site_title: settingsData.site_title || '',
         custom_bg: settingsData.custom_bg || '',
@@ -1020,21 +895,9 @@ const loadSettings = async () => {
         wss_report_hours: normalizeWssReportHoursSetting(settingsData.wss_report_hours),
         frontend_ws_timeout_minutes: normalizeFrontendWsTimeoutMinutesSetting(settingsData.frontend_ws_timeout_minutes),
         long_history_points: normalizeLongHistoryPointsSetting(settingsData.long_history_points),
-        tg_notify: normalizeTgNotifySetting(settingsData.tg_notify),
-        expire_reminder: normalizeExpireReminderSetting(settingsData.expire_reminder),
-        resource_alert_rules: normalizeResourceAlertRulesSetting(settingsData.resource_alert_rules),
-        tg_bot_token: settingsData.tg_bot_token || '',
-        tg_chat_id: settingsData.tg_chat_id || '',
-        notification_timezone: normalizeNotificationTimezoneSetting(settingsData.notification_timezone),
-        expire_notification_time: normalizeExpireNotificationTimeSetting(settingsData.expire_notification_time),
-        traffic_report_enabled: settingsData.traffic_report_enabled === 'true' || settingsData.traffic_report_enabled === true,
-        notification_webhook_enabled: settingsData.notification_webhook_enabled === 'true' || settingsData.notification_webhook_enabled === true,
-        notification_webhook_url: settingsData.notification_webhook_url || '',
-        notification_webhook_method: String(settingsData.notification_webhook_method || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST',
-        notification_webhook_format: ['json', 'form', 'text'].includes(String(settingsData.notification_webhook_format || '').toLowerCase()) ? String(settingsData.notification_webhook_format).toLowerCase() : 'json',
-        notification_webhook_headers: settingsData.notification_webhook_headers || '',
-        notification_webhook_body: settingsData.notification_webhook_body || '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}',
-        notification_template: settingsData.notification_template || '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}',
+        ...notification,
+        traffic_report_enabled: notification.traffic_report_enabled === 'true',
+        notification_webhook_enabled: notification.notification_webhook_enabled === 'true',
         username: settingsData.username || '',
         password: '',
         confirm_password: '',
@@ -1085,13 +948,9 @@ const saveSettings = async () => {
     return
   }
 
-  if (!isValidNotificationTimezone(settings.value.notification_timezone)) {
-    validationError.value = trans.value.invalidNotificationTimezone || 'Notification timezone must be a valid IANA timezone, for example Asia/Shanghai'
-    return
-  }
-
-  if (normalizeExpireNotificationTimeSetting(settings.value.expire_notification_time) !== String(settings.value.expire_notification_time)) {
-    validationError.value = trans.value.invalidExpireNotificationTime || 'Expiration notification time must be an integer from 0 to 23'
+  const notification = prepareNotificationConfig({ input: settings.value })
+  if (!notification.ok) {
+    validationError.value = formatNotificationIssue(notification.issues[0])
     return
   }
 
@@ -1103,19 +962,6 @@ const saveSettings = async () => {
   if (shouldChangePassword) {
     if (settings.value.password !== settings.value.confirm_password) {
       validationError.value = trans.value.passwordMismatch
-      return
-    }
-  }
-
-  const isTrafficReportEnabled = settings.value.traffic_report_enabled
-  if (isTgNotifyEnabled(settings.value.tg_notify) || isExpireReminderEnabled(settings.value.expire_reminder) || isResourceAlertEnabled(settings.value.resource_alert_rules) || isTrafficReportEnabled) {
-    if (isNotificationWebhookEnabled()) {
-      if (!settings.value.notification_webhook_url || settings.value.notification_webhook_url.trim().length === 0) {
-        validationError.value = trans.value.notificationWebhookUrlRequired || 'Webhook URL is required'
-        return
-      }
-    } else if (!settings.value.tg_bot_token || settings.value.tg_bot_token.trim().length === 0) {
-      validationError.value = trans.value.tgBotTokenRequired
       return
     }
   }
@@ -1158,21 +1004,7 @@ const saveSettings = async () => {
       wss_report_hours: normalizeWssReportHoursSetting(settings.value.wss_report_hours),
       frontend_ws_timeout_minutes: String(frontendWsTimeoutMinutes),
       long_history_points: normalizeLongHistoryPointsSetting(settings.value.long_history_points),
-      tg_notify: normalizeTgNotifySetting(settings.value.tg_notify),
-      expire_reminder: normalizeExpireReminderSetting(settings.value.expire_reminder),
-      resource_alert_rules: normalizeResourceAlertRulesSetting(settings.value.resource_alert_rules),
-      tg_bot_token: settings.value.tg_bot_token,
-      tg_chat_id: settings.value.tg_chat_id,
-      notification_timezone: normalizeNotificationTimezoneSetting(settings.value.notification_timezone),
-      expire_notification_time: normalizeExpireNotificationTimeSetting(settings.value.expire_notification_time),
-      traffic_report_enabled: settings.value.traffic_report_enabled ? 'true' : 'false',
-      notification_webhook_enabled: settings.value.notification_webhook_enabled ? 'true' : 'false',
-      notification_webhook_url: settings.value.notification_webhook_url,
-      notification_webhook_method: settings.value.notification_webhook_method === 'GET' ? 'GET' : 'POST',
-      notification_webhook_format: ['json', 'form', 'text'].includes(settings.value.notification_webhook_format) ? settings.value.notification_webhook_format : 'json',
-      notification_webhook_headers: settings.value.notification_webhook_headers,
-      notification_webhook_body: settings.value.notification_webhook_body,
-      notification_template: settings.value.notification_template,
+      ...notification.patch,
       username: settings.value.username,
       custom_ct: pingNodeValidation.values.custom_ct,
       custom_cu: pingNodeValidation.values.custom_cu,
@@ -1671,21 +1503,16 @@ const closeDbModal = () => {
 
 const sendTestNotification = async () => {
   if (testNotificationLoading.value) return
+  const notification = prepareNotificationConfig({ input: settings.value, intent: 'test' })
+  if (!notification.ok) {
+    alertMessage.value = formatNotificationIssue(notification.issues[0])
+    return
+  }
   testNotificationLoading.value = true
   try {
     const result = await adminApiForSite({
       action: 'send_test_notification',
-      tg_bot_token: settings.value.tg_bot_token,
-      tg_chat_id: settings.value.tg_chat_id,
-      notification_webhook_enabled: settings.value.notification_webhook_enabled ? 'true' : 'false',
-      notification_webhook_url: settings.value.notification_webhook_url,
-      notification_webhook_method: settings.value.notification_webhook_method,
-      notification_webhook_format: settings.value.notification_webhook_format,
-      notification_webhook_headers: settings.value.notification_webhook_headers,
-      notification_webhook_body: settings.value.notification_webhook_body,
-      notification_template: settings.value.notification_template,
-      notification_timezone: normalizeNotificationTimezoneSetting(settings.value.notification_timezone),
-      expire_notification_time: normalizeExpireNotificationTimeSetting(settings.value.expire_notification_time)
+      ...notification.patch
     })
     if (!result.error) {
       alertMessage.value = getMessage(result.data.message) || trans.value.testNotificationSent

@@ -1,3 +1,5 @@
+import { readNotificationConfig, normalizeBooleanSetting } from '../shared/notificationConfig.js';
+export { TG_NOTIFY_MINUTES_MIN, TG_NOTIFY_MINUTES_MAX, TG_NOTIFY_LEGACY_TRUE_MINUTES, EXPIRE_REMINDER_DAYS_MAX, DEFAULT_NOTIFICATION_TIMEZONE, DEFAULT_EXPIRE_NOTIFICATION_TIME, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, RESOURCE_ALERT_MODE_CONTINUOUS, RESOURCE_ALERT_MODE_AVERAGE, RESOURCE_ALERT_RULES_MAX, DEFAULT_NOTIFICATION_TEMPLATE, DEFAULT_NOTIFICATION_WEBHOOK_BODY, NOTIFICATION_WEBHOOK_METHODS, NOTIFICATION_WEBHOOK_FORMATS, RESOURCE_ALERT_METRIC_CPU, RESOURCE_ALERT_METRIC_RAM, RESOURCE_ALERT_METRIC_DISK, RESOURCE_ALERT_METRIC_NET_IN, RESOURCE_ALERT_METRIC_NET_OUT, RESOURCE_ALERT_METRICS, normalizeBooleanSetting, normalizeTgNotify, getTgNotifyMinutes, normalizeExpireReminder, getExpireReminderDays, normalizeNotificationTimezone, normalizeExpireNotificationTime, normalizeNotificationWebhookMethod, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookBody, normalizeNotificationTemplate, normalizeResourceAlertWindowMinutes, normalizeResourceAlertIntervalMinutes, normalizeResourceAlertPercent, normalizeResourceAlertMbps, normalizeResourceAlertMode, normalizeResourceAlertMetric, normalizeResourceAlertThreshold, normalizeResourceAlertRule, normalizeResourceAlertRules, getResourceAlertRuleThresholds, getResourceAlertConfig } from '../shared/notificationConfig.js';
 import { normalizeLanguagePreference } from './language.js';
 import {
   DEFAULT_SITE_TITLE,
@@ -9,50 +11,10 @@ export const APPEARANCE_FIELDS = ['site_title', 'custom_bg', 'custom_bg_mobile',
 
 export const SITE_FIELDS = ['is_public', 'show_price', 'show_expire', 'show_tf', 'show_three_net_details', 'wss_report_enabled', 'wss_report_hours', 'frontend_ws_timeout_minutes', 'long_history_points', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'notification_timezone', 'expire_notification_time', 'traffic_report_enabled', 'notification_webhook_enabled', 'notification_webhook_url', 'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body', 'notification_template', 'jwt_secret', 'username', 'password', 'custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4', 'custom_ct_name', 'custom_cu_name', 'custom_cm_name', 'custom_bd_name', 'node_1_name', 'node_2_name', 'node_3_name', 'node_4_name', 'expire_reminder', 'resource_alert_rules', 'theme_url', ];
 
-export const TG_NOTIFY_MINUTES_MIN = 2;
-export const TG_NOTIFY_MINUTES_MAX = 30;
-export const TG_NOTIFY_LEGACY_TRUE_MINUTES = 5;
-export const EXPIRE_REMINDER_DAYS_MAX = 7;
 export const LONG_HISTORY_POINT_OPTIONS = [60, 120, 180, 240];
 export const DEFAULT_LONG_HISTORY_POINTS = 120;
 export const FRONTEND_WS_TIMEOUT_MINUTES_MAX = 1440;
-export const DEFAULT_NOTIFICATION_TIMEZONE = 'UTC';
-export const DEFAULT_EXPIRE_NOTIFICATION_TIME = '12';
 export const ALL_WSS_REPORT_HOURS = Object.freeze(Array.from({ length: 24 }, (_, hour) => hour));
-export const RESOURCE_ALERT_WINDOW_MIN = 5;
-export const RESOURCE_ALERT_WINDOW_MAX = 10;
-export const RESOURCE_ALERT_MODE_CONTINUOUS = 'continuous';
-export const RESOURCE_ALERT_MODE_AVERAGE = 'average';
-export const RESOURCE_ALERT_RULES_MAX = 20;
-export const DEFAULT_NOTIFICATION_TEMPLATE = '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n{{time}}';
-export const DEFAULT_NOTIFICATION_WEBHOOK_BODY = '{\n  "title": "{{emoji}} {{event}}",\n  "content": "{{notification}}"\n}';
-const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = [
-  '{{emoji}}【CF Server Monitor】{{event}}\n\n{{message}}\n\n时间: {{time}}',
-  '{{emoji}}【CF Server Monitor】{{event}}\n服务器: {{client}}\n详情:\n{{message}}\n时间: {{time}}',
-  '事件: {{event}}\n服务名: {{client}}\n消息: {{message}}\n时间: {{time}}',
-  '【CF Server Monitor】{{event}}\n服务器: {{client}}\n数量: {{count}}\n详情:\n{{message}}\n时间: {{time}}',
-  '{{emoji}}【CF Server Monitor】{{event}}\n服务器: {{client}}\n数量: {{count}}\n详情:\n{{message}}\n时间: {{time}}'
-];
-const LEGACY_DEFAULT_NOTIFICATION_WEBHOOK_BODIES = [
-  '{\n  "event": "{{event}}",\n  "client": "{{client}}",\n  "message": "{{message}}",\n  "time": "{{time}}"\n}',
-  '{\n  "title": "{{title}}",\n  "event": "{{event}}",\n  "client": "{{client}}",\n  "clients": "{{clients}}",\n  "count": "{{count}}",\n  "message": "{{message}}",\n  "notification": "{{notification}}",\n  "time": "{{time}}"\n}',
-  '{\n  "title": "{{event}}",\n  "content": "{{notification}}"\n}'
-];
-export const NOTIFICATION_WEBHOOK_METHODS = ['GET', 'POST'];
-export const NOTIFICATION_WEBHOOK_FORMATS = ['json', 'form', 'text'];
-export const RESOURCE_ALERT_METRIC_CPU = 'cpu';
-export const RESOURCE_ALERT_METRIC_RAM = 'ram';
-export const RESOURCE_ALERT_METRIC_DISK = 'disk';
-export const RESOURCE_ALERT_METRIC_NET_IN = 'netIn';
-export const RESOURCE_ALERT_METRIC_NET_OUT = 'netOut';
-export const RESOURCE_ALERT_METRICS = [
-  RESOURCE_ALERT_METRIC_CPU,
-  RESOURCE_ALERT_METRIC_RAM,
-  RESOURCE_ALERT_METRIC_DISK,
-  RESOURCE_ALERT_METRIC_NET_IN,
-  RESOURCE_ALERT_METRIC_NET_OUT
-];
-const BYTES_PER_MEGABIT = 1000 * 1000 / 8;
 let cachedSiteSettings = null;
 let siteSettingsCacheExpiry = 0;
 let cachedAppearanceOptions = null;
@@ -80,19 +42,7 @@ const defaults = {
   wss_report_hours: [...ALL_WSS_REPORT_HOURS],
   frontend_ws_timeout_minutes: '0',
   long_history_points: String(DEFAULT_LONG_HISTORY_POINTS),
-  tg_notify: '0',
-  tg_bot_token: '',
-  tg_chat_id: '',
-  notification_timezone: DEFAULT_NOTIFICATION_TIMEZONE,
-  expire_notification_time: DEFAULT_EXPIRE_NOTIFICATION_TIME,
-  traffic_report_enabled: 'false',
-  notification_webhook_enabled: 'false',
-  notification_webhook_url: '',
-  notification_webhook_method: 'POST',
-  notification_webhook_format: 'json',
-  notification_webhook_headers: '',
-  notification_webhook_body: DEFAULT_NOTIFICATION_WEBHOOK_BODY,
-  notification_template: DEFAULT_NOTIFICATION_TEMPLATE,
+  ...readNotificationConfig(),
   jwt_secret: '',
   custom_ct: 'gd-ct-dualstack.ip.zstaticcdn.com',
   custom_cu: 'gd-cu-dualstack.ip.zstaticcdn.com',
@@ -110,8 +60,6 @@ const defaults = {
   node_2_name: 'Node 2',
   node_3_name: 'Node 3',
   node_4_name: 'Node 4',
-  expire_reminder: '0',
-  resource_alert_rules: [],
   theme_url: '',
 };
 
@@ -131,285 +79,6 @@ export function normalizeFrontendWsTimeoutMinutes(value) {
       ? minutes
       : 0
   );
-}
-
-export function normalizeTgNotify(value) {
-  if (value === true || value === 'true') return String(TG_NOTIFY_LEGACY_TRUE_MINUTES);
-  if (
-    value === false ||
-    value === 'false' ||
-    value === undefined ||
-    value === null ||
-    value === ''
-  ) {
-    return '0';
-  }
-
-  const minutes = Number(value);
-  if (
-    Number.isInteger(minutes) &&
-    (minutes === 0 || (minutes >= TG_NOTIFY_MINUTES_MIN && minutes <= TG_NOTIFY_MINUTES_MAX))
-  ) {
-    return String(minutes);
-  }
-
-  return '0';
-}
-
-export function getTgNotifyMinutes(value) {
-  return Number(normalizeTgNotify(value));
-}
-
-export function normalizeExpireReminder(value) {
-  if (value === true || value === 'true') return String(EXPIRE_REMINDER_DAYS_MAX);
-  if (
-    value === false ||
-    value === 'false' ||
-    value === undefined ||
-    value === null ||
-    value === ''
-  ) {
-    return '0';
-  }
-
-  const days = Number(value);
-  if (Number.isInteger(days) && days >= 0 && days <= EXPIRE_REMINDER_DAYS_MAX) {
-    return String(days);
-  }
-
-  return '0';
-}
-
-export function getExpireReminderDays(value) {
-  return Number(normalizeExpireReminder(value));
-}
-
-export function normalizeNotificationTimezone(value) {
-  const timezone = String(value || '').trim();
-  if (!timezone || timezone.length > 64) return DEFAULT_NOTIFICATION_TIMEZONE;
-
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date(0));
-    return timezone;
-  } catch (_) {
-    return DEFAULT_NOTIFICATION_TIMEZONE;
-  }
-}
-
-export function normalizeExpireNotificationTime(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return DEFAULT_EXPIRE_NOTIFICATION_TIME;
-  const legacyTimeMatch = raw.match(/^([01]?\d|2[0-3]):[0-5]\d$/);
-  const hour = Number(legacyTimeMatch ? legacyTimeMatch[1] : raw);
-  return Number.isInteger(hour) && hour >= 0 && hour <= 23
-    ? String(hour)
-    : DEFAULT_EXPIRE_NOTIFICATION_TIME;
-}
-
-export function normalizeNotificationWebhookMethod(value) {
-  const method = String(value || '').trim().toUpperCase();
-  return NOTIFICATION_WEBHOOK_METHODS.includes(method) ? method : 'POST';
-}
-
-export function normalizeNotificationWebhookFormat(value) {
-  const format = String(value || '').trim().toLowerCase();
-  return NOTIFICATION_WEBHOOK_FORMATS.includes(format) ? format : 'json';
-}
-
-export function normalizeNotificationWebhookHeaders(value) {
-  return String(value || '').slice(0, 4000);
-}
-
-export function normalizeNotificationWebhookBody(value) {
-  const body = String(value || '').trim();
-  if (LEGACY_DEFAULT_NOTIFICATION_WEBHOOK_BODIES.includes(body)) {
-    return DEFAULT_NOTIFICATION_WEBHOOK_BODY;
-  }
-  return (body || DEFAULT_NOTIFICATION_WEBHOOK_BODY).slice(0, 8000);
-}
-
-export function normalizeNotificationTemplate(value) {
-  const template = String(value || '').trim();
-  if (LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.includes(template)) {
-    return DEFAULT_NOTIFICATION_TEMPLATE;
-  }
-  return (template || DEFAULT_NOTIFICATION_TEMPLATE).slice(0, 4000);
-}
-
-export function normalizeResourceAlertWindowMinutes(value) {
-  const minutes = Number(value);
-  if (
-    Number.isInteger(minutes) &&
-    (minutes === 0 || (minutes >= RESOURCE_ALERT_WINDOW_MIN && minutes <= RESOURCE_ALERT_WINDOW_MAX))
-  ) {
-    return String(minutes);
-  }
-  return '0';
-}
-
-export function normalizeResourceAlertIntervalMinutes(value) {
-  const normalized = normalizeResourceAlertWindowMinutes(value);
-  return normalized === '0' ? String(RESOURCE_ALERT_WINDOW_MIN) : normalized;
-}
-
-export function normalizeResourceAlertPercent(value) {
-  if (value === undefined || value === null || value === '') return '0';
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > 100) return '0';
-  return String(Math.round(number * 100) / 100);
-}
-
-export function normalizeResourceAlertMbps(value) {
-  if (value === undefined || value === null || value === '') return '0';
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > 100000) return '0';
-  return String(Math.round(number * 100) / 100);
-}
-
-export function normalizeResourceAlertMode(value) {
-  const mode = String(value || '').trim().toLowerCase();
-  return mode === RESOURCE_ALERT_MODE_CONTINUOUS
-    ? RESOURCE_ALERT_MODE_CONTINUOUS
-    : RESOURCE_ALERT_MODE_AVERAGE;
-}
-
-export function normalizeResourceAlertMetric(value) {
-  const metric = String(value || '').trim();
-  return RESOURCE_ALERT_METRICS.includes(metric) ? metric : RESOURCE_ALERT_METRIC_CPU;
-}
-
-function parseResourceAlertRulesValue(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_) {
-      return [];
-    }
-  }
-  return [];
-}
-
-function hasExplicitResourceAlertRulesValue(value) {
-  if (Array.isArray(value)) return true;
-  return typeof value === 'string' && value.trim() !== '';
-}
-
-function normalizeResourceAlertRuleId(value, index) {
-  const id = String(value || '').trim().replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 64);
-  return id || `rule_${index + 1}`;
-}
-
-function normalizeResourceAlertRuleName(value, metric, index) {
-  const name = String(value || '').trim().slice(0, 80);
-  if (name) return name;
-  const labels = {
-    [RESOURCE_ALERT_METRIC_CPU]: 'CPU',
-    [RESOURCE_ALERT_METRIC_RAM]: 'RAM',
-    [RESOURCE_ALERT_METRIC_DISK]: 'DISK',
-    [RESOURCE_ALERT_METRIC_NET_IN]: 'NET In',
-    [RESOURCE_ALERT_METRIC_NET_OUT]: 'NET Out'
-  };
-  return `${labels[metric] || 'Resource'} Alert ${index + 1}`;
-}
-
-function normalizeResourceAlertServers(value) {
-  const source = Array.isArray(value)
-    ? value
-    : (Array.isArray(value?.servers) ? value.servers : []);
-  const seen = new Set();
-  const servers = [];
-  for (const item of source) {
-    const id = String(item || '').trim();
-    if (!id || id.length > 64 || !/^[A-Za-z0-9._:-]+$/.test(id) || seen.has(id)) continue;
-    seen.add(id);
-    servers.push(id);
-  }
-  return servers.slice(0, 1000);
-}
-
-function getDefaultResourceAlertThreshold(metric) {
-  return metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
-    ? '100'
-    : '80';
-}
-
-export function normalizeResourceAlertThreshold(value, metric) {
-  const fallback = getDefaultResourceAlertThreshold(metric);
-  const normalized = metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
-    ? normalizeResourceAlertMbps(value)
-    : normalizeResourceAlertPercent(value);
-  return Number(normalized) > 0 ? normalized : fallback;
-}
-
-export function normalizeResourceAlertRule(rule, index = 0) {
-  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return null;
-  const metric = normalizeResourceAlertMetric(rule.metric);
-  const intervalMinutes = normalizeResourceAlertIntervalMinutes(
-    rule.intervalMinutes ?? rule.windowMinutes ?? rule.interval ?? rule.minutes
-  );
-
-  return {
-    id: normalizeResourceAlertRuleId(rule.id, index),
-    name: normalizeResourceAlertRuleName(rule.name, metric, index),
-    metric,
-    threshold: normalizeResourceAlertThreshold(rule.threshold, metric),
-    servers: normalizeResourceAlertServers(rule.servers ?? rule.serverIds),
-    intervalMinutes,
-    mode: normalizeResourceAlertMode(rule.mode)
-  };
-}
-
-export function normalizeResourceAlertRules(value) {
-  const explicitRulesValue = hasExplicitResourceAlertRulesValue(value);
-  const source = parseResourceAlertRulesValue(value);
-  const seenIds = new Set();
-  const rules = source
-    .slice(0, RESOURCE_ALERT_RULES_MAX)
-    .map((rule, index) => normalizeResourceAlertRule(rule, index))
-    .filter(Boolean)
-    .map((rule, index) => {
-      let id = rule.id;
-      if (seenIds.has(id)) {
-        const suffix = `_${index + 1}`;
-        id = `${id.slice(0, Math.max(0, 64 - suffix.length))}${suffix}`;
-        let attempt = index + 1;
-        while (seenIds.has(id)) {
-          attempt += 1;
-          const nextSuffix = `_${attempt}`;
-          id = `${rule.id.slice(0, Math.max(0, 64 - nextSuffix.length))}${nextSuffix}`;
-        }
-      }
-      seenIds.add(id);
-      return { ...rule, id };
-    });
-
-  if (rules.length > 0 || explicitRulesValue) return rules;
-  return [];
-}
-
-export function getResourceAlertRuleThresholds(rule) {
-  const metric = normalizeResourceAlertMetric(rule?.metric);
-  const threshold = Number(normalizeResourceAlertThreshold(rule?.threshold, metric));
-  return {
-    cpuPercent: metric === RESOURCE_ALERT_METRIC_CPU ? threshold : 0,
-    ramPercent: metric === RESOURCE_ALERT_METRIC_RAM ? threshold : 0,
-    diskPercent: metric === RESOURCE_ALERT_METRIC_DISK ? threshold : 0,
-    netInBps: metric === RESOURCE_ALERT_METRIC_NET_IN ? threshold * BYTES_PER_MEGABIT : 0,
-    netOutBps: metric === RESOURCE_ALERT_METRIC_NET_OUT ? threshold * BYTES_PER_MEGABIT : 0,
-    netTotalBps: 0
-  };
-}
-
-export function getResourceAlertConfig(settings = {}) {
-  const rules = normalizeResourceAlertRules(settings.resource_alert_rules, settings);
-
-  return {
-    enabled: rules.length > 0,
-    rules,
-    hasRules: rules.length > 0
-  };
 }
 
 export function generateRandomSecret(byteLength = 32) {
@@ -459,19 +128,6 @@ export function normalizePreferredTheme(value, fallback = 'auto') {
 
 export function normalizeDefaultLanguage(value, fallback = 'auto') {
   return normalizeLanguagePreference(value, fallback);
-}
-
-export function normalizeBooleanSetting(value, fallback = 'false') {
-  if (value === true || value === 1) return 'true';
-  if (value === false || value === 0) return 'false';
-  if (value === null || value === undefined || value === '') {
-    return fallback === 'true' ? 'true' : 'false';
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) return 'true';
-  if (['false', '0', 'no', 'off'].includes(normalized)) return 'false';
-  return fallback === 'true' ? 'true' : 'false';
 }
 
 export function normalizeWssReportHours(value) {
@@ -614,23 +270,12 @@ export async function loadSiteSettings(db, options = {}) {
     if (!isValidJwtSecret(siteOptions?.jwt_secret) || !isValidJwtSecret(result.jwt_secret)) {
       result.jwt_secret = await ensurePersistedJwtSecret(db, result, siteOptions);
     }
-    result.tg_notify = normalizeTgNotify(result.tg_notify);
-    result.expire_reminder = normalizeExpireReminder(result.expire_reminder);
+    Object.assign(result, readNotificationConfig(result));
     result.long_history_points = normalizeLongHistoryPoints(result.long_history_points);
-    result.resource_alert_rules = normalizeResourceAlertRules(result.resource_alert_rules);
     result.show_three_net_details = normalizeBooleanSetting(result.show_three_net_details, defaults.show_three_net_details);
     result.wss_report_enabled = normalizeBooleanSetting(result.wss_report_enabled, defaults.wss_report_enabled);
     result.wss_report_hours = normalizeWssReportHours(result.wss_report_hours);
     result.frontend_ws_timeout_minutes = normalizeFrontendWsTimeoutMinutes(result.frontend_ws_timeout_minutes);
-    result.notification_webhook_enabled = normalizeBooleanSetting(result.notification_webhook_enabled);
-    result.notification_webhook_method = normalizeNotificationWebhookMethod(result.notification_webhook_method);
-    result.notification_webhook_format = normalizeNotificationWebhookFormat(result.notification_webhook_format);
-    result.notification_webhook_headers = normalizeNotificationWebhookHeaders(result.notification_webhook_headers);
-    result.notification_webhook_body = normalizeNotificationWebhookBody(result.notification_webhook_body);
-    result.notification_template = normalizeNotificationTemplate(result.notification_template);
-    result.notification_timezone = normalizeNotificationTimezone(result.notification_timezone);
-    result.expire_notification_time = normalizeExpireNotificationTime(result.expire_notification_time);
-    result.traffic_report_enabled = normalizeBooleanSetting(result.traffic_report_enabled);
   } catch (e) {
     throw new Error('Unable to load site settings', { cause: e });
   }
@@ -733,23 +378,12 @@ export function saveSiteOptions(db, updates) {
   const siteOptions = { ...existingSiteOptions, ...updates };
   delete siteOptions.show_long_history;
   delete siteOptions.show_time;
-  siteOptions.tg_notify = normalizeTgNotify(siteOptions.tg_notify);
-  siteOptions.expire_reminder = normalizeExpireReminder(siteOptions.expire_reminder);
+  Object.assign(siteOptions, readNotificationConfig(siteOptions));
   siteOptions.long_history_points = normalizeLongHistoryPoints(siteOptions.long_history_points);
-  siteOptions.resource_alert_rules = normalizeResourceAlertRules(siteOptions.resource_alert_rules);
   siteOptions.show_three_net_details = normalizeBooleanSetting(siteOptions.show_three_net_details, defaults.show_three_net_details);
   siteOptions.wss_report_enabled = normalizeBooleanSetting(siteOptions.wss_report_enabled, defaults.wss_report_enabled);
   siteOptions.wss_report_hours = normalizeWssReportHours(siteOptions.wss_report_hours);
   siteOptions.frontend_ws_timeout_minutes = normalizeFrontendWsTimeoutMinutes(siteOptions.frontend_ws_timeout_minutes);
-  siteOptions.notification_webhook_enabled = normalizeBooleanSetting(siteOptions.notification_webhook_enabled);
-  siteOptions.notification_webhook_method = normalizeNotificationWebhookMethod(siteOptions.notification_webhook_method);
-  siteOptions.notification_webhook_format = normalizeNotificationWebhookFormat(siteOptions.notification_webhook_format);
-  siteOptions.notification_webhook_headers = normalizeNotificationWebhookHeaders(siteOptions.notification_webhook_headers);
-  siteOptions.notification_webhook_body = normalizeNotificationWebhookBody(siteOptions.notification_webhook_body);
-  siteOptions.notification_template = normalizeNotificationTemplate(siteOptions.notification_template);
-  siteOptions.notification_timezone = normalizeNotificationTimezone(siteOptions.notification_timezone);
-  siteOptions.expire_notification_time = normalizeExpireNotificationTime(siteOptions.expire_notification_time);
-  siteOptions.traffic_report_enabled = normalizeBooleanSetting(siteOptions.traffic_report_enabled);
   
   db.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'

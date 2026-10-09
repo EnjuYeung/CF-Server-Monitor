@@ -1,6 +1,7 @@
 import { enqueueNotification } from '../outbox.js';
 import { clearServersListCache, getAllServers } from '../../utils/cache.js';
-import { getExpireReminderDays, loadSiteSettings, debug } from '../../utils/settings.js';
+import { getExpireReminderDays } from '../../shared/notificationConfig.js';
+import { loadSiteSettings, debug } from '../../utils/settings.js';
 import { detectBillingCycle, normalizeBillingCycle, renewExpireDateIfNeeded } from '../../shared/billing.js';
 import { isExpireNotificationTimeDue, getZonedDateSerial, parseDateSerial } from './time.js';
 import { hasNotificationTarget } from './delivery.js';

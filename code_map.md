@@ -32,6 +32,7 @@
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10；test/expiry-notification.test.js 验证到期送达及跨日/重启去重 |
 | 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；显式发送状态，无循环依赖 |
+| 共用通知配置与资源规则编辑 | src/shared/notificationConfig.js | readNotificationConfig / prepareNotificationConfig；admin/index.vue、SettingsPanel.vue、handlers/admin.js、utils/settings.js 共用；test/notification-config.test.js 的 NC01–NC12 验证兼容读取、原始输入、部分更新及真实 HTTP/SQLite/本地投递 |
 | 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
 | 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10、UP06 |

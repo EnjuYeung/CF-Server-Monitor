@@ -261,6 +261,7 @@
 </template>
 
 <script setup>
+import { normalizeTgNotify } from '../../../../shared/notificationConfig.js'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
@@ -307,19 +308,7 @@ const currencySelectOptions = computed(() => {
 const cycleLabel = (item) => getBillingCycleLabel(item, currentLang.value)
 const currencyLabel = (item) => `${item.symbol} ${getCurrencyName(item, currentLang.value)}`
 
-const normalizeTgNotifySetting = (value) => {
-  if (value === true || value === 'true') return '5'
-  if (value === false || value === 'false' || value === undefined || value === null || value === '') return '0'
-
-  const minutes = Number(value)
-  if (Number.isInteger(minutes) && (minutes === 0 || (minutes >= 2 && minutes <= 30))) {
-    return String(minutes)
-  }
-
-  return '0'
-}
-
-const isOfflineNotifyEnabled = computed(() => normalizeTgNotifySetting(props.settings.tg_notify) !== '0')
+const isOfflineNotifyEnabled = computed(() => normalizeTgNotify(props.settings.tg_notify) !== '0')
 const hasNodeNotificationOptions = computed(() => (
   !!props.settings.tg_bot_token &&
   isOfflineNotifyEnabled.value

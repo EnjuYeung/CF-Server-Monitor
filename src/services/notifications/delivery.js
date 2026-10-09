@@ -1,4 +1,4 @@
-import { DEFAULT_NOTIFICATION_TEMPLATE, normalizeBooleanSetting, normalizeNotificationTemplate, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod } from '../../utils/settings.js';
+import { DEFAULT_NOTIFICATION_TEMPLATE, normalizeBooleanSetting, normalizeNotificationTemplate, normalizeNotificationWebhookBody, normalizeNotificationWebhookFormat, normalizeNotificationWebhookHeaders, normalizeNotificationWebhookMethod } from '../../shared/notificationConfig.js';
 import { NOTIFICATION_MAX_RETRIES, NOTIFICATION_RETRY_DELAY_MS } from '../../utils/config.js';
 import { formatNotificationTime } from './time.js';
 

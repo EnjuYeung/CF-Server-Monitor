@@ -2,7 +2,8 @@ import { getLatestMetricsForAllServers } from '../../database/schema.js';
 import { enqueueNotification } from '../outbox.js';
 import { getServerLastSeen, isServerOffline } from '../serverPresence.js';
 import { getAllServers } from '../../utils/cache.js';
-import { getTgNotifyMinutes, loadSiteSettings } from '../../utils/settings.js';
+import { getTgNotifyMinutes } from '../../shared/notificationConfig.js';
+import { loadSiteSettings } from '../../utils/settings.js';
 import { formatLastReportTime } from './time.js';
 import { hasNotificationTarget } from './delivery.js';
 
