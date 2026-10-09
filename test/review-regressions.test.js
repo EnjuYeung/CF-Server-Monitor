@@ -92,8 +92,15 @@ test('review regressions through real HTTP, WS and SQLite lifecycle', async t =>
       await admin({ action: 'edit', id, report_interval: 180 });
       await admin({ action: 'save_settings', settings: { tg_notify: '2', notification_webhook_enabled: 'true', notification_webhook_url: `${base}/fixture-unused` } });
       const persistedTimestamp = Date.now() - 400000;
-      await report(id, { cpu: 12, timestamp: persistedTimestamp });
-      controller.env.REALTIME_HUB.agentHistoryWrites.set(id, { lastD1WriteTs: Date.now() - 150000 });
+      const lastWriteAt = Date.now() - 150000;
+      const clock = t.mock.method(Date, 'now', () => lastWriteAt);
+      try {
+        await controller.env.AGENT_REPORTS.receive(id, { metrics: { cpu: 12, timestamp: persistedTimestamp } }, {
+          transport: 'ws', reportIntervalMs: 180000
+        });
+      } finally {
+        clock.mock.restore();
+      }
       const ws = new WebSocket(base.replace('http:', 'ws:') + '/update'); sockets.push(ws);
       const ack = new Promise((resolve, reject) => {
         ws.on('message', raw => { const packet = JSON.parse(raw); if (packet.type === 'ack') resolve(packet); if (packet.type === 'error') reject(new Error(packet.text)); });

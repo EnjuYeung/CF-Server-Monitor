@@ -1,11 +1,10 @@
 import { adminEndpoint, updateAdminAccess } from './adminAccess.js'
 import { http, isAdminLoggedIn, getAuthToken, setAuthToken, clearAuthToken } from './http'
-import { getApiBases, getWsBase, hasMultipleApiBases, getTitle } from './config'
-import { DEFAULT_SITE_TITLE, FRONTEND_WS_TIMEOUT_MINUTES_MAX, LATENCY_WINDOW } from './constants'
+import { getApiBases, getWsBase } from './config'
+import { FRONTEND_WS_TIMEOUT_MINUTES_MAX } from './constants'
 import { ref } from 'vue'
 import { normalizeTimestamp } from './time.js'
 import { TIME } from './constants'
-import { resolveDisplayMode } from './displayMode.js'
 
 export { getApiBases, getWsBase }
 
@@ -292,105 +291,6 @@ export const fetchServers = async () => {
   const result = await http.get('/api/servers')
   if (result.error) return null
   return result.data
-}
-
-export const fetchServersAll = async () => {
-  const results = await http.getAll('/api/servers')
-  if (!results.some(result => !result.error && result.data)) return null
-  const multiSite = hasMultipleApiBases()
-  const localTitle = getTitle() || DEFAULT_SITE_TITLE
-
-  const mergedData = createEmptyMergedData()
-  mergedData.sysConfig.site_title = multiSite ? localTitle : DEFAULT_SITE_TITLE
-
-  for (const result of results) {
-    mergeSiteResult(mergedData, result, multiSite, localTitle)
-  }
-
-  return mergedData
-}
-
-const createEmptyMergedData = () => ({
-  servers: [],
-  latestReportUpdates: [],
-  stats: { total: 0, online: 0, offline: 0, globalNetRx: 0, globalNetTx: 0, globalSpeedIn: 0, globalSpeedOut: 0 },
-  regionStats: {},
-  sysConfig: {
-    show_price: true,
-    show_expire: true,
-    show_tf: true,
-    show_three_net_details: true,
-    display_mode: 'bar',
-    site_title: DEFAULT_SITE_TITLE,
-    latency_window: {
-      points: LATENCY_WINDOW.POINTS,
-      hours: LATENCY_WINDOW.HOURS
-    }
-  }
-})
-
-const mergeSiteResult = (mergedData, { data, error, baseUrl }, multiSite, localTitle) => {
-  if (error || !data) return
-
-  const rawServers = Array.isArray(data.servers)
-    ? data.servers
-    : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
-
-  for (const server of rawServers) {
-    mergedData.servers.push({ ...server, source: baseUrl })
-  }
-
-  const latestReportUpdates = Array.isArray(data.latestReportUpdates) ? data.latestReportUpdates : []
-  for (const update of latestReportUpdates) {
-    if (!update || !update.serverId || !Array.isArray(update.samples)) continue
-    mergedData.latestReportUpdates.push({ ...update, source: baseUrl })
-  }
-
-  if (data.stats) {
-    mergedData.stats.total += data.stats.total || 0
-    mergedData.stats.online += data.stats.online || 0
-    mergedData.stats.offline += data.stats.offline || 0
-    mergedData.stats.globalNetRx += data.stats.globalNetRx || 0
-    mergedData.stats.globalNetTx += data.stats.globalNetTx || 0
-    mergedData.stats.globalSpeedIn += data.stats.globalSpeedIn || 0
-    mergedData.stats.globalSpeedOut += data.stats.globalSpeedOut || 0
-  }
-
-  if (data.regionStats) {
-    for (const code in data.regionStats) {
-      mergedData.regionStats[code] = (mergedData.regionStats[code] || 0) + data.regionStats[code]
-    }
-  }
-
-  if (data.sysConfig) {
-    mergedData.sysConfig = {
-      show_price: data.sysConfig.show_price ?? mergedData.sysConfig.show_price,
-      show_expire: data.sysConfig.show_expire ?? mergedData.sysConfig.show_expire,
-      show_tf: data.sysConfig.show_tf ?? mergedData.sysConfig.show_tf,
-      show_three_net_details: data.sysConfig.show_three_net_details ?? mergedData.sysConfig.show_three_net_details,
-      display_mode: resolveDisplayMode(data.sysConfig, mergedData.sysConfig.display_mode),
-      site_title: multiSite ? localTitle : mergedData.sysConfig.site_title,
-      latency_window: data.sysConfig.latency_window ?? mergedData.sysConfig.latency_window
-    }
-  }
-}
-
-export const fetchServersAllWithProgress = async (onResult) => {
-  const multiSite = hasMultipleApiBases()
-  const localTitle = getTitle() || DEFAULT_SITE_TITLE
-
-  const mergedData = createEmptyMergedData()
-  mergedData.sysConfig.site_title = multiSite ? localTitle : DEFAULT_SITE_TITLE
-
-  let corsErrorSites = []
-
-  await http.getAllWithProgress('/api/servers', (result) => {
-    mergeSiteResult(mergedData, result, multiSite, localTitle)
-    if (result.corsError && !corsErrorSites.includes(result.baseUrl)) corsErrorSites.push(result.baseUrl)
-    onResult({ ...mergedData, corsErrorSites })
-  })
-
-  return mergedData
 }
 
 export const fetchServerDetail = async (id, apiIndex = 0) => {

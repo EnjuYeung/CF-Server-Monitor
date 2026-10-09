@@ -1,4 +1,4 @@
-import { getMetricsHistory, clearHistory } from './database/schema.js';
+import { getMetricsHistory } from './database/schema.js';
 import { handleAdminAPI } from './handlers/admin.js';
 import { serveFrontend } from './handlers/frontend.js';
 import { handleUpdate } from './handlers/update.js';
@@ -198,8 +198,7 @@ export default {
         if (!await checkAuth(request, env, sys)) {
           return simpleAuthResponse();
         }
-        env.REALTIME_HUB?.discardPendingHistory();
-        const result = await clearHistory(env.DB);
+        const result = await env.AGENT_REPORTS.clearHistory();
         return createSuccessResponse(result);
       }}
     ];

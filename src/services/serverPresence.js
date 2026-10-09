@@ -1,6 +1,6 @@
 // A live agent is identified by authenticated receipt, not the timestamp of a sampled history row.
 export function getServerLastSeen(env, serverId, latestMetrics) {
-  return env.REALTIME_HUB?.latestReports.lastSeen(serverId, latestMetrics?.timestamp) || latestMetrics?.timestamp || 0;
+  return env.AGENT_REPORTS?.lastSeen(serverId, latestMetrics?.timestamp) || latestMetrics?.timestamp || 0;
 }
 
 export function isServerOffline(server, lastSeen, thresholdMs, now = Date.now()) {

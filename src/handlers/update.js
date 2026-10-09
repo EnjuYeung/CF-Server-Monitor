@@ -1,4 +1,4 @@
-import { saveMetricsHistory } from '../database/schema.js';
+import { InvalidAgentReport } from '../services/agentReports.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
 import { createErrorResponse, createUnauthorizedResponse, createNotFoundResponse, createBadRequestResponse } from '../utils/errors.js';
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
@@ -6,7 +6,7 @@ import { AGENT_CONFIG_MD5_HEADER, AGENT_CONFIG_SCHEMA_HEADER, describeAgentConfi
 import { scheduleAgentConfigChanged } from '../utils/agentConfigNotify.js';
 import { getAgentUninstallCommand } from '../services/agentRemoval.js';
 import { isValidUUID } from '../services/serverInput.js';
-import { normalizeAgentVersion, normalizeCorrectionValue, normalizeMetricSamples, getReportMetrics, getHistoryMetrics, toBroadcastSamples } from '../services/ingestion.js';
+import { normalizeAgentVersion, normalizeCorrectionValue } from '../services/ingestion.js';
 const logUpdateBadRequest = (reason, details) => console.warn('[Update]', reason, details);
 const AGENT_WSS_MODE_HEADER = 'X-Agent-Wss-Mode';
 const AGENT_WSS_REASON_HEADER = 'X-Agent-Wss-Reason';
@@ -67,33 +67,20 @@ export async function handleUpdate(request, env, ctx) {
       });
     }
 
-    const samples = normalizeMetricSamples(data);
-    if (samples.some(sample => sample.ts > Date.now() + 60000 || sample.ts < Date.now() - 7 * 86400000)) return createBadRequestResponse('Invalid sample timestamp');
-    if (samples.length === 0) {
-      logUpdateBadRequest('Missing metrics', {
-        id,
-        has_metrics: !!data.metrics,
-        has_samples: Array.isArray(data.samples),
-        has_batch: Array.isArray(data.batch)
-      });
-      return createBadRequestResponse('Missing metrics');
+    try {
+      await env.AGENT_REPORTS.receive(id, data, { transport: 'http', regionCode, agentVersion });
+    } catch (error) {
+      if (!(error instanceof InvalidAgentReport)) throw error;
+      if (error.message === 'Missing metrics') {
+        logUpdateBadRequest(error.message, {
+          id,
+          has_metrics: !!data.metrics,
+          has_samples: Array.isArray(data.samples),
+          has_batch: Array.isArray(data.batch)
+        });
+      }
+      return createBadRequestResponse(error.message);
     }
-
-    // 获取最后一条插入（如果是批量数据，取最后一个样本）
-    const latestSample = samples[samples.length - 1];
-    const latestMetrics = getReportMetrics(data, latestSample);
-    const historyMetrics = getHistoryMetrics(data, samples, latestSample);
-    await saveMetricsHistory(
-      env.DB,
-      id,
-      historyMetrics,
-      regionCode,
-      latestSample.ts,
-      agentVersion
-    );
-
-    const broadcastSamples = toBroadcastSamples(id, samples, regionCode, agentVersion, latestMetrics);
-    await env.REALTIME_HUB.ingest(id, broadcastSamples);
 
     const clientConfigSchema = normalizeAgentConfigSchemaVersion(request.headers.get(AGENT_CONFIG_SCHEMA_HEADER));
     if (!clientConfigSchema) {

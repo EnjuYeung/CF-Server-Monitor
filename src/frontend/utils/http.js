@@ -107,6 +107,7 @@ const fetchWithBase = async (baseUrl, url, options, method = 'GET', body = null)
     method,
     headers,
     body,
+    signal: options.signal,
     credentials: 'include'
   })
 

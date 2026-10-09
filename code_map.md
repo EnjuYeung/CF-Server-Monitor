@@ -1,31 +1,33 @@
 # 功能代码地图
 
-更新时间：2026-10-08；版本：3.0.0。
+更新时间：2026-10-09；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
 | 安装与启动 | Dockerfile、compose.yaml、scripts/container-entrypoint.js | src/server.js；A01、D01 |
 | HTTP、反代、健康检查 | src/runtime/http.js、src/server.js | test/runtime-http.test.js；D04 |
-| Agent HTTP 上报 | src/handlers/update.js | src/services/ingestion.js、src/database/schema.js；A04 |
-| Agent WS、配置下发 | src/realtime/RealtimeHub.js | src/utils/agentConfig.js、agentConfigNotify.js；A05、D03 |
+| Agent HTTP 上报 | src/handlers/update.js | src/services/agentReports.js；写库后记录接收和发布；A04、IR01–IR05 |
+| Agent WS、配置下发 | src/realtime/RealtimeHub.js | src/services/agentReports.js、src/utils/agentConfig.js、agentConfigNotify.js；A05、D03、IR01–IR06 |
+| HTTP/WS 上报校验、聚合、写入及生命周期 | src/services/agentReports.js | ingestion.js、database/schema.js、LatestReports；test/agent-reports.test.js IR01–IR12；清空、删除及停机不恢复失效窗口 |
 | 首页 250ms 推送聚合、详情即时推送 | src/realtime/RealtimeHub.js | 待发队列满时提前发送、独立接收时间、权限过滤、删除/关闭清理、读库故障处理；test/frontend-batching.test.js；UP04–UP05 |
 | 安全入口、登录、权限、会话 | src/utils/adminPath.js、src/middleware/auth.js、src/handlers/admin.js | src/frontend/utils/adminAccess.js；A02、A11、S01/S07/S08 |
 | 2FA 绑定、动态码与恢复码 | src/services/twoFactor.js、src/handlers/twoFactor.js | TwoFactorPanel.vue、AdminLogin.vue；test/admin-security.test.js S02–S06 |
 | 服务器增删改、排序、导入导出 | src/handlers/servers.js | src/services/servers.js、serverInput.js；test/review-regressions.test.js；A03、A03b、A13 |
 | 删除节点后自动卸载 Agent | src/services/agentRemoval.js、servers.js、handlers/update.js、realtime/RealtimeHub.js | agent_removals 持久意图、签名指令、HTTP/WS 补发；agent/internal/cfprobe/remote_uninstall*.go；test/agent-removal.test.js、原生 NA07、部署 ND07–ND11 |
 | 修改凭证与会话撤销 | src/services/adminSettings.js、src/handlers/admin.js | 版本前置条件、同步事务、2FA 保留；test/credential-change.test.js |
-| 认证上报接收时间与在线判定 | src/realtime/LatestReports.js、src/services/serverPresence.js | server_presence；HTTP/WS、离线告警、看板及后台统计 |
-| 最新回放与资源告警窗口 | src/realtime/LatestReports.js、ResourceAlertWindows.js | RealtimeHub 组合调用；test/realtime-hub.test.js |
+| 认证上报接收时间与在线判定 | src/services/agentReports.js、serverPresence.js | 模块内部 LatestReports / server_presence；HTTP/WS、离线告警、看板及后台统计 |
+| 最新回放与资源告警窗口 | src/services/agentReports.js、src/realtime/ResourceAlertWindows.js | 前者提供 latestUpdates；后者由 Hub 在发布时调用；test/realtime-hub.test.js |
 | 共用计费、探测与字段规则 | src/shared/billing.js、pingNode.js、metrics.js | 后端入库/下发及前端表单/实时合并；test/agent-commands.test.js |
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
-| 首页持续更新、切回与断网恢复 | src/frontend/views/Dashboard.vue、utils/api.js、utils/dashboardSnapshot.js、utils/latencyWindow.js | test/dashboard-snapshot.test.js（接收/落库时间分离）、frontend-live-socket.test.js；A05、BR01–BR05 |
+| 首页快照、回放、三种时间、订阅及恢复/停止 | src/frontend/state/dashboardState.js | composables/useDashboardState.js 浏览器 adapter、utils/api.js/http.js 传输；test/dashboard-state.test.js 公共接口契约、frontend-live-socket.test.js；A05、DS01–DS17 |
+| 首页多来源同 UUID、删除后旧包隔离 | src/frontend/state/dashboardState.js、views/Dashboard.vue | 缓存和节点 key 使用来源 + UUID；快照拥有成员集合，旧订阅回调失效；DS10–DS13、DB06–DB07 |
 | 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；test/agent-commands.test.js；ND01–ND06 |
 | 服务器标签、独立色表与语法帮助 | src/shared/serverTags.js | serverInput.js 统一保存规则；ServerTags.vue 统一渲染；ServerTagsHelp.vue 复用 HelpTooltip；test/server-tags.test.js |
 | 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；test/server-tags.test.js；TC03、FS01–FS04 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、地区和分组各自多选取并集，两类筛选取交集，空选择不限；src/frontend/styles/main.css；G01–G08、MS01–MS12 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | 超过 1 小时沿用现有索引逐桶取最后完整行；src/utils/historyFields.js、metrics.js；test/history-query.test.js；A07、A14、UP02–UP03 |
-| 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、views/Dashboard.vue | composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
+| 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、state/dashboardState.js | utils/dashboardSnapshot.js 根据持久采样时间补取；composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10；test/expiry-notification.test.js 验证到期送达及跨日/重启去重 |

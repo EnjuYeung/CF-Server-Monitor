@@ -157,7 +157,7 @@
         <component
           :is="currentCardComponent"
           v-for="server in filteredServers"
-          :key="server.id + '-' + currentView"
+          :key="server.source + ':' + server.id + '-' + currentView"
           :server="server"
           :sys-config="sysConfig"
           :to="getServerLink(server)"
@@ -196,7 +196,7 @@
             </tr>
             <tr 
               v-for="server in filteredServers" 
-              :key="server.id"
+              :key="server.source + ':' + server.id"
               @click="goToServer(server)"
               class="table-cursor-pointer"
               :data-region="(server.region || 'xx').toLowerCase()"
@@ -352,23 +352,20 @@
 
 <script setup>
 import { adminAccess } from '../utils/adminAccess.js'
-import { ref, computed, inject, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, inject, nextTick, onMounted, onUnmounted, watch, toRefs } from 'vue'
 import { useRouter } from 'vue-router'
 import TerminalHeader from '../components/TerminalHeader.vue'
 import ServerBarCard from '../components/ServerBarCard.vue'
 import ServerRingCard from '../components/ServerRingCard.vue'
 import Footer from '../components/Footer.vue'
 import OsIcon from '../components/OsIcon.vue'
-import { fetchConfig, fetchServersAll, fetchServersAllWithProgress, formatBytes, createLiveSocket, getFlagRegionCode, getApiBases, isServerOnline } from '../utils/api.js'
+import { formatBytes, getFlagRegionCode, getApiBases, isServerOnline } from '../utils/api.js'
 import { calcTrafficUsagePercent, getUsageColor } from '../composables/useServerCardData'
-import { getTitle, hasMultipleApiBases, getPublicAssetUrl } from '../utils/config'
+import { getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n.js'
-import { TIME, DEFAULT_SITE_TITLE, STORAGE, LATENCY_WINDOW } from '../utils/constants'
-import { normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js'
-import { normalizeDashboardView, normalizeDisplayMode, resolveDisplayMode } from '../utils/displayMode.js'
-import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
-import { updateLatencyWindow } from '../utils/latencyWindow.js'
-import { reconcileDashboardSnapshot } from '../utils/dashboardSnapshot.js'
+import { DEFAULT_SITE_TITLE, STORAGE } from '../utils/constants'
+import { normalizeDashboardView, normalizeDisplayMode } from '../utils/displayMode.js'
+import { useDashboardState } from '../composables/useDashboardState.js'
 import {
   DEFAULT_EXCHANGE_RATES,
   DISPLAY_FINANCE_CURRENCIES,
@@ -382,27 +379,10 @@ import {
   setStoredFinanceCurrency
 } from '../utils/finance.js'
 
-const servers = ref([])
-const stats = ref({ total: '-', online: 0, offline: 0, globalNetRx: 0, globalNetTx: 0, globalSpeedIn: 0, globalSpeedOut: 0 })
-const unknownStats = ref(0)
 const appConfig = inject('appConfig', null)
-const sysConfig = ref({
-  show_price: true,
-  show_expire: true,
-  show_tf: true,
-  show_three_net_details: true,
-  custom_ct_name: appConfig?.custom_ct_name || '电信',
-  custom_cu_name: appConfig?.custom_cu_name || '联通',
-  custom_cm_name: appConfig?.custom_cm_name || '移动',
-  custom_bd_name: appConfig?.custom_bd_name || 'BGP',
-  display_mode: 'bar',
-  site_title: DEFAULT_SITE_TITLE,
-  latency_window: appConfig?.latency_window || {
-    points: LATENCY_WINDOW.POINTS,
-    hours: LATENCY_WINDOW.HOURS
-  }
-})
-const regionStats = ref({})
+const dashboard = useDashboardState(appConfig)
+const { servers, stats, regionStats, unknownStats, now, isLoading, sitesRemaining } = toRefs(dashboard.state)
+const sysConfig = computed(() => dashboard.state.config)
 const currentView = ref('bar')
 const selectedRegions = ref(new Set())
 const selectedGroups = ref(new Set())
@@ -411,15 +391,12 @@ const filterMeasure = ref(null)
 const filterMoreMeasure = ref(null)
 const filterVisibleCount = ref(Number.POSITIVE_INFINITY)
 const filterMoreOpen = ref(false)
-const liveConnected = ref(false)
-const isLoading = ref(true)
-const sitesRemaining = ref(0)
 const hasCorsError = ref(null)
+watch(() => dashboard.state.corsErrorSites, sites => { hasCorsError.value = sites.length ? [...sites] : null })
 const financeModalOpen = ref(false)
 const financeCurrency = ref('CNY')
 const exchangeRates = ref(DEFAULT_EXCHANGE_RATES)
 const exchangeRateSource = ref('default')
-const now = ref(Date.now())
 const router = useRouter()
 
 const trans = useTranslation()
@@ -692,457 +669,7 @@ const getUpdateTime = (lastUpdated) => {
   }
 }
 
-const PLAYBACK_TICK_MS = 1000
-const MAX_BUFFER_SAMPLES_PER_SERVER = 600
-const playbackBuffers = new Map()
-const latestAppliedSamples = new Map()
-
-const getServerReportTimestamp = (server, fallback = null) => {
-  return normalizeMetricTimestamp(server?.report_timestamp ?? server?.last_updated, fallback)
-}
-
-const getServerSampleTimestamp = (server) => {
-  return normalizeMetricTimestamp(server?.sample_timestamp ?? server?.timestamp ?? server?.last_updated, null)
-}
-
-const getServerDisplayTimestamp = (server) => {
-  return normalizeMetricTimestamp(server?.display_timestamp, null)
-}
-
-const withDisplayTiming = (server, displayTs = null, currentTs = Date.now()) => {
-  const reportTs = getServerReportTimestamp(server, null)
-  const sampleTs = getServerSampleTimestamp(server) || displayTs || reportTs
-  const ownTs = normalizeMetricTimestamp(displayTs, getServerDisplayTimestamp(server) || sampleTs || reportTs)
-  const timed = {
-    ...server,
-    current_timestamp: currentTs
-  }
-  if (reportTs) {
-    timed.report_timestamp = reportTs
-    timed.last_updated = reportTs
-  }
-  if (!sampleTs || !ownTs) return timed
-  return {
-    ...timed,
-    sample_timestamp: sampleTs,
-    display_timestamp: ownTs,
-    sample_lag_seconds: Math.max(0, Math.floor((ownTs - sampleTs) / 1000))
-  }
-}
-
-const toLiveSample = (serverId, data, timestamp, reportTs) => {
-  if (!serverId || !data) return
-  const ts = normalizeMetricTimestamp(timestamp ?? data.sample_timestamp ?? data.last_updated ?? data.timestamp, null)
-  if (!ts) return null
-  return {
-    serverId,
-    ts,
-    data,
-    reportTs
-  }
-}
-
-const queueLiveSamples = (serverId, samples, reportTs, { replayCachedReport = false, reportAgeMs = 0 } = {}) => {
-  if (!serverId || !Array.isArray(samples) || samples.length === 0) return
-
-  const normalized = samples
-    .map(sample => toLiveSample(serverId, sample.data, sample.ts, reportTs))
-    .filter(Boolean)
-    .sort((a, b) => a.ts - b.ts)
-
-  if (normalized.length === 0) return
-
-  const current = servers.value.find(s => s.id === serverId)
-  const currentTs = getServerSampleTimestamp(current)
-  const currentDisplayTs = getServerDisplayTimestamp(current)
-  const incoming = replayCachedReport
-    ? normalized
-    : normalized.filter(sample => !currentTs || sample.ts > currentTs)
-  if (incoming.length === 0) return
-
-  const playbackStartTs = resolvePlaybackCursor(incoming[0].ts, currentDisplayTs, {
-    replayCachedReport,
-    reportAgeMs
-  })
-  if (playbackStartTs === null) return
-
-  if (incoming.length === 1) {
-    playbackBuffers.delete(serverId)
-    const sample = incoming[0]
-    applyServerSample(serverId, sample.data, sample.ts, playbackStartTs, reportTs)
-    return
-  }
-
-  const unique = []
-  const seen = new Set()
-  for (const sample of incoming) {
-    if (seen.has(sample.ts)) continue
-    seen.add(sample.ts)
-    unique.push(sample)
-  }
-  playbackBuffers.set(serverId, unique.slice(-MAX_BUFFER_SAMPLES_PER_SERVER))
-  applyPlaybackSamplesForServer(serverId, playbackStartTs)
-}
-
-const queueLiveMessage = (msg, { replayCachedReport = false } = {}) => {
-  if (!msg || msg.type !== 'batchUpdate') return
-
-  const messageReportTs = normalizeMetricTimestamp(msg.ts, Date.now())
-
-  const updates = Array.isArray(msg.updates) ? msg.updates : []
-
-  for (const update of updates) {
-    if (!update || !update.serverId) continue
-    const samples = Array.isArray(update.samples) ? update.samples : []
-    const reportTs = normalizeMetricTimestamp(update.reportTs ?? update.report_timestamp, messageReportTs)
-    const reportAgeMs = replayCachedReport ? update.reportAgeMs : 0
-
-    const liveSamples = []
-    for (const sample of samples) {
-      if (!sample || typeof sample !== 'object') continue
-      const data = sample.data || sample.payload || sample.metrics
-      if (!data) continue
-      liveSamples.push({
-        ts: sample.ts ?? sample.timestamp ?? data.sample_timestamp ?? data.last_updated ?? data.timestamp ?? update.ts ?? msg.ts,
-        data
-      })
-    }
-    queueLiveSamples(update.serverId, liveSamples, reportTs, { replayCachedReport, reportAgeMs })
-  }
-}
-
-const replayLatestReportUpdates = (data, { preserveLive = false } = {}) => {
-  const updates = Array.isArray(data?.latestReportUpdates) ? data.latestReportUpdates : []
-  if (updates.length === 0) return
-  queueLiveMessage({ type: 'batchUpdate', ts: Date.now(), updates }, { replayCachedReport: !preserveLive })
-}
-
-const applyServerSample = (serverId, data, sampleTs, displayTs, reportTs = null) => {
-  if (!serverId || !data) return
-  const idx = servers.value.findIndex(s => s.id === serverId)
-  const existing = idx >= 0 ? servers.value[idx] : null
-  const currentReportTs = getServerReportTimestamp(existing, null)
-  const nextReportTs = normalizeMetricTimestamp(reportTs, currentReportTs || now.value)
-  const merged = withDisplayTiming({
-    ...data,
-    id: serverId,
-    report_timestamp: nextReportTs,
-    last_updated: nextReportTs,
-    sample_timestamp: sampleTs,
-    timestamp: sampleTs
-  }, displayTs, now.value)
-  latestAppliedSamples.set(serverId, merged)
-
-  if (idx >= 0) {
-    servers.value[idx] = {
-      ...existing, ...merged,
-      ...updateLatencyWindow(existing, data, sampleTs, sysConfig.value.latency_window, Date.now())
-    }
-  } else {
-    servers.value.push({ ...merged, name: serverId,
-      ...updateLatencyWindow({}, data, sampleTs, sysConfig.value.latency_window, Date.now())
-    })
-  }
-}
-
-const applyPlaybackSamplesForServer = (serverId, displayTs = null) => {
-  const samples = playbackBuffers.get(serverId)
-  if (!samples || samples.length === 0) return
-  const server = servers.value.find(s => s.id === serverId)
-  const ownTs = normalizeMetricTimestamp(displayTs, getServerDisplayTimestamp(server))
-  if (!ownTs) return
-
-  let selected = null
-  while (samples.length > 0 && samples[0].ts <= ownTs) {
-    selected = samples.shift()
-  }
-  if (selected && selected.ts >= (getServerSampleTimestamp(server) || 0)) {
-    applyServerSample(serverId, selected.data, selected.ts, ownTs, selected.reportTs)
-  }
-  if (samples.length === 0) playbackBuffers.delete(serverId)
-}
-
-const applyPlaybackSamples = () => {
-  for (const serverId of Array.from(playbackBuffers.keys())) {
-    applyPlaybackSamplesForServer(serverId)
-  }
-}
-
-const advanceServerClocks = () => {
-  const currentTs = now.value
-  servers.value = servers.value.map(server => {
-    const reportTs = getServerReportTimestamp(server, null)
-    const isOnline = reportTs && (currentTs - reportTs) < TIME.ONLINE_THRESHOLD_MS
-    const currentDisplayTs = getServerDisplayTimestamp(server) || getServerSampleTimestamp(server) || reportTs
-    const elapsedMs = getPlaybackElapsedMs(currentTs, server.current_timestamp, PLAYBACK_TICK_MS)
-    const nextDisplayTs = isOnline && currentDisplayTs ? currentDisplayTs + elapsedMs : currentDisplayTs
-    const latency = sysConfig.value.show_three_net_details
-      ? updateLatencyWindow(server, null, null, sysConfig.value.latency_window, currentTs) : {}
-    return withDisplayTiming({ ...server, ...latency }, nextDisplayTs, currentTs)
-  })
-  applyPlaybackSamples()
-}
-
-const recomputeStats = (currentTs = Date.now()) => {
-  const list = servers.value || []
-  let online = 0
-  let speedIn = 0, speedOut = 0, netRx = 0, netTx = 0
-  const regionCounts = {}
-  let unknownCount = 0
-  for (const s of list) {
-    const ts = new Date(s.last_updated || 0).getTime()
-    const isOnline = ts && (currentTs - ts) < TIME.ONLINE_THRESHOLD_MS
-    if (isOnline) {
-      online++
-      speedIn += parseFloat(s.net_in_speed) || 0
-      speedOut += parseFloat(s.net_out_speed) || 0
-    }
-    netRx += parseFloat(s.net_rx) || 0
-    netTx += parseFloat(s.net_tx) || 0
-    if (s.region) {
-      const key = String(s.region).toUpperCase()
-      regionCounts[key] = (regionCounts[key] || 0) + 1
-    } else {
-      unknownCount++
-    }
-  }
-  stats.value = {
-    total: list.length,
-    online,
-    offline: list.length - online,
-    globalNetRx: netRx,
-    globalNetTx: netTx,
-    globalSpeedIn: speedIn,
-    globalSpeedOut: speedOut
-  }
-  regionStats.value = regionCounts
-  unknownStats.value = unknownCount
-}
-
-const runDashboardTick = () => {
-  now.value = Date.now()
-  advanceServerClocks()
-  recomputeStats(now.value)
-}
-
-const mergeServersIntoList = (rawServers, { preserveLive = false } = {}) => {
-  const existingById = new Map(servers.value.map(s => [s.id, s]))
-  const visibleIds = new Set(rawServers.map(s => s.id))
-  for (const id of latestAppliedSamples.keys()) {
-    if (!visibleIds.has(id)) latestAppliedSamples.delete(id)
-  }
-  return rawServers.map(s => {
-    const prev = existingById.get(s.id)
-    if (preserveLive) {
-      const merged = reconcileDashboardSnapshot(s, prev, latestAppliedSamples.get(s.id), sysConfig.value.latency_window, now.value)
-      return withDisplayTiming(merged, merged.display_timestamp, now.value)
-    }
-    const sampleTs = normalizeMetricTimestamp(s.sample_timestamp ?? s.timestamp ?? s.last_updated, getServerSampleTimestamp(prev))
-    const reportTs = normalizeMetricTimestamp(s.report_timestamp ?? s.last_updated, getServerReportTimestamp(prev, null))
-    return withDisplayTiming({ ...prev, ...s, sample_timestamp: sampleTs, report_timestamp: reportTs }, sampleTs, now.value)
-  })
-}
-
-const loadDashboardConfig = async () => {
-  try {
-    const localTitle = String(getTitle() || '').trim()
-    const config = appConfig || await fetchConfig()
-    const siteTitle = String(config?.site_title || '').trim()
-    sysConfig.value = {
-      ...sysConfig.value,
-      site_title: hasMultipleApiBases() && localTitle ? localTitle : (siteTitle || sysConfig.value.site_title),
-      display_mode: resolveDisplayMode(config),
-      latency_window: config?.latency_window || sysConfig.value.latency_window
-    }
-  } catch (e) {
-    console.log('[INFO] Dashboard config pending...', e)
-  }
-}
-
-const loadDashboardData = async (options = {}) => {
-  const bases = getApiBases()
-  const isMultiSite = bases.length > 1
-  if (!options.preserveLive) playbackBuffers.clear()
-
-  if (isMultiSite) {
-    sitesRemaining.value = bases.length
-    hasCorsError.value = null
-
-    try {
-      const data = await fetchServersAllWithProgress((data) => {
-        if (!dashboardActive) return
-        const rawServers = Array.isArray(data.servers)
-          ? data.servers
-          : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
-
-        servers.value = mergeServersIntoList(rawServers, options)
-        recomputeStats(now.value)
-
-        sysConfig.value = {
-          show_price: data.sysConfig?.show_price ?? true,
-          show_expire: data.sysConfig?.show_expire ?? true,
-          show_tf: data.sysConfig?.show_tf ?? true,
-          show_three_net_details: data.sysConfig?.show_three_net_details ?? false,
-          custom_ct_name: data.sysConfig?.custom_ct_name || sysConfig.value.custom_ct_name,
-          custom_cu_name: data.sysConfig?.custom_cu_name || sysConfig.value.custom_cu_name,
-          custom_cm_name: data.sysConfig?.custom_cm_name || sysConfig.value.custom_cm_name,
-          custom_bd_name: data.sysConfig?.custom_bd_name || sysConfig.value.custom_bd_name,
-          display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
-          site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
-          latency_window: data.sysConfig?.latency_window || sysConfig.value.latency_window
-        }
-
-        if (data.corsErrorSites?.length && !hasCorsError.value) hasCorsError.value = [...data.corsErrorSites]
-        if (isLoading.value) isLoading.value = false
-        sitesRemaining.value = Math.max(0, sitesRemaining.value - 1)
-      })
-      if (dashboardActive) replayLatestReportUpdates(data, options)
-    } catch (e) {
-      console.log('[INFO] Multi-site refresh error:', e)
-    }
-
-    isLoading.value = false
-    return
-  }
-
-  // Single-site fallback
-  try {
-    const data = await fetchServersAll()
-    if (!data || !dashboardActive) {
-      isLoading.value = false
-      return
-    }
-
-    const rawServers = Array.isArray(data.servers)
-      ? data.servers
-      : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
-
-    now.value = Date.now()
-    servers.value = mergeServersIntoList(rawServers, options)
-    replayLatestReportUpdates(data, options)
-    recomputeStats(now.value)
-
-    sysConfig.value = {
-      show_price: data.sysConfig?.show_price ?? true,
-      show_expire: data.sysConfig?.show_expire ?? true,
-      show_tf: data.sysConfig?.show_tf ?? true,
-      show_three_net_details: data.sysConfig?.show_three_net_details ?? false,
-      custom_ct_name: data.sysConfig?.custom_ct_name || sysConfig.value.custom_ct_name,
-      custom_cu_name: data.sysConfig?.custom_cu_name || sysConfig.value.custom_cu_name,
-      custom_cm_name: data.sysConfig?.custom_cm_name || sysConfig.value.custom_cm_name,
-      custom_bd_name: data.sysConfig?.custom_bd_name || sysConfig.value.custom_bd_name,
-      display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
-      site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
-      theme_options: sysConfig.value.theme_options,
-      latency_window: data.sysConfig?.latency_window || sysConfig.value.latency_window
-    }
-
-    isLoading.value = false
-  } catch (e) {
-    console.log('[INFO] Full refresh pending...', e)
-    isLoading.value = false
-  }
-}
-
-let dashboardRefreshPending = null
-const refreshData = (options = {}) => {
-  if (!dashboardRefreshPending) {
-    dashboardRefreshPending = loadDashboardData(options).then(() => {
-      if (options.preserveLive && dashboardActive && getLiveSubscriptionKey() !== liveSubscriptionKey) startLiveSocket()
-    }).finally(() => { dashboardRefreshPending = null })
-  }
-  return dashboardRefreshPending
-}
-
 let dashboardActive = true
-
-// -------------------------------------------------------------------------
-// 实时推送：
-//   - 订阅 "all"，收到任何服务器的更新都会合并对应 server 的指标
-// -------------------------------------------------------------------------
-let liveSockets = []
-let liveSubscriptionKey = ''
-const getLiveSubscriptionKey = () => JSON.stringify([getApiBases(), servers.value.map(server => `${server.source || ''}:${server.id}`).sort()])
-let timeUpdateInterval = null
-let latencyUpdateInterval = null
-
-const stopLiveSockets = () => {
-  if (liveSockets.length === 0) return
-  liveSockets.forEach(socket => {
-    if (socket) socket.close()
-  })
-  liveSockets = []
-  liveConnected.value = false
-}
-
-const startLiveSocket = () => {
-  stopLiveSockets()
-  liveSubscriptionKey = getLiveSubscriptionKey()
-  const bases = getApiBases()
-
-  // 按 source 分组，每个 apiBase 只传自己的 server IDs
-  const idsByIndex = new Map()
-  for (const s of servers.value) {
-    if (!s.id || !s.source) continue
-    const idx = bases.indexOf(s.source)
-    if (idx === -1) continue
-    if (!idsByIndex.has(idx)) idsByIndex.set(idx, [])
-    idsByIndex.get(idx).push(s.id)
-  }
-
-  // 如果没有配置多个 API bases，使用原来的单连接方式
-  if (bases.length === 0) {
-    const allIds = servers.value.map(s => s.id).filter(Boolean)
-    liveSockets = [createLiveSocket('all', {
-      replay: false,
-      timeoutMinutes: 0,
-      reconnectForever: true,
-      onMessage: queueLiveMessage,
-      onStatus: ({ connected }) => {
-        liveConnected.value = !!connected
-        if (connected) refreshData({ preserveLive: true })
-      }
-    }, 0, allIds)]
-    return
-  }
-
-  // 为每个 API base 创建独立的 WebSocket 连接，跳过没有服务器的 base
-  liveSockets = bases.map((_, index) => {
-    const ids = idsByIndex.get(index)
-    if (!ids || ids.length === 0) return null
-    return createLiveSocket('all', {
-      replay: false,
-      timeoutMinutes: 0,
-      reconnectForever: true,
-      onMessage: queueLiveMessage,
-      onStatus: ({ connected }) => {
-        const anyConnected = liveSockets.some(s => s && s.isConnected)
-        liveConnected.value = anyConnected
-        if (connected) refreshData({ preserveLive: true })
-      }
-    }, index, ids)
-  }).filter(Boolean)
-}
-
-let reconnectAfterResume = false
-const restoreDashboard = (event) => {
-  if (event?.type === 'resume' || event?.type === 'online' || (event?.type === 'pageshow' && event.persisted)) {
-    reconnectAfterResume = true
-  }
-  // Hidden tabs keep their subscription and sample cadence. Browser-managed
-  // freezing may still suspend callbacks, so catch up when the page returns.
-  if (!dashboardActive || document.hidden) return
-  runDashboardTick()
-  if (liveSockets.length === 0) {
-    startLiveSocket()
-  } else {
-    liveSockets.forEach(socket => {
-      if (socket && (reconnectAfterResume || (!socket.isConnected && !socket.isConnecting))) socket.reconnect()
-    })
-  }
-  reconnectAfterResume = false
-  refreshData({ preserveLive: true })
-}
 
 const getServerLink = (server) => {
   const bases = getApiBases()
@@ -1162,16 +689,16 @@ onMounted(async () => {
   financeCurrency.value = getStoredFinanceCurrency()
   loadFinanceRates()
 
-  await loadDashboardConfig()
   const rawSavedView = localStorage.getItem(STORAGE.VIEW_PREFERENCE)
   const savedView = normalizeDashboardView(rawSavedView, sysConfig.value.display_mode)
   currentView.value = savedView
   if (rawSavedView && rawSavedView !== savedView) {
     localStorage.setItem(STORAGE.VIEW_PREFERENCE, savedView)
   }
-  await refreshData()
+  await dashboard.start()
   if (!dashboardActive) return
   await nextTick()
+  if (!dashboardActive) return
   scheduleFilterMeasurement()
   if (window.ResizeObserver && filterWrap.value) {
     filterResizeObserver = new ResizeObserver(scheduleFilterMeasurement)
@@ -1180,34 +707,14 @@ onMounted(async () => {
     window.addEventListener('resize', scheduleFilterMeasurement)
   }
   document.addEventListener('click', closeFilterMoreOnOutsideClick)
-  startLiveSocket()
-  document.addEventListener('visibilitychange', restoreDashboard)
-  document.addEventListener('resume', restoreDashboard)
-  window.addEventListener('focus', restoreDashboard)
-  window.addEventListener('online', restoreDashboard)
-  window.addEventListener('pageshow', restoreDashboard)
 
-  // 每秒更新 now 变量，使相对时间实时刷新
-  runDashboardTick()
-  timeUpdateInterval = setInterval(runDashboardTick, 1000)
-  latencyUpdateInterval = setInterval(() => refreshData({ preserveLive: true }), TIME.POLL_INTERVAL_MS)
 })
 
 onUnmounted(() => {
   dashboardActive = false
-  document.removeEventListener('visibilitychange', restoreDashboard)
-  document.removeEventListener('resume', restoreDashboard)
-  window.removeEventListener('focus', restoreDashboard)
-  window.removeEventListener('online', restoreDashboard)
-  window.removeEventListener('pageshow', restoreDashboard)
   document.removeEventListener('click', closeFilterMoreOnOutsideClick)
   window.removeEventListener('resize', scheduleFilterMeasurement)
   if (filterMeasureTimer) clearTimeout(filterMeasureTimer)
   if (filterResizeObserver) filterResizeObserver.disconnect()
-  if (timeUpdateInterval) clearInterval(timeUpdateInterval)
-  if (latencyUpdateInterval) clearInterval(latencyUpdateInterval)
-  stopLiveSockets()
-  playbackBuffers.clear()
-  latestAppliedSamples.clear()
 })
 </script>

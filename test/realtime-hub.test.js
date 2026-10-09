@@ -437,7 +437,7 @@ test('Agent WSS closes on the first report after entering a disabled UTC hour', 
 test('ingestion retains complete replay packets without subscribers', async () => {
   const broadcaster = makeBroadcaster([]);
   await broadcaster.ingest('server-1', [{ ts: 1000, data: { cpu: 10 } }, { ts: 2000, data: { cpu: 20 } }]);
-  const updates = broadcaster.latestReports.getMany(['server-1']);
+  const updates = broadcaster.reports.latestUpdates(['server-1']);
   assert.equal(updates.length, 1);
   assert.equal(updates[0].serverId, 'server-1');
   assert.deepEqual(updates[0].samples.map(sample => sample.data.cpu), [10, 20]);

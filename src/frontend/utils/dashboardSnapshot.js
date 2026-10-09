@@ -9,6 +9,7 @@ export function reconcileDashboardSnapshot(snapshot, current, liveSample, config
   const keepLive = liveTs > snapshotTs
   const reportTs = Math.max(
     normalizeTimestamp(snapshot.report_timestamp ?? snapshot.last_updated, 0),
+    normalizeTimestamp(current?.report_timestamp ?? current?.last_updated, 0),
     keepLive ? normalizeTimestamp(liveSample.report_timestamp, 0) : 0
   )
   return {

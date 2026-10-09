@@ -1,8 +1,7 @@
 import { isValidRealtimeId } from '../utils/realtimeId.js';
 import { ResourceAlertWindows } from './ResourceAlertWindows.js';
 import { maskPublicIpUpdate } from '../utils/publicMetrics.js';
-import { LatestReports } from './LatestReports.js';
-import { saveMetricsHistory } from '../database/schema.js';
+import { AgentReports, AgentReportsClosed, InvalidAgentReport } from '../services/agentReports.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
 import { getAgentUninstallCommand } from '../services/agentRemoval.js';
 import { getWssReportScheduleState, loadSiteSettings } from '../utils/settings.js';
@@ -16,14 +15,8 @@ import {
   serializeCorrection
 } from '../utils/agentConfig.js';
 import {
-  applyHistoryMetricAggregates,
-  collectHistoryMetricAggregates,
-  getReportMetrics,
-  mergeHistoryMetricAggregates,
   normalizeAgentVersion,
-  normalizeCorrectionValue,
-  normalizeMetricSamples,
-  toBroadcastSamples
+  normalizeCorrectionValue
 } from '../services/ingestion.js';
 import {
   AGENT_DEFAULT_HISTORY_WRITE_INTERVAL_MS,
@@ -64,15 +57,14 @@ export class RealtimeHub {
     this.frontendSockets = new Set();
     this.processing = new Set();
     this.env = env;
-    // 仅用于新页面快速接上最近一包数据；hub 重启或休眠回收后允许自然丢失。
-    this.latestReports = new LatestReports(env.DB);
+    this.reports = new AgentReports(env.DB, (updates, reportTs) => this._publishRealtimeUpdates(updates, reportTs));
     this.resourceAlerts = new ResourceAlertWindows(env);
     this.agentServerDetails = new Map();
-    this.agentHistoryWrites = new Map();
     this.standardAgentWebSocketCount = 0;
     this.standardAgentWebSockets = new Set();
     this.lastAgentRealtimeHintAt = 0;
     this.pendingFrontendUpdates = new Map();
+    this.serverDeliveryLifetimes = new Map();
     this.pendingFrontendSampleCount = 0;
     this.frontendBroadcastTimer = null;
     this.closing = false;
@@ -187,8 +179,9 @@ export class RealtimeHub {
       if (command) this._sendWsJson(ws, command);
       ws.close(1008, 'server removed');
     }
-    this.agentServerDetails.delete(id); this.agentHistoryWrites.delete(id);
-    this.latestReports.delete(id); this.resourceAlerts.delete(id);
+    this.agentServerDetails.delete(id); this.reports.removeServer(id);
+    this.serverDeliveryLifetimes.delete(id);
+    this.resourceAlerts.delete(id);
     const pending = this.pendingFrontendUpdates.get(id);
     if (pending) {
       this.pendingFrontendSampleCount -= pending.samples.length;
@@ -198,15 +191,8 @@ export class RealtimeHub {
     this.revokeFrontendSessions();
   }
 
-  async ingest(serverId, samples) {
-    await this._ingestRealtimeUpdates([{ serverId, samples }]);
-  }
-
-  discardPendingHistory() {
-    for (const state of this.agentHistoryWrites.values()) {
-      delete state.pendingHistoryAggregate;
-      delete state.latestPayload;
-    }
+  async ingest(serverId, samples, reportTs = Date.now()) {
+    await this.reports.ingest(serverId, samples, reportTs);
   }
 
   async close() {
@@ -214,16 +200,10 @@ export class RealtimeHub {
     this._flushFrontendBroadcast();
     for (const ws of [...this.frontendSockets, ...this.standardAgentWebSockets]) ws.close(1001, 'server restarting');
     await Promise.allSettled([...this.processing]);
-    for (const [id, state] of this.agentHistoryWrites) {
-      const payload = state.latestPayload;
-      if (payload && state.pendingHistoryAggregate) {
-        await saveMetricsHistory(this.env.DB, id, applyHistoryMetricAggregates(payload.metrics, state.pendingHistoryAggregate), payload.regionCode, payload.timestamp, payload.agentVersion);
-        delete state.pendingHistoryAggregate;
-      }
-    }
+    await this.reports.close();
     this.resourceAlerts.load();
     this.resourceAlerts.persist(Date.now(), true);
-    this.latestReports.clear();
+    this.serverDeliveryLifetimes.clear();
   }
 
   _closeWsWithError(ws, message, code = 400, extra = {}, closeCode = WS_POLICY_VIOLATION, closeReason = message) {
@@ -657,12 +637,21 @@ export class RealtimeHub {
     return { ok: true };
   }
 
-  async _ingestRealtimeUpdates(updates, reportTs = Date.now()) {
+  async _publishRealtimeUpdates(updates, reportTs = Date.now()) {
     if (!Array.isArray(updates) || !updates.length) return;
-    for (const update of updates) this.latestReports.set(update.serverId, update.samples, reportTs);
+    const deliveries = updates.map(update => {
+      const lifetime = this.serverDeliveryLifetimes.get(update.serverId) || {};
+      this.serverDeliveryLifetimes.set(update.serverId, lifetime);
+      return { update, lifetime };
+    });
     await this.resourceAlerts.ingest(updates, reportTs);
-    this._broadcastBatch(updates, reportTs, 'single');
-    this._queueFrontendBroadcast(updates, reportTs);
+    // Removal invalidates delivery even if the same UUID is restored while alerts await.
+    const currentUpdates = deliveries
+      .filter(({ update, lifetime }) => this.serverDeliveryLifetimes.get(update.serverId) === lifetime)
+      .map(({ update }) => update);
+    if (!currentUpdates.length) return;
+    this._broadcastBatch(currentUpdates, reportTs, 'single');
+    this._queueFrontendBroadcast(currentUpdates, reportTs);
   }
 
   _queueFrontendBroadcast(updates, reportTs) {
@@ -779,82 +768,6 @@ export class RealtimeHub {
     return hinted;
   }
 
-  async _persistAgentHistoryIfDue(ws, attachment, payload) {
-    const serverId = String(payload.serverId || '');
-    const now = Date.now();
-    const state = this.agentHistoryWrites.get(serverId) || {};
-    state.latestPayload = payload;
-    const currentAggregate = payload.historyAggregate ||
-      collectHistoryMetricAggregates([{ metrics: payload.metrics }]);
-
-    if (state.flushing) {
-      state.pendingHistoryAggregate = mergeHistoryMetricAggregates(
-        state.pendingHistoryAggregate,
-        currentAggregate
-      );
-      this.agentHistoryWrites.set(serverId, state);
-      return { persisted: false, nextD1WriteAfterMs: 0 };
-    }
-
-    state.pendingHistoryAggregate = mergeHistoryMetricAggregates(
-      state.pendingHistoryAggregate,
-      currentAggregate
-    );
-    const intervalMs = Math.max(
-      1000,
-      Number(payload.reportIntervalMs) ||
-      Number(attachment.reportIntervalMs) ||
-      AGENT_DEFAULT_HISTORY_WRITE_INTERVAL_MS
-    );
-    const lastWriteTs = Math.max(
-      Number(state.lastD1WriteTs) || 0,
-      Number(attachment.lastD1WriteTs) || 0
-    );
-    const nextWriteTs = lastWriteTs + intervalMs;
-
-    if (lastWriteTs > 0 && now < nextWriteTs) {
-      state.lastD1WriteTs = lastWriteTs;
-      this.agentHistoryWrites.set(serverId, state);
-      return { persisted: false, nextD1WriteAfterMs: nextWriteTs - now };
-    }
-
-    state.flushing = true;
-    const aggregateForWrite = state.pendingHistoryAggregate;
-    delete state.pendingHistoryAggregate;
-    this.agentHistoryWrites.set(serverId, state);
-    try {
-      const metrics = applyHistoryMetricAggregates(payload.metrics, aggregateForWrite);
-      await saveMetricsHistory(
-        this.env.DB,
-        serverId,
-        metrics,
-        payload.regionCode,
-        payload.timestamp,
-        payload.agentVersion
-      );
-      const persistedAt = Date.now();
-      state.lastD1WriteTs = persistedAt;
-      const currentAttachment = ws.getContext() || attachment;
-      ws.setContext({
-        ...currentAttachment,
-        lastD1WriteTs: persistedAt
-      });
-      return {
-        persisted: true,
-        nextD1WriteAfterMs: intervalMs
-      };
-    } catch (e) {
-      state.pendingHistoryAggregate = mergeHistoryMetricAggregates(
-        aggregateForWrite,
-        state.pendingHistoryAggregate
-      );
-      throw e;
-    } finally {
-      state.flushing = false;
-      this.agentHistoryWrites.set(serverId, state);
-    }
-  }
-
   async _handleAgentReportMessage(ws, rawMessage, attachment = {}) {
     let msg = null;
     try {
@@ -908,41 +821,24 @@ export class RealtimeHub {
       return;
     }
 
-    const samples = normalizeMetricSamples(data);
-    if (samples.some(sample => sample.ts > Date.now() + 60000 || sample.ts < Date.now() - 7 * 86400000)) { this._closeWsWithError(ws, 'Invalid sample timestamp', 400); return; }
-    if (samples.length === 0) {
-      this._closeWsWithError(ws, 'Missing metrics', 400);
+    const realtimeState = this._getAgentRealtimeState();
+    let persisted;
+    try {
+      persisted = await this.reports.receive(context.serverId, data, {
+        transport: 'ws',
+        regionCode: context.regionCode,
+        agentVersion: context.agentVersion,
+        reportIntervalMs: context.reportIntervalMs
+      });
+    } catch (error) {
+      if (error instanceof AgentReportsClosed) {
+        this._closeWsWithError(ws, error.message, 503, {}, WS_TRY_AGAIN_LATER);
+        return;
+      }
+      if (!(error instanceof InvalidAgentReport)) throw error;
+      this._closeWsWithError(ws, error.message, 400);
       return;
     }
-
-    const latestSample = samples[samples.length - 1];
-    const latestMetrics = getReportMetrics(data, latestSample);
-    const historyAggregate = collectHistoryMetricAggregates(samples);
-    const broadcastSamples = toBroadcastSamples(
-      context.serverId,
-      samples,
-      context.regionCode,
-      context.agentVersion,
-      latestMetrics
-    );
-    const reportTs = Date.now();
-    const normalizedUpdates = [{
-      serverId: context.serverId,
-      samples: broadcastSamples
-    }];
-    const realtimeState = this._getAgentRealtimeState(reportTs);
-    await this._ingestRealtimeUpdates(normalizedUpdates, reportTs);
-
-    const persisted = await this._persistAgentHistoryIfDue(ws, context.attachment, {
-      serverId: context.serverId,
-
-      metrics: latestMetrics,
-      historyAggregate,
-      regionCode: context.regionCode,
-      timestamp: latestSample.ts,
-      agentVersion: context.agentVersion,
-      reportIntervalMs: context.reportIntervalMs
-    });
 
     const configAck = await this._buildAgentConfigAck(context);
     const nextWssReportAfterMs = this._getAgentNextWssReportAfterMs(
@@ -954,7 +850,7 @@ export class RealtimeHub {
       type: 'ack',
       ts: Date.now(),
       persisted: persisted.persisted,
-      nextD1WriteAfterMs: persisted.nextD1WriteAfterMs,
+      nextD1WriteAfterMs: persisted.nextWriteAfterMs,
       nextWssReportAfterMs,
       ...(configAck || {})
     });

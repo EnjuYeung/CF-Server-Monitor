@@ -32,8 +32,8 @@ test('homepage batches for 250ms while details and authenticated presence update
   const detail = viewer('a', ['a']);
   const reportTs = Date.now();
   const first = [{ts: reportTs - 1000, data: {cpu: 10, ip_v4: '8.8.8.8'}}];
-  await hub._ingestRealtimeUpdates([{serverId: 'a', samples: first}], reportTs);
-  await hub._ingestRealtimeUpdates([{serverId: 'b', samples: [{ts: reportTs, data: {cpu: 20}}]}], reportTs + 5);
+  await hub.ingest('a', first, reportTs);
+  await hub.ingest('b', [{ts: reportTs, data: {cpu: 20}}], reportTs + 5);
   assert.ok(homepages.every(ws => ws.messages.length === 0));
   assert.equal(detail.messages.length, 1);
   assert.equal(db.prepare('SELECT last_seen FROM server_presence WHERE server_id=?').bind('a').first().last_seen, reportTs);
@@ -92,7 +92,7 @@ test('deleted and re-created server cannot replay its previous queued data', asy
   const replacementViewer = viewer();
   t.mock.timers.tick(250);
   assert.equal(replacementViewer.messages.length, 0);
-  assert.deepEqual(hub.latestReports.getMany(['a']), []);
+  assert.deepEqual(hub.reports.latestUpdates(['a']), []);
 });
 
 test('shutdown delivers the pending homepage batch and leaves no later broadcast', async t => {
@@ -104,6 +104,30 @@ test('shutdown delivers the pending homepage batch and leaves no later broadcast
   assert.equal(homepage.messages.length, 1);
   t.mock.timers.tick(1000);
   assert.equal(homepage.messages.length, 1);
+});
+
+test('deletion during alert processing cannot deliver an old report to a recreated node', async t => {
+  const { db, hub, viewer } = await fixture(t);
+  let release;
+  let started;
+  const ingesting = new Promise(resolve => { started = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  t.mock.method(hub.resourceAlerts, 'ingest', async () => { started(); await blocked; });
+  const receiving = hub.reports.receive('a', { metrics: { cpu: 77, timestamp: Date.now() } }, { transport: 'ws' });
+  await ingesting;
+  db.prepare("DELETE FROM servers WHERE id='a'").run();
+  hub.removeServer('a');
+  db.prepare("INSERT INTO servers(id,name) VALUES ('a','replacement')").run();
+  const homepage = viewer();
+  const detail = viewer('a', ['a']);
+  release();
+  assert.equal((await receiving).persisted, false);
+  t.mock.timers.tick(250);
+  assert.equal(homepage.messages.length, 0);
+  assert.equal(detail.messages.length, 0);
+  assert.equal(db.prepare('SELECT count(*) n FROM metrics_history').first().n, 0);
+  assert.equal(hub.reports.lastSeen('a'), 0);
+  assert.deepEqual(hub.reports.latestUpdates(['a']), []);
 });
 
 test('details receive every report immediately without homepage subscribers', async t => {

@@ -1,5 +1,118 @@
 # 最近一次测试报告
 
+## 架构重构生产发布（2026-10-09）
+
+按用户授权，将前两项已验收的架构重构一起部署生产：https://jm.zedy.cc。**14:15:27（Asia/Shanghai）**启动新容器，14:15:36 健康检查通过；**14:17:08**完成数据、上报与公网复核。生产 `server-monitor:local` 和发布标签 `server-monitor:architecture-20261009` 指向完整验收的镜像 **`sha256:b32c0ce3d386c2954e68011517abf675e26fdbf41e91d9a76e20ff8069e4576f`**，未重新构建另一份发布产物。原生 Agent 仍为 v1.3.0，两架构文件与既有生产归档 SHA-256 相同。
+
+发布前先搭建 `--network none` 的生产数据副本容器、全新浏览器配置目录和只读验证脚本，备份在线 SQLite 一致快照及生产配置，再在副本启动已验收镜像。沿用当前 Compose 项目、生产 `.env`、数据卷、端口及网络，只替换主控镜像；未安装、重启或手动更新任何远程 Agent。
+
+| 编号 | 用户功能、操作与预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| AP01 | 发布的是已通过完整验收的源码/产物，Agent 版本归档兼容 | 发布前再比对镜像与工作区，113 个源码、315 个静态文件全相同；v1.3.0 manifest 与既有归档相同。`release-source.json` | 通过 |
+| AP02 | 保存生产数据和回滚版本，再在断网副本实际启动 | 备份 integrity=ok，16 节点、5 项设置、179,178 条历史和 39 个归档/地区库文件；副本健康、首页、后台、配置、版本及 manifest 全 200，节点/设置/固定历史内容哈希保持。`prepare-result.json`、`production-copy-result.json` | 通过 |
+| AP03 | 用既有 Compose 执行 `up -d --no-build monitor`，验证配置及数据保持 | 容器 healthy、重启 0；环境、端口、挂载、网络、重启策略、init、停止宽限均相同，SQLite integrity=ok，节点/设置/固定历史保持。`deployment-result.json` | 通过 |
+| AP04 | 公网验证应用路由和新前端资源 | 健康、首页、看板、配置、Agent 版本/manifest 及新 Dashboard JS 全 200，16 个公开节点；JS 与验收产物 SHA-256 相同。`public-verification.json` | 通过 |
+| AP05 | Chromium 访问生产 HTTPS，检查桌面/手机及三个视图，接收真实 WSS | 1440/375px 各显示 16 节点、无横向页面溢出；条形/环形/列表切换通过；运行异常及本站 HTTP 错误 0，WSS 收到 hello/subscribed/batchUpdate。已人工阅读两张截图。`browser.json`、`production-dashboard-*.png` | 通过 |
+| AP06 | 发布后确认所有 Agent 恢复上报、持久数据及归档保持 | 16/16 节点在新容器启动后上报，复核时最长报告年龄 4.2 秒；历史 179,259 行，固定范围 178,216 行内容相同，5 项设置、16 节点、删除意图及原 39 个文件保持。`final-result.json`、`database-final.json` | 通过 |
+| AP07 | 清理生产副本与测试进程，保留受保护回滚材料 | 副本容器、数据复制目录、临时环境文件均清理；浏览器正常退出 0，无本轮测试容器。备份目录 0700，私密文件 0600。 | 通过 |
+
+证据位于 Git 忽略的 `output/test-results/architecture-production-20261009/`。备份：`/opt/1panel/apps/jan_monitor/backups/architecture-20261009T061250Z/`；回滚标签：`server-monitor:rollback-architecture-20261009t061250z`，指向原生产镜像 `sha256:862f09e0c4dac25ba496b9c5455269690dcff8a884028de42d493b600375c7a5`。固定历史比较留出一小时保留期余量，避免正常七天清理产生误报。提交目标为当前 `codex/self-hosted-native-agent` 分支，仅纳入源码、契约测试及文档，环境、备份、数据和截图均不纳入 Git。
+
+## 首页看板实时状态模块重构（2026-10-09）
+
+本轮按确认范围仅重构首页状态流程，保留此前 Agent 上报模块改动。新增 `state/dashboardState.js` 的只读 `state` / `start()` / `stop()` interface，浏览器 adapter 使用真实 HTTP/WS、时钟与生命周期事件；详情页连接策略和 Agent 协议未改动。测试使用 Node **24.21.0**、Go **1.26.8**、SQLite WAL 和全新临时数据，未访问生产主控、安装宿主服务或更新远程 Agent。
+
+开发前执行 `npm ci`、`npm run geoip:download`、完整基线 `npm run build`。先搭建独立主控进程、随机回环端口、假凭据、Xvfb Chromium 与测试 TLS 反代，再执行真实浏览器验收；测试浏览器使用一次性证书，外部汇率请求由固定测试响应替代。最终构建再次成功。日志、数据库、DOM、截图和 JSON 位于 Git 忽略的 `output/test-results/dashboard-state-refactor/`。
+
+以下 DS 编号对应 `test/dashboard-state.test.js` 的 17 项公共 interface 契约，测试通过 adapter 驱动网络、计时与恢复事件，未访问内部 Map。原六项单独快照函数测试由完整流程测试替换；延迟窗口算法、实际 Vue 柱图与传输 adapter 测试保留。
+
+| 编号 | 用户功能、操作与预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| DS01 | 启动两次、载入快照/配置/统计，关闭延迟详情后周期补取；只启动一个会话且持续补取 | 2 个节点、地区/在线/流量统计正确；计时器为 1 秒及 60 秒，新节点订阅生效。`targeted-tests.log` | 通过 |
+| DS02 | 初始化缓存多样本回放，再模拟冻结 10 秒和离线；三种时间分别推进 | CPU 10→30，采样时间到 NOW，显示时间到 NOW+1 秒，接收时间不变；离线后显示时间停止。`targeted-tests.log` | 通过 |
+| DS03 | 逆序重复批次后提交单样本及旧采样包；有序回放、新包替换等待样本 | CPU 40→73，旧采样不能回退指标但接收时间更新。`targeted-tests.log` | 通过 |
+| DS04 | 提交 601 样本后提交替换批次；缓存有上限且不继续旧批次 | 第 0 个样本被裁掉，新批次 CPU 701→702，旧批次不再播放。`targeted-tests.log` | 通过 |
+| DS05 | 暂停 REST，推入较新 WS 后释放旧快照；资料和历史补取不能覆盖新指标 | CPU 73、名称/分组更新；本地延迟 65 与持久历史 150 同时保留。`targeted-tests.log` | 通过 |
+| DS06 | 补取较新持久指标，再回放旧缓存；不得回退到旧采样 | CPU 42、采样/显示时间保持新快照。`targeted-tests.log` | 通过 |
+| DS07 | 接收时间领先持久采样，更新同桶实时延迟后补取；按采样时间决定历史新旧 | 延迟 65、丢包 15、本地 sample_ts 保留，不回退到持久值 306。`targeted-tests.log` | 通过 |
+| DS08 | 清空持久历史后补取，再加入未持久实时样本；清空生效且新样本保留 | 已持久的旧延迟清空，20 桶保持空缺；更新后的实时延迟 70 保留。`targeted-tests.log` | 通过 |
+| DS09 | 过在线期限后提交重复旧采样，再补取旧 REST；接收更新恢复在线且不回退 | CPU 10/采样时间保持，接收时间前移、online 0→1，旧快照不撤销。`targeted-tests.log` | 通过 |
+| DS10 | 两来源使用同 UUID，分别提交实时包和回放；指标/延迟不串来源 | CPU 分别 81/72，延迟分别 81/72，总计 2，组合标题保持。`targeted-tests.log` | 通过 |
+| DS11 | 删除快照节点、递送旧连接回调、恢复同 UUID，再推进时钟 | 删除后始终 0 节点；恢复 CPU 5 不继承旧回放，新连接更新为 6。`targeted-tests.log` | 通过 |
+| DS12 | 修改一个来源的订阅，再移除/重新加入另一来源 | 仅变更订阅关闭；重新加入 CPU 20，不继承旧 CPU 77 缓存。`targeted-tests.log` | 通过 |
+| DS13 | 分来源逐次完成快照，另一来源失败/CORS，随后成功空集合 | 未完成/失败来源保留节点；剩余计数 2→1→0，错误来源正确；成功空快照删除节点。`targeted-tests.log` | 通过 |
+| DS14 | 密集发送 focus/可见/连接恢复/周期事件，再发送 online/resume/bfcache | 一个进行中 REST，健康连接复用；强制恢复重连，正在连接时普通 focus 不重复连接。`targeted-tests.log` | 通过 |
+| DS15 | 隐藏期间 resume，切回后跨过延迟桶 | 切回执行一次重连；新桶留空，旧真实延迟保留，未伪造数据。`targeted-tests.log` | 通过 |
+| DS16 | 请求中停止，再释放 REST、旧 WS/状态/计时/恢复回调 | AbortSignal 中止，计时器/事件/连接清理，状态不再变化；重复停止仅关闭一次。`targeted-tests.log` | 通过 |
+| DS17 | 初始配置或快照等待时停止，再完成初始化 | 两种场景都未启动订阅/事件/计时器，也未加入晚到节点。`targeted-tests.log` | 通过 |
+
+| 编号 | 综合验证、操作与预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| DV01 | 定向测试状态流程、延迟窗口与真实传输 adapter | **25/25**，其中状态契约 17；无失败/跳过。`targeted-tests.log` | 通过 |
+| DV02 | 执行最终 `npm run test:all` | **150/150 Node**，Agent 配置、`go vet ./...`、`go test ./...` 均成功。`test-all.log` | 通过 |
+| DV03 | 执行 `npm run test:acceptance`，验证真实网络、写库、重启/恢复与前台原生 Agent | **主控 19/19、原生 Agent 7/7**；50 Agent / 10 看板、7 天历史、清空及持久化故障均通过。`acceptance.log`、`controller-acceptance.json`、`native-acceptance.json` | 通过 |
+| DV04 | 完整 `npm run build` 与独立 Docker 候选构建 | 前端成功、Linux amd64/arm64 两类 Agent 校验成功。`build.log`、`docker-build.log` | 通过 |
+| DV05 | 在无网络和全新匿名卷启动候选镜像，实测 HTTP/WS、清空历史和正常停止 | 健康/首页/后台均 200，WS 确认及回放 CPU 84 正确；正常退出 0，停止后历史仍 0 行。`container-smoke.json`、`container.log` | 通过 |
+| DV06 | 比较候选镜像源码/静态产物与工作区，清理隔离容器及卷 | **113 个源码、315 个静态文件** SHA-256 全部相同；冒烟和复制检查容器/卷均删除。`source-parity.json` | 通过 |
+| DV07 | 检查改动格式、新文件空白和测试产物排除 | `git diff --check` 成功，新模块/adapter/契约测试/术语表无行尾空白；测试证据均被 Git 忽略。 | 通过 |
+
+真实 Chromium 使用同一脚本比较已保存的基线与最终构建；harness SHA-256 均为 `0573aebe9154aa43a33e4d1152d7dfc909a2a641f53dc4481e0faf1f5c7d7b9d`。基线资源 `Dashboard-CYdvwrqg.js` 为 **8/11**，最终 `Dashboard-cWuKcD3K.js` 为 **11/11**。基线有三处确定失败：旧 WS 帧恢复已删除节点、卸载未中止 REST、两个来源同 UUID 将 A 的 CPU 覆盖为 B 的 82%。以下 DB 项分别映射浏览器脚本的 BR 编号。
+
+| 编号 | 用户功能、操作与预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| DB01 | 在全新主控加载首页，经真实 HTTP 上报后接收 WS 更新 | CPU 20、2 个节点、1 条 all 订阅，REST/WS 均正常。BR01 | 通过 |
+| DB02 | 真正切换 Chromium tab 隐藏，期间上报，再切回；复用健康连接 | 创建连接数 1→1，关闭数 0→0，CPU 更新为 30。BR02 | 通过 |
+| DB03 | CDP 冻结页面、上报、解冻后再上报；回放及连接恢复 | 连接创建数 1→2，CPU 40→41 恢复。BR03 | 通过 |
+| DB04 | 浏览器离线并断开仅测试主控的 viewer 连接，再恢复网络 | online 恢复，CPU 50→51，后续实时更新继续。BR04 | 通过 |
+| DB05 | 截停真实 REST 51 响应，先推送 WS 94，再释放旧响应 | DOM CPU 始终保持 94。BR05 | 通过 |
+| DB06 | 删除 A，快照确认仅剩 anchor，通过真实 WS 递送已在途旧 A 帧 | 旧帧成功发送一次，DOM 仍只有 anchor，A 未恢复；基线在相同测试失败。BR06 | 通过 |
+| DB07 | 两个独立主控进程和 HTTPS 回环反代使用同 UUID，分别上报，再切换环形/列表/条形 | 两来源最终 CPU 分别 73/84，各视图维持两个节点；B 详情 href 带 apiIndex=1。基线混为 82/82。BR09 | 通过 |
+| DB08 | 1440/375 视口截图、DOM 宽度及运行异常检查，再人工阅读截图 | scrollWidth 分别 1432/375，无横向页面溢出；运行异常 0，标题、统计、卡片和两来源数值可读。BR07、三张 PNG | 通过 |
+| DB09 | 暂停真实快照请求时进入详情页；卸载中止请求 | 捕获该请求 `Network.loadingFailed`，`net::ERR_ABORTED`、`canceled:true`。基线未中止。BR11 | 通过 |
+| DB10 | 卸载首页后发 focus/online/resume/bfcache；不得重建首页请求或订阅 | `/api/servers` 请求 0、all 订阅 0，仅详情订阅存活。BR08 | 通过 |
+| DB11 | 真实 Agent WS 发送两样本，观察首页播放及延迟 | CPU 65→66、延迟 18ms，原 persisted/nextD1WriteAfterMs 确认字段可用。BR10 | 通过 |
+
+最终浏览器证据：`2026-10-09T04-59-33-283Z-candidate-final-1001396/results.json`；基线：`2026-10-09T04-59-32-030Z-baseline-final-harness-1001239/results.json`。两套均记录 DOM、网络事件和进程清理；候选所有 fixture 主控、Chromium、Xvfb 均退出 0，无该测试前缀残留进程。两套捕获一条预期的冻结/bfcache WS 关闭浏览器日志，随后恢复验收通过，没有将该网络关闭当作 JavaScript 运行异常。
+
+首次浏览器脚本只识别 bar CPU、删空后无存活连接可递送旧帧，以及 HTTP 多来源不满足应用仅接受 HTTPS 的运行配置，属于测试前置问题；已补 ring selector、anchor 和一次性 TLS 反代。同一修正后的脚本完整重跑基线/候选，上述三处业务差别与前置失败分别保留证据。
+
+候选镜像 `server-monitor:dashboard-state-test-20261009`，ID `sha256:b32c0ce3d386c2954e68011517abf675e26fdbf41e91d9a76e20ff8069e4576f`。仅保留本地工作区改动和候选镜像，未提交、推送或部署生产；Agent 安装/更新/分发源码无变化，本轮未运行 `test:agent-deployment`。
+
+首次有界回放测试将起始采样与时钟位置设置成不一致，修正测试前置条件后通过，业务回放规则未为该断言调整。验收证据复制首次误用原生 JSON 路径，已从实际 `agent-integration/native-acceptance.json` 正确归档；主控与原生验收命令本身成功。`npm ci` 提示三项既有 high 依赖审计告警，依赖和锁文件未修改。
+
+## Agent 上报处理模块重构（2026-10-09）
+
+本轮将 HTTP/WS 的 Agent 上报校验、采样聚合、接收记录、回放、历史写入及生命周期集中到 `src/services/agentReports.js`。验证使用 Node **24.21.0**、Go **1.26.8**、真实 SQLite WAL、回环 HTTP/WS 和独立前台 Agent。Docker 测试使用全新匿名数据卷及 `--network none`，不挂载生产数据，不安装或更新宿主服务。
+
+开发前先执行 `npm ci`、`npm run geoip:download`、`npm run build`，并在全新临时目录实际启动主控，健康、首页和安全后台入口均返回 200。最终完整构建再次成功，产物仅 Linux amd64/arm64 两类 Agent，版本仍为 v1.3.0；Agent 源码、发布配置和安装分发逻辑未改动，因此本次未运行安装/分发专项 `test:agent-deployment`。
+
+本节日志和 JSON 证据位于 `output/test-results/report-intake-refactor/`，由 Git 忽略。以下结果来自实际运行与数据库断言。
+
+| 编号 | 用户功能、实际操作及预期 | 实测结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| IR01 | 分别通过 HTTP/WS module interface 提交旧采样时间的数据，检查发布时的数据库及接收时间；HTTP 先写后接收，WS 先接收后写 | 两种流程均成功；HTTP 发布时历史 1 行，WS 发布时 0 行；最后接收时间使用当前主控时间，历史保持原采样时间。`targeted.log` | 通过 |
+| IR02 | 提交 metrics、samples、batch 格式及秒级时间，检查版本、地区、元数据和回放；保持原协议归一化 | 三条历史 CPU 均 25、地区 CN、版本 1.3.0；元数据保存在历史，实时包继续省略静态字段。`targeted.log` | 通过 |
+| IR03 | 提交空、数组、缺失指标、超未来/过去窗口的数据，并提交精确边界样本；异常无副作用，边界可用 | 无效输入均拒绝，历史、接收和发布为空；恰好 7 天前及 60 秒后的样本成功。`targeted.log` | 通过 |
+| IR04 | 逆序提交 305 个样本，查询聚合历史与完整实时样本；只保留最新 300 个且保持聚合规则 | 实时 300 个样本递增；历史 CPU 平均 154.5、入站速率峰值 300、磁盘读峰值 304，实时末样本 CPU 304。`targeted.log` | 通过 |
+| IR05 | 用真实 SQLite trigger 使历史/最新状态事务失败，再解除故障重试；不能伪报持久化，WS 待写样本可恢复 | 两种事务均回滚、无最新持久状态；HTTP 不接收/发布，WS 保留接收/发布；重试后 WS CPU 平均 20、速率峰值 90，HTTP CPU 30。`targeted.log` | 通过 |
+| IR06 | 按节点先写 WS、节流一包、插入 HTTP，再到 WS 写入间隔；窗口跨连接且 HTTP 不消耗它 | WS 剩余等待 59 秒，到期写入；历史 CPU 为 10、20、60，HTTP 与 WS 聚合相互独立。`targeted.log` | 通过 |
+| IR07 | WS 产生待写窗口后清空历史，检查最新状态/接收/回放，再接收新样本并关闭；旧窗口不能恢复 | 最新持久 CPU 10、回放 CPU 90 与接收保留；写入间隔保留，关闭只写新 CPU 20。`targeted.log` | 通过 |
+| IR08 | 删除节点并恢复相同 UUID，检查回放/接收，再上报并关闭；新节点不继承旧窗口 | 接收、回放清空，新节点首次 WS 立即写入，最终历史只有 CPU 20。`targeted.log` | 通过 |
+| IR09 | 受控延迟发布 adapter，关闭时仍有 WS 上报在处理；等待后补写完整窗口 | 关闭等待发布完成；历史 CPU 10、60，待写速率峰值 90 保留。`targeted.log` | 通过 |
+| IR10 | 在真实写入失败、异常恢复前清空历史或删除/恢复节点；旧聚合不能重新入队 | 两种事件序列均在关闭后保持历史 0 行。`targeted.log` | 通过 |
+| IR11 | 发布 adapter 暂停期间清空历史或删除/恢复，再恢复旧上报并关闭；旧上报不能重建历史窗口 | 返回 persisted=false，历史始终 0 行；删除后接收/回放仍为空。`targeted.log` | 通过 |
+| IR12 | HTTP 发布期间开始关闭，再提交新的 HTTP/内部上报；关闭等候已有任务并拒绝新任务 | 新任务返回关闭错误；已有 HTTP 正常完成，历史仅 a 节点 CPU 25。`targeted.log` | 通过 |
+| AR13 | 在实际 Hub 的告警 adapter 暂停期间删除/恢复同 UUID，创建新首页/详情订阅，再恢复旧上报；旧推送不进入新节点 | 两种订阅消息均为 0，历史 0 行、接收 0、回放为空；补上删除后异步投递的失效检查。`test-all.log`、`targeted.log` | 通过 |
+| AR14 | 执行最终 `npm run test:all`；Node、配置、Go 检查全部通过 | **139/139 Node 测试**，失败/跳过 0；Agent 配置测试、`go vet ./...`、`go test ./...` 均退出 0。定向 59/59，其中上报模块契约 16 项。`test-all.log`、`targeted.log` | 通过 |
+| AR15 | 执行最终 `npm run build`；完整前端和两个架构原生 Agent 可构建 | 两类产物校验成功；Vite 构建、静态资源复制成功。`build.log` | 通过 |
+| AR16 | 执行最终 `npm run test:acceptance`，真实 HTTP/WS/SQLite 和前台原生 Agent 验证正常/异常、持久化、重启与容量 | **主控 19/19、原生 Agent 7/7** 通过；50 Agent / 10 看板收到 500 个节点更新，写入故障不伪报成功；7 天清理、重启/备份恢复及清空后停机均通过。`acceptance.log`、`controller-acceptance.json`、`native-acceptance.json` | 通过 |
+| AR17 | 构建候选 Docker 镜像并在隔离网络、全新卷实际启动，上报两包 WS、读取 REST 回放、清空历史并正常停止；停止不能恢复旧历史 | HTTP/健康/首页/后台均 200；WS 首包 persisted=true、次包 false，确认字段兼容；回放 CPU 84，校正确认不新增历史，目录只含两架构；停止退出 0，停止后历史仍 0 行。`docker-build.log`、`container-smoke.json`、`container.log` | 通过 |
+| AR18 | 逐文件比较最终镜像与工作区源码，检查测试容器清理及改动格式；镜像包含完整改动且不遗留测试容器 | **111 个源码文件** SHA-256 全部相同，无缺失；本轮测试容器 0，`git diff --check` 通过，新文件无行尾空白。`source-parity.json` | 通过 |
+
+候选镜像为 `server-monitor:report-intake-test-20261009`，实际 ID `sha256:cb7973883eba58ab5d0bf808c890338927913f896dd989218d7455608ba982e5`。隔离容器及其匿名测试卷已删除，候选镜像保留供后续审阅；本轮仅修改工作区，未提交、推送或部署生产。
+
+初次新契约测试错误地期望实时包保留静态元数据；按原协议修正断言后通过。镜像测试脚本先误用内部 `payload` 读取 REST 的 `data` 字段，随后只读卷上的 WAL 查询缺少可写共享内存目录；修正 REST 断言、复制已停止的数据库到检查容器临时目录后通过。失败日志保留，本轮业务程序未因这些测试脚本问题调整。`npm ci` 提示三项既有 high 依赖审计告警，依赖及锁文件未修改。
+
 ## 工程技能配置验证（2026-10-08）
 
 本轮按用户确认配置 Matt Pocock 工程技能：新增三个 `docs/agents/` 配置文件、追加 `AGENTS.md` 入口，并更新本报告及 changelog.md。实际启用 GitHub Issues，补建四个分流标签；以下结果来自文件校验和真实 GitHub CLI/API 调用。

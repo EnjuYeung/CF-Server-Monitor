@@ -41,6 +41,7 @@ export async function createController(options = {}) {
     });
   } catch (error) { env.DB.close(); throw error; }
   env.REALTIME_HUB = new RealtimeHub(env);
+  env.AGENT_REPORTS = env.REALTIME_HUB.reports;
   const adapt = createRequestAdapter(config.TRUSTED_PROXIES || '');
   const pending = new Set();
   const ctx = { defer(promise) { pending.add(promise); promise.catch(console.error).finally(() => pending.delete(promise)); } };

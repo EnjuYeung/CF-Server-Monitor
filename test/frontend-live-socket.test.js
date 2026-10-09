@@ -132,7 +132,7 @@ test('dashboard retries past ten failures, connects, and stops retries when unmo
   const vite = await createServer({ configFile: false, appType: 'custom', logLevel: 'silent', server: { middlewareMode: true, watch: null } });
   let socket;
   t.after(async () => { socket?.close(); t.mock.timers.reset(); await vite.close(); Object.assign(globalThis, original); });
-  const { createLiveSocket, fetchServersAll } = await vite.ssrLoadModule('/src/frontend/utils/api.js');
+  const { createLiveSocket } = await vite.ssrLoadModule('/src/frontend/utils/api.js');
   t.mock.timers.enable({ apis: ['setTimeout'] });
   socket = createLiveSocket('all', { reconnectForever: true, timeoutMinutes: 0 });
   assert.equal(socket.isConnecting, true);
@@ -152,7 +152,5 @@ test('dashboard retries past ten failures, connects, and stops retries when unmo
   assert.equal(socket.isConnected, false);
   assert.equal(connections.length, count);
 
-  // An unavailable API must not look like a valid, empty server list.
-  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('offline'); });
-  assert.equal(await fetchServersAll(), null);
+
 });
