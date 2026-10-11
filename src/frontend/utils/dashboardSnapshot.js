@@ -1,10 +1,12 @@
 import { normalizeTimestamp } from './time.js'
 import { refreshLatencyWindow } from './latencyWindow.js'
+import { isSameServerInstance } from '../../shared/serverIdentity.js'
 
 // A REST response can arrive after a newer live sample. Refresh metadata and
 // persisted history without replacing metrics received while it was in flight.
 export function reconcileDashboardSnapshot(snapshot, current, liveSample, config = {}, now = Date.now()) {
-  const snapshotTs = normalizeTimestamp(snapshot.sample_timestamp ?? snapshot.timestamp ?? snapshot.last_updated, 0)
+  if (!isSameServerInstance(snapshot, current)) { current = null; liveSample = null }
+  const snapshotTs = normalizeTimestamp(snapshot.sample_timestamp ?? (snapshot.instance_id ? snapshot.last_updated : snapshot.timestamp ?? snapshot.last_updated), 0)
   const liveTs = normalizeTimestamp(liveSample?.sample_timestamp, 0)
   const keepLive = liveTs > snapshotTs
   const reportTs = Math.max(

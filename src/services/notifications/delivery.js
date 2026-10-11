@@ -234,11 +234,17 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
           }
         ]
       };
-      await fetchWithRetry(endpoint, {
+      const response = await fetchWithRetry(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+      let result;
+      try { result = await response.json(); } catch { throw new Error('Invalid OneBot delivery response'); }
+      if (result?.status !== 'ok' || result.retcode !== 0) {
+        const code = Number.isSafeInteger(result?.retcode) ? result.retcode : 'invalid';
+        throw new Error(`OneBot did not confirm delivery (retcode ${code})`);
+      }
     } catch (e) {
       return "OneBot 通知发送失败: " + e.message;
     }

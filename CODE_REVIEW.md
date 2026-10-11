@@ -1,4 +1,48 @@
-# 项目代码审查（2026-09-19）
+# 项目代码审查（2026-10-11）
+
+按用户确认，以 `origin/main` 为基准，采用三点比较审查全部独立二开改动。基准固定为 `dfb9bf19c23479398c3835c5f96328364e194c85`，HEAD 为 `26250bf0071cb41150692bbf4f8e243f7909f2e3`，共同祖先为 `e25e47b028c91871ebf40da2d60adfb8cc347d4a`；范围为 22 个提交、282 个文件。命令：`git diff dfb9bf19c23479398c3835c5f96328364e194c85...26250bf0071cb41150692bbf4f8e243f7909f2e3`。
+
+使用 code-review 技能，由两个独立子代理分别审查 Standards 与 Spec。没有找到关联 GitHub Issue；用户确认以 AGENTS.md、architecture.md、API.md、theme-develop.md 等现有项目文档为规格依据。两个轴分别呈现，不合并发现。同 UUID 重建问题同时违反规范和行为规格，因此在两个轴各计一项。以下为修复前发现及行号；后续已按用户授权修复，并在“免费云”的隔离环境完成验收。
+
+## 修复结果（2026-10-11）
+
+Standards 的 2 项和 Spec 的 3 项对应 4 个独立问题，均已处理。
+
+| 问题 | 实现与实际验证 |
+| --- | --- |
+| 快速同 UUID 重建保留旧状态（两轴） | 持久 instance_id 区分节点实例；新实例清旧指标、时间、回放及订阅，最小主题另清历史请求。RF02、RFB01–RFB02 跳过中间空快照仍清旧 CPU/延迟；新 WS 上报可正常恢复 |
+| OneBot 业务失败误记送达（Spec） | 只有 status=ok、retcode=0 才确认；HTTP 200 业务失败保留 SQLite outbox 并退避重试。RF01 使用真实本地 HTTP 提供方，失败后待发，成功重试后送达 |
+| REST 401 保留旧展示与订阅（Spec） | 清该来源数据、回放、连接及晚到回调，全部受限时显示私人提示。RF03、多来源回归及 RFB03–RFB04 通过；内置页面收到配置断开后自动补取并清空 |
+| Agent 安装/下载文档不符（Standards） | API.md 只列 Linux install.sh 与 amd64/arm64；ND01 实测两目标及归档可用，PowerShell 和 Windows 下载均 404 |
+
+旧存储升级回填、重启和清历史保留节点实例（RF04–RF05），Docker 数据卷重建也保留实例（ND04）。免费云 Linux：完整 test:all 通过（176 项 Node、Agent 配置、Go vet/test），主控 19/19、原生 Agent 7/7、主题浏览器 15/15、新增浏览器 4/4、隔离 Docker 8/8。847 个镜像运行文件与已测产物 SHA-256 一致；详细命令、环境修正和覆盖边界见 TEST_REPORT.md。本次未部署生产。
+
+## Standards
+
+- **[P2] 硬性违反：快速重建同 UUID 后继承旧看板状态。** `src/frontend/state/dashboardState.js:195–199` 仅在 `!visible.has(id)` 时清除回放缓存，违反 `theme-develop.md:221` 的“删除清旧数据……不污染同 UUID 重建节点”。删除后在 WS 重连补取前导入同 UUID，旧缓存仍进入新节点。真实隔离 HTTP/WS/SQLite 复现：Hub 关闭会话后成功重连，重建节点 REST 无指标、在线数为 0，看板仍显示旧 CPU=87、延迟=55、在线数为 1。应提供可观察的节点生命周期标识，在重建时清除旧指标、回放及接收时间；导出保留的创建时间不能区分重建。证据：`output/test-results/code-review-20261011/standards-fast-recreation.mjs`、同名 JSON 及 `standards-fast-recreation-confirmation.log`。
+- **[P3] 文档规范冲突：API 仍列已停止提供的安装入口。** `API.md:186` 列 `/agent/install.ps1` 为安装脚本，第 190 行仍描述 `.exe` 下载，与 `AGENTS.md:7` 的“仅构建和分发 Linux amd64/arm64”及 `architecture.md:34` 的 Windows 脚本停止下载规则冲突。真实 HTTP 实测 install.sh=200、install.ps1=404、Windows 程序=404。应将接口文档改为 install.sh 和两个 Linux 下载目标。证据：`output/test-results/code-review-20261011/agent-api-doc-check.json`。
+
+其余检查未发现可行动的规范违反或足够明确的 possible smell；不将文档允许的旧平台兼容源码、详情独立连接策略或单纯文件较大列为问题。本轴 2 项，最高 P2，最严重为同 UUID 重建继承旧状态。
+
+## Spec
+
+- **[P2] 通知发送失败仍被记为送达。** `src/services/notifications/delivery.js:8–9` 仅检查 HTTP 状态，OneBot 分支第 237–241 行不读取提供方结果。`architecture.md:118–120` 要求“投递失败持续重试”“只有 delivered 写送达标记”。[OneBot 11 官方 HTTP 契约](https://github.com/botuniverse/onebot-11/blob/master/communication/http.md) 允许 HTTP 200 返回 `status:"failed"`。本地 HTTP 接收端按此契约返回失败后，SQLite outbox 实测 `delivered_at` 已写入、`last_error=null`，告警不会重试。应校验提供方业务结果后再确认送达。证据：`output/test-results/code-review-20261011/spec-onebot-repro.mjs` 与 `spec-onebot-confirmation.log`；没有向外部提供方发信。
+- **[P2] 同 UUID 快速重建继承被删除节点的指标。** `src/frontend/utils/dashboardSnapshot.js:15–18` 无条件合并旧节点状态。`theme-develop.md:221` 要求“旧连接/请求不复活节点，不污染同 UUID 重建节点”。删除和导入发生在两次快照之间时，新节点 REST 无指标、回放为空，首页仍显示旧 CPU=77、内存=1800，并保留旧订阅回调。Spec 轴独立使用真实 SQLite、上报与 REST 处理器复现；Standards 轴另覆盖真实 WS 关闭/重连。应识别重建并清理旧指标、回放及订阅寿命。证据：`output/test-results/code-review-20261011/spec-dashboard-recreate-repro.mjs` 及同名日志。
+- **[P2] REST 401 后仍保留旧看板数据和订阅。** `src/frontend/state/dashboardState.js:283–287` 把认证失败当作普通补取失败。`theme-develop.md:202` 要求“失效时清 JWT、私有列表/历史、旧连接与待执行任务”。公开站点改为私人后，已打开匿名页面收到真实 REST 401，仍显示旧列表；`Dashboard.vue:10` 继续使用启动时的 `is_public=true`。状态模块及完整构建的 Chromium 页面均已复现：原页面仍可见节点，新页面节点为 0 并显示私人提示，页面异常为 0。应单独处理认证失败并更新权限状态。证据：`output/test-results/code-review-20261011/spec-dashboard-401-repro.mjs`、`private-transition-browser.json`、日志及新旧页面 PNG。
+
+本轴 3 项，最高 P2；通知业务失败误记送达会永久结束该事件重试。未发现明确的范围扩张。
+
+## 修复前验证（macOS）
+
+使用 macOS x64、Node 24.11.1、Go 1.26.8，先完成 npm ci、GeoIP 下载及完整 build，再运行测试。两种 Linux Agent 均完成构建，170/170 Node、Agent 配置、Go vet、19/19 主控、15/15 主题浏览器验收通过，桌面及手机明暗截图已实际查看。
+
+完整 `npm run test:all` 退出 1：两项 Darwin 旧日志清理测试失败，随后 `TestOfflineSampleBufferStaysWithinControllerReportLimit` 达到默认十分钟超时；不能将部分通过阶段计作全量通过。完整 `npm run test:acceptance` 退出 1：主控阶段通过，原生阶段在运行前拒绝 Darwin。没有 Docker，未执行容器/Agent 部署验收；未继承历史 Linux 验收结果作为本轮通过证据。
+
+详细操作、状态和证据见 TEST_REPORT.md；隔离证据在 Git 忽略的 `output/test-results/code-review-20261011/`。复现使用临时 SQLite、回环 HTTP/WS、测试凭据及关闭调度的主控，没有读取生产数据库或向真实通知收件人发信。
+
+Standards：2 项，最严重为 P2 重建状态残留；Spec：3 项，最严重为 P2 通知业务失败误记送达。
+
+## 历史审查与修复记录（2026-09-19）
 
 审查基线：`2a2694c`。初次只审查、构建和验证，发现 9 项有实际复现证据的问题，以及 3 类结构性维护问题。随后按用户授权完成以下修复，提交为 `cc0b315`，并于 2026-09-19 17:13:56（Asia/Shanghai）部署生产，未创建 PR。部署验证见 TEST_REPORT.md。下文原始发现及行号保留为修复前审查记录，当前实现请以代码地图和本节为准。
 

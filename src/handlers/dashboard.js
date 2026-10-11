@@ -81,7 +81,9 @@ function attachLatencyHistoryToServers(servers, latencyHistory) {
 }
 
 function getRealtimeStateForServers(env, serverIds) {
-  return { latestReportUpdates: (env.AGENT_REPORTS?.latestUpdates(serverIds) || []).map(normalizeLatestReportUpdate).filter(Boolean) };
+  return { latestReportUpdates: (env.AGENT_REPORTS?.latestUpdates(serverIds) || []).map(update => ({
+    ...update, instance_id: env.DB.prepare('SELECT instance_id FROM server_instances WHERE server_id=?').bind(update.serverId).first()?.instance_id
+  })).map(normalizeLatestReportUpdate).filter(Boolean) };
 }
 
 export async function handleServerAPI(request, env, sys) {

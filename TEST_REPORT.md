@@ -1,5 +1,58 @@
 # 最近一次测试报告
 
+## 审查问题修复：免费云 Linux 隔离验收（2026-10-11）
+
+按用户“修复这些问题，测试在免费云上完成”的要求，修复 4 个独立问题：快速同 UUID 重建继承旧指标、OneBot 业务失败误记送达、REST 401 保留旧看板数据，以及 Agent API 文档平台冲突。当前工作区包含修复和新增回归；本次未提交、推送或部署生产。
+
+执行主机为 SSH 别名 **tencent（免费云）**，Debian 13/Linux amd64，独立 **Node 24.19.0、npm 11.17.0、Go 1.26.8**，Docker 29.8.2、Playwright 1.62.1、Chromium 1243。隔离源码根目录为 `/opt/1panel/jan_monitor/output/test-results/review-fixes-20261011-6l0ppgsp/source`；源码仅来自 Git 跟踪/非忽略文件，传送后逐文件 SHA-256 校验。测试从不使用生产 .env、数据库或通知收件人。
+
+先在独立源码目录完成 **npm ci、npm run geoip:download、npm run build**，再进行修复前失败回归及修复后测试。预建临时 SQLite、随机回环端口、测试凭据、独立控制器进程和本地 HTTP 通知提供方；浏览器主题上游使用本地文件夹具。Docker 预建唯一测试镜像 `server-monitor:review-fixes-20261011-6l0ppgsp`，部署套件通过 AGENT_TEST_IMAGE 使用它，在独立 bridge 网络、TLS 反代、容器和数据卷内验证。
+
+| 编号 | 功能、操作与预期 | 实际验证及证据 | 状态 |
+| --- | --- | --- | --- |
+| RF00 | 修复前基线应复现审查问题，修复后回归通过 | 免费云基线新增断言出现 5 个预期失败；最终针对性回归 23/23。regression-red.log、regression-green-final.log | 通过 |
+| RF01 | OneBot HTTP 200 业务失败时待发，按退避重试后成功送达 | 实际本地 HTTP 返回 failed/100，SQLite delivered_at=null、attempts=1；截止时间前未重发，ok/0 后送达、attempts=2。test/review-fixes.test.js、test-all.log | 通过 |
+| RF02 | 删除并立即导入同 UUID 和原创建时间，跳过中间空快照仍清旧状态 | REST 新实例无指标，首页清 CPU/延迟/接收时间/回放，关闭旧订阅；拒绝旧回调和旧实例包，新实例上报 CPU=12 正常。regression-green-final.log；RFB01–RFB02 | 通过 |
+| RF03 | 公开改为私人后 401 清旧来源，恢复权限时重新获取 | 节点、回放、连接及晚到回调清除，多来源另一站保持；有效快照可恢复。真实内置页收到配置断开后自动补取，显示私人提示且 viewers=0。test-all.log；RFB03–RFB04 | 通过 |
+| RF04 | 重启和清历史保留节点实例及最新指标 | 真实控制器停启及清历史接口后 instance_id 不变、CPU=18 保留，历史清空。test/review-fixes.test.js、test-all.log | 通过 |
+| RF05 | 从旧存储布局升级时回填实例，不丢节点、指标或历史 | 在持久库保留原节点/latest/history，移除新实例表以还原旧布局；重新启动控制器后原行逐项相同，两个节点均获得不同有效实例标识。regression-green-final.log、test-all.log | 通过 |
+| RF06 | Agent 文档与 Linux 双目标分发一致 | ND01 实测 Linux 双产物和数据卷归档可用，/agent/install.ps1 和 Windows exe 返回 404；API.md 与结果一致。agent-deployment.log、deployment.json | 通过 |
+| RF07 | 完整构建与全部单元/契约测试 | 最终 build 退出 0，Linux amd64/arm64 两产物；npm run test:all 退出 0，Node **176/176**、配置脚本、Go vet/test 通过。final-build.log、test-all.log | 通过 |
+| RF08 | 主控与真实原生 Agent 完整验收 | npm run test:acceptance 退出 0，主控 **19/19**、原生 **7/7**，覆盖 HTTP/WS、历史、备份/恢复、重启及删除停止采集。acceptance.log、acceptance.json、native-acceptance.json | 通过 |
+| RF09 | 全主题浏览器套件及新增缺陷场景 | npm run test:theme **15/15**；test:review-fixes-browser **4/4**，两套 pageErrors=[]。真实 HTTP/WS/SQLite；4 张重建/私人 PNG 及桌面/手机明暗截图已实际检查。theme.log、review-browser-automatic-auth.log、两个 browser.json | 通过 |
+| RF10 | 隔离 Docker 的安装、更新、持久化和卸载 | 镜像构建退出 0；npm run test:agent-deployment **8/8**，HTTPS/WSS、实际 v1.0.99 测试版本→v1.3.0、数据卷重建保留 instance_id、在线/离线自动卸载均通过。docker-build.log、agent-deployment.log、deployment.json | 通过 |
+| RF11 | 镜像运行内容与已测源码/产物一致 | **847 个文件 SHA-256 一致**，含 src、前端、Linux 程序及启动入口；npm prune 仅改变锁文件 4 个 peer 元数据标记，包版本、resolved、integrity 和依赖契约无差异。image-verification.json、image-lock-validation.json | 通过 |
+| RF12 | 测试清理及生产不受影响 | 本轮测试容器与网络残留 0；生产容器 ID、镜像、启动时间不变，healthy、restartCount=0。cleanup-verification.json、production-verification.json | 通过 |
+
+首次完整主题套件在原生浏览器启动阶段退出 1：云机 root 直接启动 Chromium 缺少 --no-sandbox，未运行验收项。实际启动诊断已确认；为隔离浏览器准备专用启动包装器后重跑 15/15，保留失败日志和诊断，不改应用代码或跳过断言。一次 RF03 夹具传入布尔设置值也已改为接口约定的字符串，随后通过。两次环境/夹具失败均保留原始记录。
+
+覆盖边界：原生程序实际运行及 Docker 为 Linux amd64；arm64 完成构建，没有 arm64 真机运行。OneBot 使用真实本地 HTTP 夹具，无外部发信；主题文件使用本地 GitHub 上游夹具和自签 TLS，未验证真实主题发布或公网证书。没有设置 AGENT_SYSTEMD_TEST_IMAGE，ND09–ND10 的真实 systemd 可选项未运行，不计入 8 项通过。原生 Agent 仍为 v1.3.0，本次无 Agent 源码或生产安装改动。
+
+免费云证据根目录为隔离根目录下 `evidence/`，控制器/原生/Docker JSON 位于源码下 `output/test-results/`。日志、JSON 与截图同步到本地 Git 忽略目录 `output/test-results/review-fixes-20261011/linux/`；源码和最终报告同一份文件清单校验，构建产物、临时数据库、测试凭据及工具链均不提交。验证镜像保留用于后续核查。
+
+## 全分支两轴代码审查与隔离验证（2026-10-11）
+
+用户确认以 origin/main 为基准审查全部独立二开改动，并以现有项目文档作为规格。固定基准 `dfb9bf19c23479398c3835c5f96328364e194c85`，HEAD `26250bf0071cb41150692bbf4f8e243f7909f2e3`，共同祖先 `e25e47b028c91871ebf40da2d60adfb8cc347d4a`。三点比较为 22 个提交、282 个文件，不包含 main 分叉后的 18 个提交作为本分支改动。两个独立子代理完成 Standards/Spec 审查，主代理独立复跑重点发现；报告见 CODE_REVIEW.md。此为修复前记录，后续修复及免费云验收见上方。
+
+环境：Darwin x64、Node **24.11.1**、Go **1.26.8**；使用现有独立工具链，未替换系统 Node。先完成依赖安装、GeoIP 下载及完整构建，再开始实际验证。主控及复现使用预建临时数据目录、回环随机端口、虚构凭据、关闭调度；浏览器使用既有 Playwright 模块和 Chromium-1243 可执行文件。没有读取生产数据库、生产 .env 或向真实通知提供方/收件人发信。证据在 Git 忽略目录 `output/test-results/code-review-20261011/`。
+
+| 编号 | 功能、操作与预期 | 实测结果及证据 | 状态 |
+| --- | --- | --- | --- |
+| CR01 | npm ci、geoip:download、完整 build；可生成前端及两种 Linux Agent | 三个命令退出 0；Linux amd64/arm64 两产物及前端成功。npm-ci.log、geoip-download.log、build.log | 通过 |
+| CR02 | test:all 中的 Node、Agent 配置与 Go vet | Node **170/170**，fail=0；配置脚本通过；Go vet 成功后进入 Go test。test-all.log | 这些阶段通过 |
+| CR03 | 完整 npm run test:all | 退出 **1**；`TestUserUninstallResidualsIncludesDarwinLegacyUserLog`、`TestRemoveInstalledFilesRemovesDarwinLegacyUserLog` 两项失败；随后 `TestOfflineSampleBufferStaysWithinControllerReportLimit` 达到默认十分钟超时，cfprobe 包 600.692s。栈位于 Darwin top CPU 采集；不得视为 Go 全量通过。test-all.log、go-test-sample.txt | 失败 |
+| CR04 | 完整 npm run test:acceptance | 真实主控 **19/19** 通过；原生阶段运行前拒绝 Darwin，要求 Linux amd64/arm64，整体退出 **1**。acceptance.log、controller-acceptance.json | 主控通过；原生平台限制 |
+| CR05 | npm run test:theme；实际浏览器/HTTP/WS/SQLite、自签 TLS/CORS 和生命周期 | **15/15**，pageErrors=[]，命令退出 0；desktop、mobile-light、mobile-dark 三张 PNG 已实际查看。theme.log、theme/browser.json 与 PNG | 通过 |
+| CR06 | 删除并立即导入同 UUID，WS 关闭重连后应只展示新节点状态 | 真实主控/HTTP/WS/SQLite 中，重建 REST 无指标、在线 0；看板保留旧 CPU=87、ping=55、在线 1。主代理独立重跑成功。standards-fast-recreation.json、standards-fast-recreation-confirmation.log；Spec 轴另有独立 SQLite/REST 复现 | 已复现 P2 缺陷 |
+| CR07 | OneBot HTTP 200 正文 status=failed 时，应保留待重试通知 | 本地真实 HTTP 接收端按官方契约返回失败；outbox 却写 delivered_at、attempts=1、last_error=null。主代理独立重跑确认。spec-onebot-confirmation.log | 已复现 P2 缺陷 |
+| CR08 | 公开站点改为私人，匿名页面收到 401 后应清理旧展示与订阅 | 真实 Chromium 中显式触发已有 online 恢复回调，实际 REST 为 401；原页仍可见节点，新页无节点且显示私人提示，pageErrors=[]。private-transition-browser.json、日志、stale/fresh PNG 已查看。首次脚本将所有 DOM 标签数误作可见标签数；改为可见元素断言后完整重跑 | 已复现 P2 缺陷 |
+| CR09 | API 文档列出的 Agent 安装/下载入口与 Linux 双目标规范一致 | 实际 HTTP：install.sh=200、install.ps1=404、Windows exe=404；API.md:186/190 仍列后两种入口。agent-api-doc-check.json | 已确认 P3 文档冲突 |
+| CR10 | Docker 镜像及 Agent 安装/更新/卸载部署验收 | 本机无 Docker，无法预建 server-monitor:agent-native 镜像；未运行 test:agent-deployment。此次没有 Linux 宿主原生运行或容器部署证据 | 未执行 |
+
+本轮 Go 两项 Darwin 失败与此前记录相符；超时为本轮实际结果，未仅凭旧记录宣布通过。Linux 双目标构建和下载契约不能替代 Linux 原生运行；也没有将下文历史 Linux SSH、生产或 Docker 通过记录计作本轮验证。主题浏览器的本地 GitHub 文件夹具和自签 TLS 不证明真实 GitHub 发布或公网证书。
+
+Standards 轴 2 项（P2 重建状态残留、P3 API 平台入口文档）；Spec 轴 3 项（P2 通知业务失败误记送达、同 UUID 重建残留、401 后旧私有展示）。同 UUID 问题在两轴分别计数。测试进程、浏览器和复现主控已退出；证据及构建/工具链由 Git 忽略，未提交凭据、数据库或测试产物。汇总为 run-summary.json。
+
 ## 主题开发规范与最小参考主题（2026-10-11）
 
 按已确认范围完善统一文档、配置契约、示例与验收；未修改主控运行机制或 Agent 源码。环境为 Darwin x86_64、Node **24.19.0**、Go **1.26.8**、Playwright **1.62.1**、Chrome for Testing **153.0.8010.12**。先完成 npm ci、地区库下载及完整基线构建，再开始实现和验收；Go 工具链下载自官方并核验 SHA-256，位于 Git 忽略的测试目录。按用户追加要求，通过 SSH 到“免费云”完成 Linux amd64 补验：**test:all 与 test:acceptance 均退出 0**，原生 Agent **7/7** 通过；本机 Darwin 的失败记录保留如下。

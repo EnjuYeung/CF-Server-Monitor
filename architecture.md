@@ -59,6 +59,10 @@ Docker 最终镜像携带 `agent-dist/`，不携带 Go 编译器。`AgentDistrib
 
 首页由 `state/dashboardState.js` 持有看板实时状态，interface 仅包含只读 `state`、`start()` 与 `stop()`；`composables/useDashboardState.js` 是浏览器 adapter，页面继续负责筛选、视图、路由、财务和弹窗。看板快照按来源决定节点集合与顺序，失败来源保留原集合；实时包只更新该来源已有节点。回放与最新采样按「来源 + UUID」隔离，快照删除节点会清除其缓存并使旧订阅回调失效。采样时间决定指标先后与历史补取，接收时间决定在线，显示时间按实际经过时间推进。
 
+节点实例由 `server_instances` 持久表和 SQLite 创建触发器形成；已有 SQLite 安装首次启动补齐缺失标识，不改原数据。REST 列表/详情及看板 WS/replay 暴露 instance_id，重启、编辑、排序及清历史保持，删除级联清理，导入同 UUID 生成新实例且不接受旧标识。看板和最小主题在实例变化时清除旧指标、接收/采样时间、回放及历史，并更换订阅寿命；实例不符的更新忽略。创建时间不被解释为新实例的采样时间。
+
+REST 401 单独清除该 API 来源的节点、回放、连接及晚到回调，其他来源和普通网络失败继续保留有效展示。全部来源受限时显示私人提示；后续有效匿名/管理员快照可以恢复。WS 配置变化关闭会话时取消正在补取的旧快照并重新补取，避免旧响应跨节点或权限寿命返回。
+
 首页保持每秒回放及每分钟完整补取，隐藏时保留连接；可见切回和 focus 复用健康连接，online、resume 和 bfcache 恢复强制重连。快照请求共用一个进行中的任务；停止会中止请求、清理事件/计时器/连接并忽略晚到回调。详情页保持独立策略：隐藏断开、配置连接寿命及有限重试，未并入首页模块。
 
 通知配置由 `src/shared/notificationConfig.js` 的 `readNotificationConfig(stored)` 与 `prepareNotificationConfig({current,input,intent})` 统一形成。读取旧配置保留回退、别名和模板迁移，不修改输入；保存先检查新值，再以当前配置补足省略字段，返回有效配置、仅本次修改的通知字段或带字段/规则位置的错误。测试通知校验参与发信的草稿字段，要求所选渠道目标，不保存草稿，也不要求启用告警。
@@ -111,6 +115,7 @@ SQLite 使用 WAL、外键、FULL 同步及 5 秒 busy timeout。事务内禁止
 | metrics_history | 独立整数主键；server_id 外键；(server_id,timestamp) 唯一索引；滚动保留 7 天 |
 | server_latest | 每个 UUID 一行最近一次持久化的状态 |
 | server_presence | 每个 UUID 一行最近认证上报的接收时间；外键级联删除，与历史节流独立 |
+| server_instances | 每个 UUID 一行公开实例标识；创建生成、删除级联清理，不能通过导入恢复旧值 |
 | settings | 站点、外观、主题及 admin_security JSON；JWT 密钥、加密 2FA 与恢复码哈希持久化 |
 | runtime_state | 资源告警窗口快照 |
 | notification_outbox | 待发与已送达事件、重试次数、下次重试时间、失败原因 |
@@ -118,6 +123,8 @@ SQLite 使用 WAL、外键、FULL 同步及 5 秒 busy timeout。事务内禁止
 通知状态变化与事件入队在同一事务中，投递失败持续重试；已送达记录保留 7 天。采用至少一次投递：远端已接收而本地主控在落送达标记前崩溃时可能重复通知。
 
 发送器明确返回 `delivered`、`failed` 或 `unconfigured`。只有 `delivered` 写送达标记；关闭渠道保留待发消息及其重试次数，不伪造成功，也不丢弃积压事件。
+
+OneBot 发送须收到同步业务成功（status=ok、retcode=0）才确认送达；HTTP 200 内的业务失败、异步待处理或无效响应保留在 outbox 中按现有退避重试。自定义 Webhook 沿用其 HTTP 成功契约，不猜测用户自定义正文格式。
 
 ## 历史与地区
 

@@ -94,12 +94,14 @@ GET /api/servers 摘录：
 {
   "servers": [{
     "id": "00000000-0000-4000-8000-000000000001", "name": "示例节点",
+    "instance_id": "0123456789abcdef0123456789abcdef",
     "cpu": 25, "ram_total": 2048, "ram_used": 512,
     "net_in_speed": 1024, "net_out_speed": 2048,
     "sample_timestamp": 1791684000000, "last_updated": 1791684001000
   }],
   "latestReportUpdates": [{
     "serverId": "00000000-0000-4000-8000-000000000001",
+    "instance_id": "0123456789abcdef0123456789abcdef",
     "reportTs": 1791684001000, "reportAgeMs": 1000,
     "samples": [{"ts": 1791684000000, "data": {"cpu": 27, "ram_used": 550}}]
   }],
@@ -109,6 +111,8 @@ GET /api/servers 摘录：
 
 列表拥有成员、顺序、资料及最近持久状态，须合并 latestReportUpdates 才有落库间隔内的最新指标。未上报节点可无指标/时间字段，空列表 servers=[]。server.timestamp 是创建时间，样本取 sample_timestamp，在线取 last_updated 的接收时间。
 
+instance_id 是公开的不透明节点实例标识，不是认证凭据。创建后持久保留，编辑、排序、清历史和主控重启不改变；删除并导入同 UUID 必须生成新值，导入不会接受旧值。补取发现实例变化时，清除该节点旧指标、时间、延迟窗口和待回放数据，并更新订阅寿命；WS/replay 的 instance_id 与当前实例不符时忽略。旧来源没有该字段时可保留原协议兼容处理。
+
 WS 更新摘录：
 
 ```json
@@ -116,6 +120,7 @@ WS 更新摘录：
   "type": "batchUpdate", "ts": 1791684002000,
   "updates": [{
     "serverId": "00000000-0000-4000-8000-000000000001", "reportTs": 1791684002000,
+    "instance_id": "0123456789abcdef0123456789abcdef",
     "samples": [{"ts": 1791684001500,
       "payload": {"cpu": 30, "ram_total": 2048, "ram_used": 600,
         "sample_timestamp": 1791684001500, "last_updated": 1791684001500}}]
@@ -183,11 +188,11 @@ TOTP 为 SHA-1、六位、30 秒，容忍前后一个时间步，已接受的时
 
 ## 原生 Agent 分发（只读，无需管理员会话）
 
-- `GET /agent/install.sh`、`/agent/install.ps1`：本项目安装脚本。
+- `GET /agent/install.sh`：本项目 Linux 安装脚本；PowerShell 安装入口返回 404。
 - `GET /agent/latest`：当前可用的最新稳定版版本号，纯文本；没有产物时为 404。
 - `GET /agent/releases.json`：manifest 数组，字段 `schema_version:1`、`version`、`published_at`、`prerelease`、`assets:[{name,size,sha256}]`。
 - `GET /agent/<version>/manifest.json`、`checksums.txt`：指定版本元数据和 SHA-256 清单。
-- `GET /agent/<version>/cf-probe-<os>-<arch>[.exe]`：只提供 manifest 登记的对应程序，流式响应。支持 HEAD；其他方法为 405，不存在的版本/平台为 404。
+- `GET /agent/<version>/cf-probe-linux-amd64`、`cf-probe-linux-arm64`：只提供 manifest 登记的两个 Linux 程序，流式响应。支持 HEAD；其他方法为 405，不存在的版本/平台为 404。历史其他平台产物只保留归档，不提供下载。
 
 只读目录同时包含镜像内置和数据卷归档的版本，内置版本优先；不接受文件上传或远程编译请求。
 这些接口不携带服务器凭据。安装和更新必须校验 SHA-256；下载失败不会回退到上游 Release。

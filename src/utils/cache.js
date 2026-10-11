@@ -49,7 +49,8 @@ export async function getAllServers(db, includeHidden = true) {
   }
 
   try {
-    const { results } = await db.prepare('SELECT * FROM servers ORDER BY sort_order ASC').all();
+    const { results } = await db.prepare(`SELECT servers.*, instances.instance_id FROM servers
+      LEFT JOIN server_instances AS instances ON instances.server_id=servers.id ORDER BY servers.sort_order ASC`).all();
     serversListCache = { data: results, time: now };
     debug('服务器列表缓存更新');
     return filterServersByHidden(results, includeHidden);
@@ -91,7 +92,8 @@ export async function getServerDetail(db, id, includeHidden = false) {
     serverDetailCache.delete(id);
   }
   
-  const server = await db.prepare('SELECT * FROM servers WHERE id = ?').bind(id).first();
+  const server = await db.prepare(`SELECT servers.*, instances.instance_id FROM servers
+    LEFT JOIN server_instances AS instances ON instances.server_id=servers.id WHERE servers.id = ?`).bind(id).first();
 
   serverDetailCache.set(id, { data: server, time: now });
   debug('服务器详情缓存更新');

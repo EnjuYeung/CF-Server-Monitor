@@ -5,11 +5,12 @@ import { resolveDisplayMode } from '../utils/displayMode.js'
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
 import { updateLatencyWindow } from '../utils/latencyWindow.js'
 import { reconcileDashboardSnapshot } from '../utils/dashboardSnapshot.js'
+import { isSameServerInstance, serverInstanceKey } from '../../shared/serverIdentity.js'
 
 const TICK_MS = 1000
 const MAX_BUFFER_SAMPLES = 600
 const nodeKey = (source, id) => JSON.stringify([source, String(id)])
-const sampleTime = server => normalizeTimestamp(server?.sample_timestamp ?? server?.timestamp ?? server?.last_updated, null)
+const sampleTime = server => normalizeTimestamp(server?.sample_timestamp ?? (server?.instance_id ? server?.last_updated : server?.timestamp ?? server?.last_updated), null)
 const reportTime = server => normalizeTimestamp(server?.report_timestamp ?? server?.last_updated, null)
 const displayTime = server => normalizeTimestamp(server?.display_timestamp, null)
 
@@ -19,7 +20,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     servers: [],
     stats: { total: '-', online: 0, offline: 0, globalNetRx: 0, globalNetTx: 0, globalSpeedIn: 0, globalSpeedOut: 0 },
     regionStats: {}, unknownStats: 0, now: adapter.now(),
-    isLoading: true, liveConnected: false, sitesRemaining: 0, corsErrorSites: [],
+    isLoading: true, liveConnected: false, sitesRemaining: 0, corsErrorSites: [], authenticationRequired: false,
     config: {
       show_price: true, show_expire: true, show_tf: true, show_three_net_details: true,
       custom_ct_name: initialConfig?.custom_ct_name || '电信',
@@ -34,6 +35,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
   const playbackBuffers = new Map()
   const latestAppliedSamples = new Map()
   const connections = new Map()
+  const unauthorizedSources = new Set()
   const timers = []
   let active = false
   let stopped = false
@@ -71,7 +73,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     if (!existing) return
     const receivedAt = Math.max(normalizeTimestamp(reportTs, 0), reportTime(existing) || 0)
     const merged = withTiming({
-      ...data, id: existing.id, source, report_timestamp: receivedAt,
+      ...data, id: existing.id, instance_id: existing.instance_id, source, report_timestamp: receivedAt,
       last_updated: receivedAt, sample_timestamp: sampleTs, timestamp: sampleTs
     }, displayTs)
     latestAppliedSamples.set(nodeKey(source, id), merged)
@@ -131,6 +133,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
       const reportTs = normalizeTimestamp(update.reportTs ?? update.report_timestamp, messageTs)
       const current = findNode(source, update.serverId)
       if (!current) continue
+      if (update.instance_id && update.instance_id !== current.instance_id) continue
       const receivedAt = Math.max(reportTs || 0, reportTime(current) || 0)
       if (receivedAt > (reportTime(current) || 0)) {
         state.servers = state.servers.map(server => server === current
@@ -166,6 +169,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
       globalNetRx: netRx, globalNetTx: netTx, globalSpeedIn: speedIn, globalSpeedOut: speedOut }
     state.regionStats = regions
     state.unknownStats = unknown
+    state.authenticationRequired = !state.servers.length && sources().every(source => unauthorizedSources.has(source))
   }
 
   function tick() {
@@ -192,8 +196,8 @@ export function createDashboardState(adapter, initialConfig = {}) {
     const previous = new Map(state.servers.filter(server => server.source === source).map(server => [String(server.id), server]))
     const raw = Array.isArray(data.servers) ? data.servers
       : Object.entries(data.latestMetricsMap || {}).map(([id, metrics]) => ({ id, ...metrics }))
-    const visible = new Set(raw.map(server => String(server.id)))
-    for (const id of previous.keys()) if (!visible.has(id)) {
+    const visible = new Map(raw.map(server => [String(server.id), server]))
+    for (const [id, server] of previous) if (!visible.has(id) || !isSameServerInstance(server, visible.get(id))) {
       const key = nodeKey(source, id)
       playbackBuffers.delete(key)
       latestAppliedSamples.delete(key)
@@ -206,7 +210,8 @@ export function createDashboardState(adapter, initialConfig = {}) {
     }
     const next = raw.map(server => {
       const snapshot = { ...server, source }
-      const prev = previous.get(String(server.id))
+      const candidate = previous.get(String(server.id))
+      const prev = isSameServerInstance(snapshot, candidate) ? candidate : null
       if (preserveLive) {
         const merged = reconcileDashboardSnapshot(snapshot, prev, latestAppliedSamples.get(nodeKey(source, server.id)), state.config.latency_window, state.now)
         return withTiming(merged, merged.display_timestamp)
@@ -237,7 +242,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     }
     bases.forEach((source, apiIndex) => {
       const ids = state.servers.filter(server => server.source === source).map(server => server.id).filter(Boolean)
-      const key = JSON.stringify([...ids].sort())
+      const key = JSON.stringify(state.servers.filter(server => server.source === source).map(serverInstanceKey).sort((a, b) => a[0].localeCompare(b[0])))
       const old = connections.get(source)
       if (old?.key === key && old.apiIndex === apiIndex) return
       connections.delete(source)
@@ -248,11 +253,16 @@ export function createDashboardState(adapter, initialConfig = {}) {
       const current = () => active && connections.get(source) === entry
       entry.socket = adapter.connect(source, apiIndex, ids, {
         onMessage: message => { if (current()) receive(source, message) },
-        onStatus: ({ connected }) => {
+        onStatus: ({ connected, reason }) => {
           if (!current()) return
           entry.connected = !!connected
           updateConnectedStatus()
           if (connected) refresh()
+          else if (reason === 'configuration changed') {
+            const pending = refreshTask
+            refreshAbort?.abort()
+            Promise.resolve(pending).then(() => { if (current()) refresh() })
+          }
         }
       })
       if (!current()) entry.socket?.close()
@@ -266,6 +276,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     if (refreshTask) return refreshTask
     const bases = sources()
     const completed = new Set()
+    const rejected = new Set()
     const controller = new AbortController()
     refreshAbort = controller
     state.sitesRemaining = bases.length > 1 ? bases.length : 0
@@ -276,11 +287,26 @@ export function createDashboardState(adapter, initialConfig = {}) {
           if (!active || controller.signal.aborted) return
           const source = result.baseUrl ?? bases[0]
           if (!bases.includes(source) || !sources().includes(source)) return
+          if (rejected.has(source)) return
           completed.add(source)
           if (result.corsError && !state.corsErrorSites.includes(source)) {
             state.corsErrorSites = [...state.corsErrorSites, source]
           }
-          if (!result.error && result.data) {
+          if (result.status === 401) {
+            rejected.add(source)
+            unauthorizedSources.add(source)
+            state.servers = state.servers.filter(server => server.source !== source)
+            for (const samples of [playbackBuffers, latestAppliedSamples]) {
+              for (const key of samples.keys()) if (JSON.parse(key)[0] === source) samples.delete(key)
+            }
+            const entry = connections.get(source)
+            connections.delete(source)
+            entry?.socket?.close()
+            updateConnectedStatus()
+            recomputeStats()
+            state.isLoading = false
+          } else if (!result.error && result.data) {
+            unauthorizedSources.delete(source)
             applySnapshot(source, result.data, preserveLive)
             state.isLoading = false
           }
@@ -351,6 +377,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     connections.clear()
     playbackBuffers.clear()
     latestAppliedSamples.clear()
+    unauthorizedSources.clear()
     state.liveConnected = false
   }
 

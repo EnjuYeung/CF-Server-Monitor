@@ -1,5 +1,6 @@
 export const SERVER_METADATA_FIELDS = Object.freeze([
   'id',
+  'instance_id',
   'name',
   'region',
   'arch',

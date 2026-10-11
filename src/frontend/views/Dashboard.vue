@@ -7,7 +7,7 @@
       <div class="loading-text">$ {{ trans.loading }}</div>
     </div>
 
-    <div v-else-if="appConfig?.is_public === false && !adminAccess.authorized" class="empty-state">{{ trans.privateDashboard }}</div>
+    <div v-else-if="dashboard.state.authenticationRequired" class="empty-state">{{ trans.privateDashboard }}</div>
     <template v-else>
     <div class="nav-area">
       <div class="header-row">
@@ -157,7 +157,7 @@
         <component
           :is="currentCardComponent"
           v-for="server in filteredServers"
-          :key="server.source + ':' + server.id + '-' + currentView"
+          :key="server.source + ':' + server.id + ':' + (server.instance_id || '') + '-' + currentView"
           :server="server"
           :sys-config="sysConfig"
           :to="getServerLink(server)"
@@ -196,7 +196,7 @@
             </tr>
             <tr 
               v-for="server in filteredServers" 
-              :key="server.source + ':' + server.id"
+              :key="server.source + ':' + server.id + ':' + (server.instance_id || '')"
               @click="goToServer(server)"
               class="table-cursor-pointer"
               :data-region="(server.region || 'xx').toLowerCase()"

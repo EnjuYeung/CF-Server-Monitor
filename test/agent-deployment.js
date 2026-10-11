@@ -85,14 +85,14 @@ try{
     await until(async()=> (await request('/healthz')).status===200,'controller startup');
     const login=await admin({action:'login',username:'admin',password:key});assert.equal(login.status,200);token=login.body.token;
     assert.match(login.headers['set-cookie'][0],/Secure/);
-    for (const path of ['/install.sh', '/install-alpine.sh', '/install-openwrt.sh', '/install-synology.sh', '/install-mac.sh', '/cf-server-monitor.ps1', '/uninstall.sh', '/uninstall.ps1']) assert.equal((await request(path)).status,404,path);
+    for (const path of ['/install.sh', '/install-alpine.sh', '/install-openwrt.sh', '/install-synology.sh', '/install-mac.sh', '/cf-server-monitor.ps1', '/uninstall.sh', '/uninstall.ps1', '/agent/install.ps1']) assert.equal((await request(path)).status,404,path);
     const versions=await request('/agent/releases.json');assert.equal(versions.status,200);
     const expected = ['cf-probe-linux-amd64','cf-probe-linux-arm64'].sort();
     assert.deepEqual(versions.body.find(v=>v.version===version).assets.map(a=>a.name).sort(),expected);
     const archived=JSON.parse(await readFile(join(root,'data','agent-releases',version,'manifest.json'),'utf8'));assert.deepEqual(archived.assets.map(a=>a.name).sort(),expected);
     for (const release of versions.body) {
       assert.ok(release.assets.every(asset=>expected.includes(asset.name)));
-      for (const name of ['cf-probe-freebsd-amd64','cf-probe-freebsd-arm64']) assert.equal((await request(`/agent/${release.version}/${name}`)).status,404);
+      for (const name of ['cf-probe-freebsd-amd64','cf-probe-freebsd-arm64','cf-probe-windows-amd64.exe','cf-probe-windows-arm64.exe']) assert.equal((await request(`/agent/${release.version}/${name}`)).status,404);
     }
     id=(await admin({action:'add',name:'Native Linux TLS Agent'})).body.id;
     await writeFile(join(evidence,'browser-fixture.json'),JSON.stringify({base,adminPath,id,names,network,edgeNetwork,root,installImage},null,2));
@@ -123,10 +123,12 @@ try{
     const before=(await request('/api/server?id='+id)).body;
     await cli(['rm','-f',names.controller]);await cli(controllerArgs);
     await until(async()=> (await request('/healthz')).status===200,'controller recreation');
-    assert.equal((await request('/api/server?id='+id)).body.agent_version,version);
+    const restored=(await request('/api/server?id='+id)).body;
+    assert.equal(restored.agent_version,version);
+    assert.equal(restored.instance_id,before.instance_id,'Container recreation preserves the node instance');
     assert.ok((await request('/agent/releases.json')).body.some(v=>v.version===oldVersion));
     await until(async()=> Number((await request('/api/server?id='+id)).body.last_updated)>Number(before.last_updated),'fresh report after controller restart',180000);
-    return {dataRetained:true,oldVersionRetained:true,reconnected:true};
+    return {dataRetained:true,instanceRetained:true,oldVersionRetained:true,reconnected:true};
   });
   await step('ND05','未启用自动更新的安装','覆盖安装显式关闭 AUTO_UPDATE，再通过主控下发配置','本地开关保持关闭，进程不上报自动更新任务，配置与流量保留',async()=>{
     await cli(['exec',names.agent,'/usr/local/bin/jan-probe','install','-auto_update=0','-debug=1']);

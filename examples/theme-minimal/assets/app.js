@@ -101,6 +101,7 @@ function updateHistoryChoices() {
 function mergeUpdate(update, packetTs) {
   const item = servers.get(update.serverId);
   if (!item) return; // Membership belongs to the snapshot, never a WS packet.
+  if (update.instance_id && update.instance_id !== item.server.instance_id) return;
   const receivedAt = Number.isFinite(update.reportAgeMs) ? Date.now() - Math.max(0, update.reportAgeMs) : timestamp(update.reportTs || packetTs);
   item.receivedAt = Math.max(item.receivedAt, receivedAt);
   for (const sample of [...(update.samples || [])].sort((a, b) => timestamp(a.ts) - timestamp(b.ts))) {
@@ -113,10 +114,14 @@ function mergeUpdate(update, packetTs) {
 }
 
 function reconcileSnapshot(snapshot) {
-  const previousIds = [...servers.keys()].join(',');
+  const identities = items => JSON.stringify([...items].map(([id, item]) => [id, item.server.instance_id || '']));
+  const previousIds = identities(servers);
+  const selected = $('history-server').value;
+  const selectedInstance = servers.get(selected)?.server.instance_id;
   const next = new Map();
   for (const server of snapshot.servers || []) {
-    const previous = servers.get(server.id);
+    const existing = servers.get(server.id);
+    const previous = (existing?.server.instance_id || '') === (server.instance_id || '') ? existing : null;
     const sampleAt = timestamp(server.sample_timestamp);
     const metrics = Object.fromEntries(metricFields.map(field => [field, server[field]]));
     next.set(server.id, {
@@ -127,9 +132,13 @@ function reconcileSnapshot(snapshot) {
     });
   }
   servers = next;
+  if (selected && servers.get(selected)?.server.instance_id !== selectedInstance) {
+    historyVersion++; historyAborter?.abort(); $('history-rows').replaceChildren();
+    $('history-message').textContent = '节点已重建，请重新查询历史。';
+  }
   for (const update of snapshot.latestReportUpdates || []) mergeUpdate(update, 0);
   updateHistoryChoices(); renderServers();
-  if (socket && previousIds !== [...servers.keys()].join(',')) {
+  if (socket && previousIds !== identities(servers)) {
     closeSocket(); connectSocket(generation); // Old callbacks cannot affect the new membership.
   } else subscribe();
 }

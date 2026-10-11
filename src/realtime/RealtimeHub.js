@@ -857,15 +857,21 @@ export class RealtimeHub {
   }
 
   _broadcastBatch(updates, ts = Date.now(), audience = 'both') {
-    const websockets = this._getFrontendWebSockets();
+    const websockets = this._getFrontendWebSockets().filter(ws => {
+      const context = ws.getContext();
+      return context && !(audience === 'all' && context.scope !== 'all') && !(audience === 'single' && context.scope === 'all');
+    });
+    if (!websockets.length) return;
+    const identifiedUpdates = updates.map(update => {
+      const instance = this.env.DB.prepare('SELECT instance_id FROM server_instances WHERE server_id=?').bind(update.serverId).first();
+      return instance ? { ...update, instance_id: instance.instance_id } : null;
+    }).filter(Boolean);
 
     for (const ws of websockets) {
       const attachment = ws.getContext();
       if (!attachment) continue;
-      if (audience === 'all' && attachment.scope !== 'all') continue;
-      if (audience === 'single' && attachment.scope === 'all') continue;
 
-      const scopedUpdates = updates
+      const scopedUpdates = identifiedUpdates
         .filter(item => this._canView(attachment, item.serverId) && this._shouldDeliver(attachment.scope, item.serverId, attachment.serverIds))
         .map(maskPublicIpUpdate);
       if (scopedUpdates.length === 0) continue;

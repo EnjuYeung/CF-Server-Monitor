@@ -294,6 +294,35 @@ test('partial and failed snapshots keep other sources, while a successful empty 
   assert.equal(f.state.servers.length, 1)
 })
 
+test('an unauthorized source loses its data and callbacks while other sources stay available', async t => {
+  const f = fixture(t, { one: snapshot([node()]), two: snapshot([node('b', { cpu: 20 })]) })
+  await f.session.start()
+  const deniedSocket = f.socket('one'), healthySocket = f.socket('two')
+  f.send([sample(NOW - 5000, 71), sample(NOW + 10000, 72)])
+  f.fetch = callback => {
+    callback({ baseUrl: 'one', status: 401, error: 'Unauthorized' })
+    callback({ baseUrl: 'one', data: snapshot([node('a', { cpu: 99 })]) }) // Late result from rejected access.
+    callback({ baseUrl: 'two', data: snapshot([node('b', { cpu: 20 })]) })
+  }
+  await f.event('focus')
+  assert.equal(f.server('one'), undefined)
+  assert.equal(f.server('two', 'b').cpu, 20)
+  assert.equal(deniedSocket.closes, 1)
+  assert.equal(healthySocket.closes, 0)
+  assert.equal(f.state.authenticationRequired, false)
+  deniedSocket.send([{ serverId: 'a', samples: [sample(NOW + 20000, 98)] }])
+  f.tick(30000)
+  assert.equal(f.state.servers.length, 1)
+  f.fetch = callback => {
+    callback({ baseUrl: 'one', data: snapshot([node('a', { cpu: 30, sample_timestamp: f.now })]) })
+    callback({ baseUrl: 'two', data: snapshot([node('b', { cpu: 20 })]) })
+  }
+  await f.event('focus')
+  deniedSocket.send([{ serverId: 'a', samples: [sample(f.now + 1000, 97)] }])
+  assert.equal(f.server('one').cpu, 30)
+  assert.equal(f.state.stats.total, 2)
+})
+
 test('restore requests are single flight, hidden sessions stay open, and healthy visible sessions reuse sockets', async t => {
   const f = fixture(t)
   await f.session.start()

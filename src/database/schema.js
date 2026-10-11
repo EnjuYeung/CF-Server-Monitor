@@ -65,6 +65,15 @@ export async function initDatabase(db) {
         server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
         last_seen INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS server_instances (
+        server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+        instance_id TEXT NOT NULL
+      );
+      CREATE TRIGGER IF NOT EXISTS servers_instance AFTER INSERT ON servers
+        BEGIN INSERT INTO server_instances(server_id,instance_id)
+          VALUES (NEW.id,lower(hex(randomblob(16)))); END;
+      INSERT OR IGNORE INTO server_instances(server_id,instance_id)
+        SELECT id,lower(hex(randomblob(16))) FROM servers;
       CREATE TABLE IF NOT EXISTS agent_removals (
         server_id TEXT PRIMARY KEY, command_id TEXT NOT NULL, deleted_at INTEGER NOT NULL
       );
