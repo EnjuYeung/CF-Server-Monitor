@@ -16,6 +16,7 @@
     "test:agent-native": "node scripts/agent.js test",
     "test:agent-config": "node test/agent-config.js",
     "test:acceptance": "node test/acceptance.js && npm run test:agent-acceptance",
+    "test:theme": "node test/theme-acceptance.js",
     "test:agent-acceptance": "node test/agent-acceptance.js",
     "test:agent-deployment": "node test/agent-deployment.js",
     "preview": "vite preview"

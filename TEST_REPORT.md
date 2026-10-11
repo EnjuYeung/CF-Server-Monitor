@@ -1,5 +1,40 @@
 # 最近一次测试报告
 
+## 主题开发规范与最小参考主题（2026-10-11）
+
+按已确认范围完善统一文档、配置契约、示例与验收；未修改主控运行机制或 Agent 源码。环境为 Darwin x86_64、Node **24.19.0**、Go **1.26.8**、Playwright **1.62.1**、Chrome for Testing **153.0.8010.12**。先完成 npm ci、地区库下载及完整基线构建，再开始实现和验收；Go 工具链下载自官方并核验 SHA-256，位于 Git 忽略的测试目录。按用户追加要求，通过 SSH 到“免费云”完成 Linux amd64 补验：**test:all 与 test:acceptance 均退出 0**，原生 Agent **7/7** 通过；本机 Darwin 的失败记录保留如下。
+
+测试环境预先准备：临时 SQLite/Agent 归档、随机测试凭据、独立主控进程、回环随机端口、关闭调度、本地产物/开发代理、自签 TLS/CORS/WSS 反代及浏览器。两主控分属独立进程，避免模块级缓存共用。主题 GitHub 上游读取由本地产物夹具替代；实际页面、REST、WS、SQLite 与 TLS 链路均实际运行。证据在 `output/test-results/theme-guide-20261011/`，全部由 Git 忽略。
+
+| 编号 | 操作与预期 | 实测结果和证据 | 状态 |
+| --- | --- | --- | --- |
+| TD01 | 安装、地区库、完整构建和示例 hash 构建 | npm ci、geoip:download、基线/最终 build 均退出 0；两 Linux Agent 目标及前端成功；示例 index 引用内容 hash JS/CSS。baseline-install.log、baseline-geoip.log、baseline-build.log、build.log、example-build.log | 通过 |
+| TD02 | 主题接口与持久化契约 | 9 个子验收（含父测试合计 10 项）通过；真实 HTTP/WS/SQLite 验证隐藏节点、Cookie 不替代 REST Bearer、空订阅、历史单位/权限/null/false/0、选项公开/整体替换/重启、预览认证/不改配置、坏地址 400/已配置坏入口 502、恢复默认、缓存、REST CORS 与 WS 403。theme-contract.log | 通过 |
+| TD03 | 可运行主题的实际浏览器流程 | **15/15** 场景通过，pageErrors=[]；公开/私人、错误密码、2FA 挑战/动态码/恢复码、退出 Cookie/JWT/私有数据、真实 WS、旧采样与晚到快照、选项回退/空历史、断网、删除/同 UUID 重建、跨 origin HTTPS/WSS/Bearer、拒绝 CORS、页面退出。browser.json、theme-browser.log | 通过 |
+| TD04 | 真实隐藏、恢复、手机明暗与长名 | 独立 Chrome + noDefaults CDP 实测 document.hidden=true，隐藏时 CPU 更新至 96%，切回补取；1440/390px、明暗/auto、键盘及 HTML 字符长名无页面溢出；手机改为分行后全部指标可见。最终 desktop.png、mobile-light.png、mobile-dark.png 已实际查看 | 通过 |
+| TD05 | 最新源码 Node 回归 | **170/170**，fail=0；node-tests.log。首次 test:all 的 Node 阶段 169/169（随后新增一项 CORS 契约），最终再次独立执行 npm test 为 170/170 | 通过 |
+| TD06 | Agent 配置和 Go vet | test:all 中配置脚本通过，Go vet 完成并进入 Go test；test-all.log | 通过 |
+| TD07 | Darwin 本机完整 npm run test:all | 退出 **1**：Go cfprobe 包在 493.358s 后报告下述两项 Darwin 旧日志清理测试失败；其他已通过阶段不能替代全量通过。test-all.log；两项定向重跑同样失败，go-darwin-repro.log | 本机失败 |
+| TD08 | Darwin 本机完整 npm run test:acceptance | **19/19 主控 HTTP/WS/SQLite 验收通过**，证据另见 output/test-results/acceptance.json；后续原生阶段拒绝 Darwin，要求 Linux amd64/arm64，整体退出 1。acceptance.log | 本机主控通过；原生平台限制 |
+| TD09 | 文档和产物一致性 | 14 个本地 Markdown 链接可解析，7 个 JSON 示例合法；代码围栏成对、git diff --check 通过。document-check.json；测试脚本/产物均指向统一规范 | 通过 |
+
+Go 失败用例为 `TestUserUninstallResidualsIncludesDarwinLegacyUserLog` 与 `TestRemoveInstalledFilesRemovesDarwinLegacyUserLog`：分别未列出旧 `Library/Logs/cf-probe.log`，以及未删除该测试文件。本轮 `git diff -- agent` 为空，未将失败改写成通过，也未扩展范围修 Agent。Go 单测并非仅支持 Linux；当前失败是 Darwin 用例实际结果。测试耗时长另有跨平台缓存用例执行 450 次真实采集的已核实慢路径，不能将整个等待笼统归为超时。
+
+### 免费云 Linux SSH 补验与代码同步
+
+“免费云”对应本机 SSH 配置的 `tencent`，远端为 Debian 13、Linux **6.12.107+deb13-amd64**。验收前本地、GitHub 和 `/opt/1panel/jan_monitor` 均为 **8732d721ffd5bdd7d0d2f00037da024450aa96d8**，远端工作区干净。仅将 Git 跟踪及未忽略的新源码打包到独立目录 `/opt/1panel/jan_monitor/output/test-results/theme-linux-20261011-gtaqnlg5/source`，不携带 .env、数据、依赖或测试产物；**555 个文件逐项 SHA-256 一致**，源码清单哈希为 `7f970ce498091089b91d2ce807816802bd15b0eec105c8c1bc32a1feb1feacc5`。独立工具链为官方 **Node 24.19.0 / npm 11.17.0 / Go 1.26.8**，下载均按官方清单校验，不替换宿主 Node 26。先准备环境和两架构产物，再运行测试，进程使用 nice 10、Go 并行度 2。
+
+| 编号 | 操作与预期 | 实测结果和证据 | 状态 |
+| --- | --- | --- | --- |
+| TL01 | 同步准确源码，安装并构建完整隔离环境 | 文件与归档哈希全部匹配；npm ci、geoip:download、完整 build、示例 build 全部退出 0；Linux amd64/arm64 两程序及前端成功。source-verification.json、toolchains.json、install.log、geoip.log、build.log、example-build.log | 通过 |
+| TL02 | Linux 完整 npm run test:all | **170/170 Node、Agent 配置、Go vet/test 全部通过**；cfprobe 包 0.257s，命令整体 20.317s，退出 **0**。test-all.log、run.json | 通过 |
+| TL03 | Linux 完整 npm run test:acceptance | **19/19 主控 + 7/7 原生 Agent** 通过，72.051s，退出 **0**；v1.3.0 实际下载校验、旧 WORKER_URL、采集和 HTTP/WS、SQLite、配置下发、重启保留、坏下载拒绝、删除后停止与重启不采集。acceptance.log、controller-acceptance.json、native-acceptance.json、native-agent.log | 通过 |
+| TL04 | 测试隔离及生产运行状态核对 | 原生产容器 ID、镜像、启动时间保持，healthy、restart=0；宿主 jan-probe 仍为 PID 305141、10 月 8 日启动且 active。测试进程全部退出，临时主控数据库目录删除；before.json、after.json | 通过 |
+
+Linux 证据已通过 SSH 回传到本地 `output/test-results/theme-guide-20261011/linux/`；远端证据保存在上述独立目录的 evidence 下。验收源码清单包含补验前的文档；补验后仅更新本报告与 changelog.md。最终 Git 提交、GitHub/免费云分支、工作区及逐文件哈希的同步回执见该本地目录的 `sync.json`。Git 同步不包含忽略目录的产物、凭据和生产数据。
+
+本次真实原生运行平台是 Linux amd64；arm64 完成构建、ELF/校验和/下载契约检查，未在 arm64 宿主运行。未进行真实 GitHub 主题发布/远端拉取、全部第三方主题、公网证书或生产部署验收。自签 TLS 和代理夹具结果分别注明，不能继承默认主题或历史生产发布的通过状态。所有测试服务、浏览器、代理及子进程结束后关闭，临时数据删除，证据及隔离源码/工具链留在忽略目录。
+
 ## 通知配置重构生产发布（2026-10-09）
 
 按用户授权，**16:04:07（Asia/Shanghai）**启动最终生产容器，**16:04:16**健康检查通过。https://jm.zedy.cc 使用已验收镜像 **`sha256:ba153c19375c7309c6d6b8f4a2743106d510f0fdfa90a6ab77f9fcacd5ce5a8c`**，生产标签 `server-monitor:local`，发布标签 `server-monitor:notification-config-20261009`。Agent 仍为 v1.3.0，未操作远程节点。

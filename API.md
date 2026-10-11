@@ -1,6 +1,6 @@
 # Server Monitor API
 
-版本 3.0.0，核对日期 2026-09-16。Base URL 是容器 HTTP 地址或反代 HTTPS 域名；容器默认端口 8080。所有管理操作使用 JSON，备份返回 SQLite 二进制。
+版本 3.0.0，主题相关契约核对日期 2026-10-11。Base URL 是容器 HTTP 地址或反代 HTTPS 域名；容器默认端口 8080。所有管理操作使用 JSON，备份返回 SQLite 二进制。主题开发入口见 [theme-develop.md](theme-develop.md)。
 
 ## 认证与限制
 
@@ -19,14 +19,14 @@
 | --- | --- | --- |
 | GET /healthz | 无 | `{ok:true,storage:"sqlite"}`，执行数据库探测 |
 | `GET /`、`GET /<ADMIN_PATH>` | 无 | 注入站点配置后的前端页面 |
-| GET /api/config | 按站点设置 | 版本、前端配置、可见性；管理员可见 Agent 最新版本 |
+| GET /api/config | 始终公开 | 版本、前端配置及 theme_options；Bearer 鉴权后才含 admin_path 和 Agent 最新版本 |
 | GET /api/servers | 公共站点匿名，否则管理员 | `{servers,latestReportUpdates,...}` |
 | GET /api/server?id=UUID | 同上 | 单节点当前状态 |
 | GET /api/history/all?id=UUID&hours=24 | 同上；超过 24 小时需管理员 | 按时间升序的历史数组 |
 | POST /update | Agent Secret | 指标上报、配置协商、流量校正确认 |
 | WS /update | 上报消息内认证 | Agent 实时上报及配置下发 |
 | WS /api/ws | 按站点/节点可见性 | 实时订阅 |
-| `POST /<ADMIN_PATH>/api` | 除登录/退出外需管理员 | 管理动作，见下表 |
+| `POST /<ADMIN_PATH>/api` | 除登录/退出/clear_theme_preview_auth 外需管理员 | 管理动作，见下表 |
 | `POST /<ADMIN_PATH>/backup` | 管理员 | 下载完整 SQLite 快照；同时只允许一份备份任务 |
 | POST /clearHistory | 管理员 | 清空历史，保留服务器、设置及最近持久化状态 |
 | POST /api/theme_options | 管理员 | 保存 `{theme_options:{...}}` |
@@ -42,15 +42,15 @@
   "metrics": {
     "timestamp": 1789540000000,
     "cpu": 42,
-    "ram_total": 1073741824,
-    "ram_used": 268435456,
+    "ram_total": 1024,
+    "ram_used": 256,
     "net_rx": 1000,
     "net_tx": 2000
   }
 }
 ```
 
-示例时间戳必须替换为当前毫秒值。保留原 Agent 指标字段和 `samples` / `batch` 样本数组格式，每个元素包含 `ts` 及 `metrics`（也支持协议中的 data/payload）。最多接受最近 300 个有效样本；历史落库使用原有聚合策略。超过未来 60 秒或早于 7 天的样本返回 400。
+示例时间戳必须替换为当前毫秒值。内存、swap 与磁盘容量为 MiB，网络累计流量为 B、速率为 B/s，CPU 和丢包为 0–100 百分数。保留原 Agent 指标字段和 `samples` / `batch` 样本数组格式，每个元素包含 `ts` 及 `metrics`（也支持协议中的 data/payload）。最多接受最近 300 个有效样本；历史落库使用原有聚合策略。超过未来 60 秒或早于 7 天的样本返回 400。
 
 Agent 版本通过 `X-Agent-Version` 上报。配置协商使用 `X-Agent-Config-Schema` 与 `X-Agent-Config-MD5`，兼容现有 schema 7。配置变化时返回 200 及原键值串；未变化时返回 204。不协商的旧客户端成功返回 200 `OK`。HTTP 和 WS 使用同一套指标与配置规范化逻辑。
 
@@ -72,15 +72,74 @@ Agent 版本通过 `X-Agent-Version` 上报。配置协商使用 `X-Agent-Config
 
 ## 看板 WebSocket
 
-连接 `/api/ws?subscribe=all` 或使用节点 ID。握手后可发送：
+连接 `/api/ws?subscribe=all` 或使用节点 ID。先读取可见列表，握手后发送：
 
 ```json
 {"type":"subscribe","scope":"all","ids":["UUID"]}
 ```
 
-服务器返回 `hello`、`subscribed`，更新为 `batchUpdate`，其 `updates` 元素含 `serverId`、接收时间与 `samples`。样本字段和现有前端一致。客户端应复用项目 `createLiveSocket` 的重连/空闲逻辑，按 serverId 合并数据。
+服务器返回 `hello`、`subscribed`，更新为 `batchUpdate`，其 `updates` 元素含 `serverId`、接收时间与 `samples`。scope=all 与空 ids 不推送节点，成员变化后更新订阅。当前 WS sample 使用 payload，REST 最近上报使用 data；摘录见下节。客户端可复用 createLiveSocket；自行实现须满足主题规范的重连、补取和停止约定。
 
 服务端在推送时重新检查隐藏状态，不能通过猜 UUID 绕过权限。管理员令牌到期或修改站点可见性时连接关闭，前端重新鉴权。
+
+## 主题数据契约
+
+响应直接为对象/数组，无 `{data:...}` 包装。下例是字段摘录，不是完整字段名单；时间戳为 Unix 毫秒，示例日期不能直接用作新的 Agent 上报。
+
+GET /api/config 在私人站点也返回 200。匿名 authorization=false 且无 admin_path；有效 Bearer 后才返回安全路径。REST 不接受登录 Cookie 作为认证。theme_options 始终公开、默认 `{}`，不能存秘密。
+
+GET /api/servers 摘录：
+
+```json
+{
+  "servers": [{
+    "id": "00000000-0000-4000-8000-000000000001", "name": "示例节点",
+    "cpu": 25, "ram_total": 2048, "ram_used": 512,
+    "net_in_speed": 1024, "net_out_speed": 2048,
+    "sample_timestamp": 1791684000000, "last_updated": 1791684001000
+  }],
+  "latestReportUpdates": [{
+    "serverId": "00000000-0000-4000-8000-000000000001",
+    "reportTs": 1791684001000, "reportAgeMs": 1000,
+    "samples": [{"ts": 1791684000000, "data": {"cpu": 27, "ram_used": 550}}]
+  }],
+  "stats": {"total": 1, "online": 1, "offline": 0}
+}
+```
+
+列表拥有成员、顺序、资料及最近持久状态，须合并 latestReportUpdates 才有落库间隔内的最新指标。未上报节点可无指标/时间字段，空列表 servers=[]。server.timestamp 是创建时间，样本取 sample_timestamp，在线取 last_updated 的接收时间。
+
+WS 更新摘录：
+
+```json
+{
+  "type": "batchUpdate", "ts": 1791684002000,
+  "updates": [{
+    "serverId": "00000000-0000-4000-8000-000000000001", "reportTs": 1791684002000,
+    "samples": [{"ts": 1791684001500,
+      "payload": {"cpu": 30, "ram_total": 2048, "ram_used": 600,
+        "sample_timestamp": 1791684001500, "last_updated": 1791684001500}}]
+  }]
+}
+```
+
+WS payload.last_updated 是采样时间，接收时间取 update.reportTs，缺省取消息 ts。旧样本不倒退指标，有效上报仍推进接收时间。快照决定成员，WS 仅更新已知节点；没有节点增删事件，重连/恢复/周期补取负责更新列表与订阅。多来源按 API origin + UUID 隔离。
+
+历史按采样时间升序直接返回数组：
+
+```json
+[
+  {"timestamp": 1791684000000, "cpu": 25, "ram_total": 2048, "ram_used": 512,
+    "net_in_speed": 1024, "net_out_speed": 2048,
+    "ping_ct": 25, "loss_ct": 0, "ping_cu": false, "loss_cu": false}
+]
+```
+
+无历史返回 []，每桶最后完整记录，不保证固定间隔或补齐桶。历史无 sample_timestamp、last_updated 或累计 net_rx/net_tx。缺失/null、禁用 false、有效零值分别处理；完整字段见 src/utils/historyFields.js。
+
+POST /api/theme_options 使用 Bearer，body 为 `{theme_options:{...}}`；只校验顶层非 null 对象且非数组，整体替换对象，保留其他外观。没有字段校验、deep merge、命名空间或版本锁。管理动作 save_theme_options 也可用；save_settings 的顶层 settings.theme_options 不写入它。
+
+2FA 挑战为 HTTP 200 `{requiresTwoFactor:true}`，无 token；再次携带原凭据与 otp/recoveryCode。匿名无法发现安全路径，401 不能无条件跳转到它。logout 管理动作清 Cookie，客户端另清本地 JWT 与私有状态；它不吊销已复制的 JWT。
 
 ## 管理动作
 

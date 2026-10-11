@@ -2,7 +2,7 @@
 
 遵守根目录 testing.md。先准备依赖、GeoIP 和前端构建，再执行测试；不使用生产数据库。
 
-首页恢复回归包括 `dashboard-snapshot.test.js`（完整快照、旧响应竞争、延迟历史补取）和 `frontend-live-socket.test.js`（详情页时限、首页持续重连、卸载停止及请求失败保留数据）。浏览器验收需验证真实 `document.hidden`、后台 WS 更新、冻结/解冻、断网恢复和超过连接时限；Playwright 的默认焦点模拟会使标签页始终可见，不能将这种默认会话当成真实切换测试。使用独立 Chromium 并通过 `connectOverCDP(..., { noDefaults: true })` 接入，实测记录见 TEST_REPORT.md。
+首页恢复回归包括 `dashboard-state.test.js`（完整快照、旧响应竞争、成员生命周期与回放）和 `frontend-live-socket.test.js`（详情页时限、首页持续重连、卸载停止及请求失败保留数据）。浏览器验收需验证真实 `document.hidden`、后台 WS 更新、冻结/解冻、断网恢复和超过连接时限；Playwright 的默认焦点模拟会使标签页始终可见，不能将这种默认会话当成真实切换测试。使用独立 Chromium 并通过 `connectOverCDP(..., { noDefaults: true })` 接入，实测记录见 TEST_REPORT.md。
 
 ```bash
 npm ci
@@ -25,6 +25,31 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 部署验收另需实际构建镜像、启动 Compose、容器重建、验证数据保留；通过真实 HTTPS/WSS 反代验证 Cookie 和 Upgrade；用官方 Agent 验证 HTTP/WS 模式和配置下发。浏览器实际执行登录、增改服务器、看板/详情、设置保存和备份下载。外部通知渠道需配置专用测试账号后另行验收，禁止发到生产收件人。
 
 本次结果、证据及未覆盖项目见 TEST_REPORT.md。
+
+## 主题契约与可运行示例
+
+统一规范和 TH01–TH12 清单见 [theme-develop.md](../theme-develop.md)。`npm test` 自动包含 `theme-contract.test.js`：真实隔离 HTTP/WS/SQLite 验证主题产物、认证、隐藏节点、订阅、历史、选项整体替换/持久化、预览/启用/恢复、缓存与 CORS。
+
+示例浏览器验收单独运行：
+
+```bash
+npm run test:theme
+```
+
+需要现成 Playwright 模块和 Chromium。默认按模块名 `playwright` 与它的浏览器路径解析；也可以显式提供：
+
+```bash
+THEME_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.js \
+THEME_CHROMIUM_EXECUTABLE=/absolute/path/to/chromium \
+THEME_EVIDENCE_DIR=output/test-results/theme \
+npm run test:theme
+```
+
+这些是测试工具，不随主题分发，也不要求主题加载 Playwright。Node 24、GeoIP、内置前端/Agent 产物须提前构建。脚本在执行验收前准备两套临时主控、独立进程、静态产物、本地自签证书、HTTPS/WSS 反代、浏览器和本地开发代理；不加载 .env 或生产数据，关闭调度。每个进程只承载一个主控，避免共享全局缓存。
+
+覆盖实际表单登录、密码错误、2FA 挑战/动态码/恢复码、退出、实时/乱序样本、晚到 REST、空历史、配置回退、断网恢复、原生 Chrome 标签页隐藏/切回、手机明暗与长名称、节点删除/同 UUID 重建、跨 origin HTTPS/WSS/Bearer、被拒绝 CORS 和页面退出清理。真实隐藏由独立 Chrome 默认上下文及 `connectOverCDP(..., { noDefaults: true })` 验证，记录 `document.hidden=true` 与隐藏期间更新；普通 Playwright 上下文不承担此结论。
+
+上游 GitHub 文件读取由本地产物夹具替代，实际页面、REST、WS 与 SQLite 仍经过真实主控；不能把夹具结果写成真实 GitHub 发布/拉取通过。自签证书只验证隔离 TLS 链路，不证明公网证书/生产部署。证据默认保存在 `output/test-results/theme/browser.json` 与桌面/手机 PNG，须实际查看截图。结束后关闭浏览器、主控、代理与子进程并删除临时目录；证据和工具链由 Git 忽略。
 
 `test/admin-security.test.js` 覆盖安全路径、RFC TOTP 向量、二维码独立解码、绑定/验证/恢复码、防重放、会话撤销、限流、SQLite 重启与备份恢复。
 

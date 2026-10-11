@@ -1,5 +1,13 @@
 # 最近一次改动
 
+## 主题开发统一规范与可运行示例（2026-10-11）
+
+- 将 theme-develop.md 设为统一入口，分别说明内置界面基线和第三方主题自由设计边界，补齐目录/地址/缓存、样式与明暗、API/CSP/CORS、选项契约、认证与 2FA、实时生命周期、预览/启用/更新/恢复及 TH01–TH12 验收清单。
+- 修正 API.md 中配置公开性、内存 MiB 示例、REST/WS 样本结构与认证说明；新主题选项分组及 schemaVersion 仅为客户端建议，保持服务端行为。词汇表增加内置前端、第三方主题和主题选项。
+- 新增 examples/theme-minimal 的 HTML/原生 JS/CSS、内容 hash 构建和 loopback 开发代理，实际覆盖公开/私人、双重验证、实时列表、重连补取、24 小时/7 天历史表及选项读取；手机采用分行展示。未更改主控运行机制或 Agent 源码。
+- 新增真实 HTTP/WS/SQLite 契约测试及 test:theme 浏览器验收；实际验证 TLS/CORS、原生标签页隐藏、迟到快照和同 UUID 重建。构建、170 项 Node、15 项浏览器结果及本机 Go/Darwin 失败记录详见 TEST_REPORT.md。未发布 GitHub 主题或部署生产。
+- 按用户要求，通过 SSH 到“免费云”在独立目录校验并验收同一份 555 文件源码，使用独立 Node 24.19.0/Go 1.26.8；Linux test:all 与 test:acceptance 均退出 0，19 项主控和 7 项真实原生 Agent 验收通过。补验记录与代码经当前分支同步，生产容器和宿主 Agent 运行状态保持。
+
 ## SSH 推送与旧镜像、备份清理（2026-10-09）
 
 - 按用户要求，使用本机 `/root/.ssh/github` 对 GitHub 进行 SSH 认证并推送 `codex/self-hosted-native-agent`；实现提交 `6eaa4e1` 与远端核对一致。代码及生产发布记录一起推送，测试证据和敏感备份仍由 Git 排除。

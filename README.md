@@ -127,7 +127,7 @@ npm run test:acceptance
 - `architecture.md` / `code_map.md`：架构和功能代码地图。
 - `testing.md` / `TEST_REPORT.md`：固定验收标准和最近测试结果。
 - `changelog.md`：最近改动与 P1 修复。
-- `API.md` / `theme-develop.md`：接口和主题约定。
+- [API.md](API.md)：接口契约；[theme-develop.md](theme-develop.md)：内置界面与第三方主题开发的统一入口，包含可运行示例和验收清单。
 
 ## 致谢
 

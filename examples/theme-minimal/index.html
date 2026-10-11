@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apiBase" content="">
+  <title>监控看板</title>
+  <link rel="stylesheet" href="./assets/style.css">
+  <script type="module" src="./assets/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="eyebrow">SERVER MONITOR</p><h1 id="site-title">监控看板</h1></div>
+      <nav aria-label="看板操作">
+        <label>主题 <select id="theme"><option value="auto">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
+        <button id="refresh" type="button">刷新</button>
+        <a id="admin-link" hidden target="_blank" rel="noreferrer">管理后台</a>
+        <button id="logout" type="button" hidden>退出登录</button>
+      </nav>
+    </header>
+    <p id="connection" role="status">正在连接…</p>
+    <p id="notice" role="status"></p>
+    <details id="login-panel">
+      <summary>管理员登录</summary>
+      <form id="login-form">
+        <label>安全后台路径 <input id="admin-path" required autocomplete="off" placeholder="输入你已知的后台路径"></label>
+        <label>用户名 <input id="username" required autocomplete="username" value="admin"></label>
+        <label>密码 <input id="password" type="password" required autocomplete="current-password"></label>
+        <label id="factor-field" hidden>动态验证码或恢复码 <input id="factor" type="text" autocomplete="one-time-code"></label>
+        <button id="login-submit" type="submit">登录</button>
+        <p id="login-message" role="status"></p>
+      </form>
+    </details>
+    <section aria-labelledby="servers-title">
+      <div class="section-title"><h2 id="servers-title">节点</h2><span id="server-count"></span></div>
+      <div class="table-wrap"><table id="servers">
+        <thead><tr><th scope="col">名称 / 状态</th><th scope="col">CPU</th><th scope="col">内存</th><th scope="col">下载 / 上传</th></tr></thead>
+        <tbody id="server-rows"></tbody>
+      </table></div>
+      <p id="empty">正在获取节点…</p>
+    </section>
+    <section aria-labelledby="history-title">
+      <h2 id="history-title">历史</h2>
+      <form id="history-form" class="history-controls">
+        <label>节点 <select id="history-server" aria-label="历史节点"></select></label>
+        <label>范围 <select id="history-hours"><option value="24">24 小时</option><option id="seven-days" value="168" disabled>7 天（管理员）</option></select></label>
+        <button id="history-submit" type="submit">查询历史</button>
+      </form>
+      <p id="history-message" role="status">选择节点后查询历史。</p>
+      <div class="table-wrap"><table id="history-table">
+        <thead><tr><th scope="col">采样时间</th><th scope="col">CPU</th><th scope="col">内存</th><th scope="col">电信延迟</th><th scope="col">电信丢包</th></tr></thead>
+        <tbody id="history-rows"></tbody>
+      </table></div>
+    </section>
+  </main>
+</body>
+</html>

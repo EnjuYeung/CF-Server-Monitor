@@ -38,6 +38,7 @@
 | 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10、UP06 |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | test/frontend-live-socket.test.js、frontend-api-base.test.js |
 | 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、src/utils/csp.js | theme-develop.md；主题商店及 /theme 清单接口已移除 |
+| 第三方主题开发参考与专项验收 | examples/theme-minimal/；test/theme-contract.test.js、theme-acceptance.js | theme-develop.md 统一入口；公开/私人、2FA、实时/历史、hash 产物、TLS/CORS 与隔离浏览器；npm run test:theme |
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |
