@@ -15,7 +15,9 @@ Standards 的 2 项和 Spec 的 3 项对应 4 个独立问题，均已处理。
 | REST 401 保留旧展示与订阅（Spec） | 清该来源数据、回放、连接及晚到回调，全部受限时显示私人提示。RF03、多来源回归及 RFB03–RFB04 通过；内置页面收到配置断开后自动补取并清空 |
 | Agent 安装/下载文档不符（Standards） | API.md 只列 Linux install.sh 与 amd64/arm64；ND01 实测两目标及归档可用，PowerShell 和 Windows 下载均 404 |
 
-旧存储升级回填、重启和清历史保留节点实例（RF04–RF05），Docker 数据卷重建也保留实例（ND04）。免费云 Linux：完整 test:all 通过（176 项 Node、Agent 配置、Go vet/test），主控 19/19、原生 Agent 7/7、主题浏览器 15/15、新增浏览器 4/4、隔离 Docker 8/8。847 个镜像运行文件与已测产物 SHA-256 一致；详细命令、环境修正和覆盖边界见 TEST_REPORT.md。本次未部署生产。
+旧存储升级回填、重启和清历史保留节点实例（RF04–RF05），Docker 数据卷重建也保留实例（ND04）。免费云 Linux：完整 test:all 通过（176 项 Node、Agent 配置、Go vet/test），主控 19/19、原生 Agent 7/7、主题浏览器 15/15、新增浏览器 4/4、隔离 Docker 8/8。847 个镜像运行文件与已测产物 SHA-256 一致；详细命令、环境修正和覆盖边界见 TEST_REPORT.md。
+
+后续按用户授权于 2026-10-11 23:34:18（Asia/Shanghai）部署生产并推送当前分支，16/16 节点恢复新上报，配置、历史和实例保持。验证及推送成功后已删除两机测试数据、旧镜像和全部项目备份；上述原始证据路径作为历史记录，当前实测汇总见 TEST_REPORT.md 顶部。
 
 ## Standards
 
