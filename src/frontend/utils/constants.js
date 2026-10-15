@@ -37,6 +37,7 @@ export const STORAGE = {
   THEME_PREFERENCE: 'theme_preference',
   LANGUAGE_PREFERENCE: 'language_preference',
   VIEW_PREFERENCE: 'monitor_preferred_view',
+  LIST_SORT_PREFERENCE: 'monitor_list_sort',
   JWT_TOKEN: 'jwt_token',
 }
 

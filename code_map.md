@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-10-11；版本：3.0.0。
+更新时间：2026-10-15；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -25,6 +25,8 @@
 | 服务器标签、独立色表与语法帮助 | src/shared/serverTags.js | serverInput.js 统一保存规则；ServerTags.vue 统一渲染；ServerTagsHelp.vue 复用 HelpTooltip；test/server-tags.test.js |
 | 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；test/server-tags.test.js；TC03、FS01–FS04 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、地区和分组各自多选取并集，两类筛选取交集，空选择不限；src/frontend/styles/main.css；G01–G08、MS01–MS12 |
+| 首页列表按主机名/地区代码排序 | src/frontend/utils/listSort.js、views/Dashboard.vue | 两列列头升序/降序/默认循环；主机名自然数、忽略大小写、中文拼音；地区空值/XX 双向置底；同值保留快照默认顺序，卡片继续默认顺序；浏览器 monitor_list_sort 偏好；test/dashboard-sort.test.js、dashboard-sort-browser.js；LS01–LS11 |
+| 详情返回后的延迟图表重绘 | src/frontend/views/ServerDetail.vue | 历史加载排队的 animation frame 检查图表是否已销毁；dashboard-sort-browser.js LS06 暂停真实重绘帧、返回首页后释放，验证无空图表 resize 异常 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | 超过 1 小时沿用现有索引逐桶取最后完整行；src/utils/historyFields.js、metrics.js；test/history-query.test.js；A07、A14、UP02–UP03 |
 | 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、state/dashboardState.js | utils/dashboardSnapshot.js 根据持久采样时间补取；composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
@@ -53,6 +55,7 @@
 - `test/review-regressions.test.js`：真实 HTTP/WS 的删除重导、整批回滚、入口校验、离线判定、通知队列和旧下载入口回归。
 - `test/review-fixes.test.js`：RF01–RF05，真实 OneBot 响应、SQLite 重试、快速同 UUID 重建、401、重启及旧存储升级。
 - `npm run test:review-fixes-browser`：内置看板和最小主题的真实浏览器重建及权限切换；可用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE 指定独立测试工具，REVIEW_EVIDENCE_DIR 指定证据目录。
+- `npm run test:dashboard-sort`：隔离主控、SQLite 和真实浏览器的列表排序、筛选、偏好持久化、资料变化、键盘及桌面/手机明暗验收；复用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE，DASHBOARD_SORT_EVIDENCE_DIR 指定证据目录。
 - `test/credential-change.test.js`：密码撤销、多种令牌入口、重启、事务回滚及状态保持。
 - `test/agent-config.js`：Agent 配置兼容与规范化。
 - `test/load.js`：明确指定的空测试主控，50 Agent / 10 看板、60 秒负载；拒绝非空数据库。

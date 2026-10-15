@@ -1342,6 +1342,7 @@ const loadAllHistory = async (hours) => {
 
     requestAnimationFrame(() => {
       Object.values(charts).forEach(chart => {
+        if (!chart) return
         chart.resize()
         chart.update('none')
       })

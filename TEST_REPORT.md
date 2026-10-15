@@ -1,5 +1,34 @@
 # 最近一次测试报告
 
+## 首页列表主机名与地区代码排序（2026-10-15）
+
+功能及隔离验收已完成。最终 `npm run build`、`npm run test:all`、`npm run test:acceptance`、`npm run test:dashboard-sort` 均退出 **0**：Node **182/182**、Agent 配置与 Go vet/test、主控 **19/19**、原生 Agent **7/7**、浏览器 **11/11** 通过，`pageErrors=[]`。本次未提交、推送或部署生产。
+
+环境为 Linux amd64、Node **24.21.0**、npm **11.19.0**、Go **1.26.8**、Playwright **1.64.1**、Chrome for Testing **153.0.8010.12**。宿主默认 Node 为 26，测试通过临时 PATH 使用从既有项目镜像复制的 Node 24 和官方 Go 工具链；Go 压缩包 SHA-256 与官方下载元数据核对一致。开发前依次执行 `npm ci`、`npm run geoip:download`、`npm run build`，并实际启动修改前的隔离主控和浏览器确认健康及两行列表正常。
+
+测试开始前准备临时 SQLite、独立 Agent 归档、随机回环端口、测试凭据及桌面/触控浏览器上下文，关闭调度并拦截浏览器外部 HTTPS 请求。排序夹具含 8 个公开节点和 1 个隐藏节点，覆盖自然数、英文大小写、中文、重复地区、空地区、显式 XX 和三种分组；运行中再验证新增和删除。使用真实页面、REST、WS 与 SQLite；未读取生产 .env、数据库或向真实通知收件人发信。证据位于 Git 忽略目录 `output/test-results/dashboard-sort-20261015/`。
+
+| 编号 | 功能、操作与预期 | 实际验证及证据 | 状态 |
+| --- | --- | --- | --- |
+| LS00 | 安装依赖、下载地区库、完整基线/最终构建并启动；页面及健康检查可用 | npm ci 和 geoip:download 退出 0；baseline-build.log、final-build.log 完成 Linux amd64/arm64 及前端；baseline-browser.log：health=200、tableRows=2、pageErrors=[] | 通过 |
+| LS01 | 无排序偏好打开桌面及手机首页；沿用后台顺序并过滤隐藏节点 | browser.json：两端各 8 行，初始无 aria-sort，隐藏节点不可见 | 通过 |
+| LS02 | 连点主机名三次；自然数、忽略大小写、中文拼音和三态顺序正确 | node1、NODE2、node2、node10；大小写同值在降序时仍保持原相对顺序；中文北京/重庆/广州/上海；第三次恢复原顺序并清除存储键 | 通过 |
+| LS03 | 主机名降序时切换地区列，再降序和恢复默认；同值稳定、未知地区双向置底 | CN/HK/JP/US 升序及反向降序均匹配；空地区与 XX 的北京、重庆始终在末尾；仅当前列具有 aria-sort | 通过 |
+| LS04 | 地区升序叠加两个分组与地区筛选，再制造空交集；筛选持续沿用排序 | 分组并集 4 行，与 US 交集 2 行；空交集显示“暂无数据”，清除条件恢复 8 行升序，browser.json | 通过 |
+| LS05 | 列表排序时切换条形/环形并返回；两种卡片按后台顺序，列表保留排序 | 两种卡片名称数组均与后台默认完全一致，返回列表仍为地区升序，browser.json | 通过 |
+| LS06 | 刷新、打开详情后返回；排序恢复，排队重绘在页面销毁后安全完成 | 刷新及返回后仍为 region/asc，后台顺序一致；暂停真实 animation frame，详情历史加载后返回首页，再释放未取消的帧，pageErrors=[]；修复前 browser-regression-red.log 失败、修复后 browser-final.log 通过 | 通过 |
+| LS07 | 用 Tab、Enter、空格操作列头并切换中英日；焦点及操作说明正确 | 2px 可见焦点，Enter/Space 完成升序/降序/默认；三语言下一步操作名称逐项匹配，browser.json | 通过 |
+| LS08 | 桌面/390px 手机切换明暗并点击/触控排序；表格在自身容器内滚动 | 1440px 页面宽 1440px；390px 页面宽 390px、表格宽 980px、容器宽 372px；按钮高 44px；desktop-dark/light.png、mobile-dark/light.png 四图已实际查看 | 通过 |
+| LS09 | 损坏 JSON、未知排序列、非法方向后刷新，再模拟存储配额写入失败；安全回退且仍能排序 | 3 种非法偏好均恢复默认；setItem 抛 QuotaExceededError 时仍按自然顺序排列，页面无异常 | 通过 |
+| LS10 | 离线节点真实上报、改地区、改名称、新增后补取；列表自动按当前规则排列 | WS 上报使状态灯变在线而不改变地区顺序；US→HK 移入 HK、node10→node0 重排、新 node3 插入自然位置，browser.json | 通过 |
+| LS11 | 地区排序下修改后台顺序并补取，再恢复默认和删除新增节点；同值依据最新后台顺序 | 同 CN、同 HK 及未知地区的相对顺序随新默认顺序变化；恢复默认后逐项匹配，删除后回到 8 行，browser.json | 通过 |
+| LS12 | 排序单元与完整回归；比较、持久化和异常存储正确且核心功能无回归 | 新增 6 项排序测试；test-all-final.log：182/182、fail=0，Agent 配置及 Go vet/test 通过；首次 test-all.log 的 Go 实际执行 0.260s，最终 Go 测试使用成功缓存 | 通过 |
+| LS13 | 完整主控和原生 Agent 验收；HTTP/WS/SQLite/重启/备份恢复正常 | acceptance-final.log、controller-acceptance.json：19/19；native-acceptance.json：7/7，包含实际 Linux 原生采集和上报 | 通过 |
+
+首次浏览器运行在 LS01–LS10 的排序断言通过后，由最终页面异常检查捕获详情页 `Cannot read properties of null (reading 'resize')`（browser-initial.log/json）。将复现缩小为“历史加载排队重绘 → 返回首页销毁图表 → 释放重绘帧”，在修改前的 ServerDetail 代码上稳定失败；chart-return-red-deterministic.log 和 browser-regression-red.log 保留失败栈。根因是历史加载后的 requestAnimationFrame 遍历已被 safeDestroyCharts 置空的图表；补充空值检查后，最小复现 chart-return-green.log 为 `[]`，完整 11 项浏览器、构建、test:all 和 test:acceptance 均重跑通过。
+
+浏览器复跑使用 `THEME_PLAYWRIGHT_MODULE` 指向独立安装的 Playwright `index.mjs`、`THEME_CHROMIUM_EXECUTABLE` 指向 Chromium 可执行文件，并设置 `DASHBOARD_SORT_EVIDENCE_DIR=output/test-results/dashboard-sort-20261015` 后执行 `npm run test:dashboard-sort`。单元测试由 `npm run test:all` 自动包含。`git diff --check` 通过，测试主控、浏览器及前台原生 Agent 均已关闭，夹具清理临时 SQLite。本次仅修改内置前端及文档/测试，未运行 Docker 部署验收或生产发布，未覆盖第三方主题和全部浏览器引擎；所有原始测试产物均由 Git 忽略。
+
 ## 审查修复生产发布、仓库推送及清理（2026-10-11）
 
 按用户授权部署至 https://jm.zedy.cc。**23:34:18（Asia/Shanghai）**启动生产容器，**23:34:27**健康检查通过，**23:35:28**完成公网浏览器验收。生产使用完整验收的原镜像 **`sha256:dd376a12c02cd9b05f26dce2931bf02752febf00459b412b2769710973b95141`**，标签为 `server-monitor:local` 和 `server-monitor:review-fixes-20261011`。修复代码提交 **`194de618ee9213cab0b9a34d166bdb59b706dec3`**，通过免费云既有 SSH 认证推送至 `codex/self-hosted-native-agent`，GitHub 分支已核对一致；发布与清理记录继续在同一分支同步。

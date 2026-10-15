@@ -171,8 +171,26 @@
           <thead>
             <tr>
               <th></th>
-              <th>{{ trans.hostname }}</th>
-              <th>{{ trans.region }}</th>
+              <th
+                v-for="column in listSortColumns"
+                :key="column.key"
+                scope="col"
+                class="table-sort-heading"
+                :aria-sort="listSort?.key === column.key ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : null"
+              >
+                <button
+                  type="button"
+                  class="table-sort-button"
+                  :aria-label="getListSortAction(column)"
+                  :title="getListSortAction(column)"
+                  @click="changeListSort(column.key)"
+                >
+                  {{ column.label }}
+                  <svg class="table-sort-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path :d="listSortIcons[listSort?.key === column.key ? listSort.direction : 'default']" />
+                  </svg>
+                </button>
+              </th>
               <th>{{ trans.osArch }}</th>
               <th>{{ trans.cpu }}</th>
               <th>{{ trans.ram }}</th>
@@ -195,7 +213,7 @@
               <td class="table-empty-state" colspan="12">[*] {{ trans.noData }}</td>
             </tr>
             <tr 
-              v-for="server in filteredServers" 
+              v-for="server in sortedListServers"
               :key="server.source + ':' + server.id + ':' + (server.instance_id || '')"
               @click="goToServer(server)"
               class="table-cursor-pointer"
@@ -365,6 +383,7 @@ import { getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n.js'
 import { DEFAULT_SITE_TITLE, STORAGE } from '../utils/constants'
 import { normalizeDashboardView, normalizeDisplayMode } from '../utils/displayMode.js'
+import { nextListSort, sortListServers, readListSortPreference, writeListSortPreference } from '../utils/listSort.js'
 import { useDashboardState } from '../composables/useDashboardState.js'
 import {
   DEFAULT_EXCHANGE_RATES,
@@ -384,6 +403,7 @@ const dashboard = useDashboardState(appConfig)
 const { servers, stats, regionStats, unknownStats, now, isLoading, sitesRemaining } = toRefs(dashboard.state)
 const sysConfig = computed(() => dashboard.state.config)
 const currentView = ref('bar')
+const listSort = ref(null)
 const selectedRegions = ref(new Set())
 const selectedGroups = ref(new Set())
 const filterWrap = ref(null)
@@ -400,6 +420,27 @@ const exchangeRateSource = ref('default')
 const router = useRouter()
 
 const trans = useTranslation()
+const listSortColumns = computed(() => [
+  { key: 'name', label: trans.value.hostname },
+  { key: 'region', label: trans.value.region }
+])
+const listSortIcons = {
+  default: 'M5 3v10m-2-2 2 2 2-2M11 13V3m-2 2 2-2 2 2',
+  asc: 'M8 13V3M4 7l4-4 4 4',
+  desc: 'M8 3v10M4 9l4 4 4-4'
+}
+
+const changeListSort = key => {
+  listSort.value = nextListSort(listSort.value, key)
+  writeListSortPreference(listSort.value)
+}
+
+const getListSortAction = column => {
+  const next = nextListSort(listSort.value, column.key)
+  if (!next) return trans.value.restoreDefaultOrder
+  return (next.direction === 'asc' ? trans.value.sortAscending : trans.value.sortDescending)
+    .replace('{column}', column.label)
+}
 const financeRateCurrencies = DISPLAY_FINANCE_CURRENCIES
 const financeSummary = computed(() => calculateFinanceSummary(servers.value, exchangeRates.value, now.value))
 const formattedRemainingValue = computed(() => formatFinanceMetric(financeSummary.value.remainingValueCNY))
@@ -587,6 +628,8 @@ const filteredServers = computed(() => {
   })
 })
 
+const sortedListServers = computed(() => sortListServers(filteredServers.value, listSort.value))
+
 const groupFilterOptions = computed(() => {
   const counts = new Map()
   for (const server of servers.value) {
@@ -686,6 +729,7 @@ const goToServer = (server) => {
 }
 
 onMounted(async () => {
+  listSort.value = readListSortPreference()
   financeCurrency.value = getStoredFinanceCurrency()
   loadFinanceRates()
 
