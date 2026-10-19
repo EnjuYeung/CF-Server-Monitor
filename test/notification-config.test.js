@@ -7,6 +7,8 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createController } from '../src/server.js';
 import { readNotificationConfig, prepareNotificationConfig, DEFAULT_NOTIFICATION_TEMPLATE } from '../src/shared/notificationConfig.js';
+import { checkExpiringServers } from '../src/services/notifications/expiry.js';
+import { drainNotifications } from '../src/services/outbox.js';
 
 const rule = (id = 'rule-one', servers = []) => ({ id, name: 'CPU high', metric: 'cpu', threshold: '80', servers, intervalMinutes: '5', mode: 'average' });
 const prepare = input => prepareNotificationConfig({ input: { tg_bot_token: 'fixture-provider-target', ...input } });
@@ -162,4 +164,57 @@ test('NC12 real test-notification requests validate the unsaved draft before loc
     assert.equal(bodies.length, 1); assert.ok(bodies[0].includes('UNSAVED'));
     assert.equal(controller.env.DB.prepare("SELECT value FROM settings WHERE key='site_options'").first().value, before);
   } finally { await controller.close(); receiver.closeAllConnections(); await new Promise(resolve => receiver.close(resolve)); await rm(root, { recursive: true, force: true }); }
+});
+
+test('NC13 custom expiry windows accept 0–365 whole days while legacy true remains seven days', () => {
+  for (const days of [0, 1, 7, 8, 30, 365]) {
+    const saved = prepare({ expire_reminder: days });
+    assert.equal(saved.ok, true, String(days));
+    assert.equal(saved.config.expire_reminder, String(days));
+    assert.equal(readNotificationConfig(saved.patch).expire_reminder, String(days));
+  }
+  for (const value of [true, 'true']) assert.equal(prepare({ expire_reminder: value }).config.expire_reminder, '7');
+  for (const value of [-1, 366, 1.5, 'invalid']) assert.equal(prepare({ expire_reminder: value }).ok, false);
+});
+
+test('NC14 custom expiry reminders persist, deliver locally and keep the existing one-day renewal rule', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'notification-expiry-custom-'));
+  const deliveries = [];
+  const receiver = createServer(async (req, res) => { let body = ''; for await (const chunk of req) body += chunk; deliveries.push(body); res.writeHead(200).end('ok'); });
+  receiver.listen(0, '127.0.0.1'); await once(receiver, 'listening');
+  const config = { API_SECRET: 'custom-expiry-isolated-secret-000', ADMIN_PATH: 'custom-expiry-admin', DATA_DIR: root, SCHEDULER_ENABLED: 'false' };
+  let controller, base, token;
+  const start = async () => { controller = await createController(config); const address = await controller.listen(0, '127.0.0.1'); base = `http://127.0.0.1:${address.port}`; };
+  const admin = async body => {
+    const response = await fetch(`${base}/${config.ADMIN_PATH}/api`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    await start(); token = (await admin({ action: 'login', username: 'admin', password: config.API_SECRET })).body.token;
+    const settings = { expire_reminder: '365', tg_notify: '2', notification_timezone: 'UTC', expire_notification_time: '0', notification_webhook_enabled: true, notification_webhook_url: `http://127.0.0.1:${receiver.address().port}/notify` };
+    assert.equal((await admin({ action: 'save_settings', settings })).status, 200);
+    const now = Date.now(), day = 86400000;
+    const autoDate = new Date(now + 5 * day).toISOString().slice(0, 10);
+    const distantDate = new Date(now + 200 * day).toISOString().slice(0, 10);
+    const manual = await admin({ action: 'add', name: 'Distant expiry fixture', expire_date: distantDate });
+    const auto = await admin({ action: 'add', name: 'Automatic date fixture', expire_date: autoDate, auto_renewal: '1', billing_cycle: 'month' });
+    assert.equal(manual.status, 200); assert.equal(auto.status, 200);
+    const before = controller.env.DB.prepare("SELECT value FROM settings WHERE key='site_options'").first().value;
+    assert.equal((await admin({ action: 'save_settings', settings: { expire_reminder: 366, tg_notify: '3' } })).status, 400);
+    assert.equal(controller.env.DB.prepare("SELECT value FROM settings WHERE key='site_options'").first().value, before);
+    await controller.close(); controller = null; await start();
+    const loaded = (await admin({ action: 'get_settings' })).body.settings;
+    assert.equal(loaded.expire_reminder, '365'); assert.equal(loaded.tg_notify, '2');
+    assert.equal(await checkExpiringServers(controller.env.DB, { now }), true);
+    assert.equal(controller.env.DB.prepare('SELECT expire_date FROM servers WHERE id=?').bind(auto.body.id).first().expire_date, autoDate);
+    await drainNotifications(controller.env.DB, { now });
+    assert.equal(deliveries.length, 1); assert.match(deliveries[0], /Distant expiry fixture/);
+    assert.match(deliveries[0], /Automatic date fixture/);
+    assert.equal(await checkExpiringServers(controller.env.DB, { now: now + 4 * day }), true);
+    assert.notEqual(controller.env.DB.prepare('SELECT expire_date FROM servers WHERE id=?').bind(auto.body.id).first().expire_date, autoDate);
+    const events = controller.env.DB.prepare('SELECT payload FROM notification_outbox').all().results.map(row => JSON.parse(row.payload).context.event);
+    assert.ok(events.every(event => event === '服务器到期提醒'));
+  } finally {
+    await controller?.close(); receiver.closeAllConnections(); await new Promise(resolve => receiver.close(resolve)); await rm(root, { recursive: true, force: true });
+  }
 });

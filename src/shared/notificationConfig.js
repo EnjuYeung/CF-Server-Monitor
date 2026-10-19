@@ -2,7 +2,8 @@
 export const TG_NOTIFY_MINUTES_MIN = 2;
 export const TG_NOTIFY_MINUTES_MAX = 30;
 export const TG_NOTIFY_LEGACY_TRUE_MINUTES = 5;
-export const EXPIRE_REMINDER_DAYS_MAX = 7;
+export const EXPIRE_REMINDER_DAYS_MAX = 365;
+export const EXPIRE_REMINDER_LEGACY_TRUE_DAYS = 7;
 export const DEFAULT_NOTIFICATION_TIMEZONE = 'UTC';
 export const DEFAULT_EXPIRE_NOTIFICATION_TIME = '12';
 export const RESOURCE_ALERT_WINDOW_MIN = 5;
@@ -81,7 +82,7 @@ export function getTgNotifyMinutes(value) {
 }
 
 export function normalizeExpireReminder(value) {
-  if (value === true || value === 'true') return String(EXPIRE_REMINDER_DAYS_MAX);
+  if (value === true || value === 'true') return String(EXPIRE_REMINDER_LEGACY_TRUE_DAYS);
   if (
     value === false ||
     value === 'false' ||

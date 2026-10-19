@@ -1,5 +1,50 @@
 # 最近一次测试报告
 
+## main 基础改进：隔离实现与验收（2026-10-19）
+
+按用户最终确认完成：HTTP 可选超时、启动配置 15 秒、自定义到期提醒 1–365 天、旧 true=7、离线 2 分钟选项、根 MIT 许可及镜像交付。**SMTP、GPU 增强和月流量阈值告警不吸收、不新增支持；自动续期仍提前 1 天。** 保留 Node 单主控、SQLite WAL、Docker bridge、HTTP/WS 及反代 TLS 边界。本次未提交、推送或部署生产。
+
+测试前准备完成：从既有镜像复制的 Node **24.21.0**（宿主默认 Node 26 未用于测试）、npm **11.19.0**、官方 Go **1.26.8**（下载 SHA-256 `d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b` 与官方元数据相符）、Playwright **1.64.1**、Chrome for Testing **153.0.8010.12**。先运行 npm ci、npm run geoip:download、npm run build，再实际打开修改前的隔离主控及浏览器；健康 200、两公开节点、后台 0–7 天预设、页面异常为空。所有数据库、凭据、通知接收器、代理、浏览器及容器资源均为测试专用，未读取生产 .env 或数据。
+
+最终必需命令 `npm run build`、`npm run test:all`、`npm run test:acceptance` 均退出 **0**。Node **191/191**，Agent 配置及 Go vet/test 通过，主控 **19/19**、真实原生 Agent **7/7**、设置浏览器 **6/6**、既有认证/实例浏览器 **4/4**、隔离容器 **5/5**。浏览器两套 `pageErrors=[]`。
+
+统一证据目录：`output/test-results/absorption-20261019/`，由 Git 忽略；汇总为 summary.json。
+
+| 编号 | 功能、操作及预期 | 实际执行与证据 | 状态 |
+| --- | --- | --- | --- |
+| MA00 | 准备环境、安装、地区库和修改前完整构建，实际启动基础流程 | npm-ci.log、geoip-download.log、baseline-build.log 均成功；baseline-browser.json 记录 health=200、visibleServers=2、旧预设及 pageErrors=[] | 通过 |
+| MA01 | 回归应在旧实现失败，新实现解决超时/取消和提醒上限 | `node --test test/frontend-http.test.js test/notification-config.test.js`；regression-red.log 为 21 项、14 通过/7 个预期失败；加入 expiry 测试后的 regression-green.log 为 22/22 | 通过 |
+| MA02 | 等不到响应头/JSON 正文应超时，主动取消与多来源认证继续正常 | HT01–HT06 使用真实本地 HTTP/Vite 模块，验证 REQUEST_TIMEOUT、REQUEST_ABORTED、混合来源结果、401 仅清对应 token；无截止时间和正常慢请求保持；test-all.log | 通过 |
+| MA03 | 0/1/7/8/30/365 可保存，旧 true 保留 7；无效新值不改存储 | NC13/NC14 实际 REST/SQLite；366、负数、小数、非法字符串拒绝；失败更新连带字段不落库，重启后 365 天/2 分钟保留；test-all.log | 通过 |
+| MA04 | 大于 7 天的提醒能实际投递，自动续期保持提前 1 天 | NC14 本地 HTTP 通知接收器收到远期节点提醒；提前 5 天日期保持，提前 1 天才推进；outbox 仍只有原到期提醒事件。既有 expiry 测试继续验证跨重启/本地午夜去重 | 通过 |
+| MA05 | 浏览器登录、输入 12 焦点保持、非法值拦截、365/2 保存刷新及三语言 | `npm run test:settings-browser` AS01–AS03；browser/browser.json 记录真实保存 200、旧布尔 true 显示 7、五类非法输入阻止保存、中文/英文/日文标签及回读 | 通过 |
+| MA06 | 桌面手机明暗、横屏与键盘操作正常 | AS04 的 1440/375px 四组页面无横向溢出，667px 横屏正常；Tab 可进入新输入，控件高度 44px；browser/1440-dark.png、1440-light.png、375-dark.png、375-light.png 四图已实际查看 | 通过 |
+| MA07 | 真正等待启动配置超时，响应头与正文两种挂起均给重试提示 | AS05/AS06 本地代理分别挂起响应头/正文，实际经过 15692/15398ms 显示“无法连接主控，请刷新重试。”；令牌保留；settings-browser.log、browser/browser.json | 通过 |
+| MA08 | 全量回归、构建与真实 Agent 使用正常 | final-build.log 完成 Linux amd64/arm64 及前端；test-all.log 的 191 项 Node、配置脚本和 Go vet/test 通过；acceptance.log、controller-acceptance.json 19/19、native-acceptance.json 7/7 | 通过 |
+| MA09 | 已有内置/最小主题的实例重建和权限切换保持 | `npm run test:review-fixes-browser`；review-browser.log、review-browser/browser.json 为 RFB01–RFB04 全通过，pageErrors=[] | 通过 |
+| MA10 | 实际构建镜像并在隔离 bridge 全新启动，许可证可读取 | `docker build --pull=false --progress=plain -t server-monitor:absorption-20261019 .` 退出 0；AD01/AD02 的页面/健康 200、Node 24.22.0、/app/LICENSE 与源码完全一致，SHA-256=89b8f89a15bf1eeea3292b91b832fc87afea696d4fba37b291cdff52dde7a572；docker-build.log、container.json | 通过 |
+| MA11 | 容器内保存/边界、HTTP/WS、重启和持久化保持 | AD03–AD05 验证 365/2、拒绝 366、CPU=31 上报及 WS 推送、重启后配置/指标保持，PRAGMA journal_mode=wal、integrity_check=ok；container-check.log、container.json | 通过 |
+| MA12 | Agent 分发与既有架构边界不受影响 | AD02 实际目录仍为 v1.3.0、Linux amd64/arm64 双目标，install.ps1 返回 404；Compose、数据库布局、Agent 源码/版本及依赖集合与 HEAD 相同。只改 Docker 许可复制；未运行与本次无关的 test:agent-deployment | 通过 |
+| MA13 | 最终变更范围、镜像一致性和资源清理 | final-static-check.json 记录 19 个预期改动文件；从未启动的测试镜像容器取出 8 个运行文件逐字节比对工作区一致；依赖集合及 Compose/Agent/数据库/服务/实时/运行入口层保持，测试容器/网络/卷无残留，产物均被 Git 忽略，git diff --check 通过 | 通过 |
+
+容器镜像 ID 为 `sha256:58c76d62665d2d8c50aa5fe6ed9136b6b2270d323a46e6a607560edc5775ddb7`。首次容器检查 AD01–AD04 通过后，AD05 使用启动时缓存的随机宿主端口而失败；container-check-initial.log 和 container-initial.json 保留记录。随后实际记录重启前 `127.0.0.1:32778`、重启后 `127.0.0.1:32779`，脚本改为重读 Docker 端口映射，完整 AD01–AD05 重跑通过；未因此修改产品代码。测试容器、bridge 网络及独立数据卷均已删除，测试镜像保留供复核。
+
+浏览器重跑需设置 `THEME_PLAYWRIGHT_MODULE` 和 `THEME_CHROMIUM_EXECUTABLE` 到独立测试工具，`SETTINGS_EVIDENCE_DIR`/`REVIEW_EVIDENCE_DIR` 指向所需证据目录。Node/Go PATH 及缓存均在本次忽略目录的 tools/ 下，不修改系统默认工具链。未重新验证生产反代或向真实通知收件人发送消息；本次运行代码保持相同部署结构，部署检查仅针对隔离镜像。最终静态核对只检查新增行及新文件，不要求重排原文件中未修改的格式。
+
+## main 与 codex 吸收分析：静态核验（2026-10-19）
+
+本轮任务为比较分支、分析可吸收功能，交付 `docs/main-codex-absorption-analysis.md`，并补充 GLOSSARY.md 和 changelog.md。**没有移植业务代码，没有新的功能测试或部署验收通过结论。** 以下“通过”仅表示实际执行的 Git/文档静态检查完成。
+
+| 编号 | 操作与预期 | 实际证据 | 状态 |
+| --- | --- | --- | --- |
+| BC01 | 更新远端引用，固定比较对象及共同基线 | `git fetch --prune origin` 退出 0；main=dfb9bf19c23479398c3835c5f96328364e194c85，HEAD/远端 codex=30a7ba323c1c5bb8b67f1d1cb4741860da6a604e，merge-base=e25e47b028c91871ebf40da2d60adfb8cc347d4a | 通过 |
+| BC02 | 核对提交集合、净差异及报告覆盖 | `git rev-list --left-right --count origin/main...HEAD` 为 18/26；基线→main 为 51 文件、+2723/-1156，末端比较为 295 文件；一次性 Python 核对报告表格恰好覆盖全部 18 个 main 独有提交 | 通过 |
+| BC03 | 分别核对不可变 main/codex 源码证据 | 使用 `git show <固定提交>:<路径>` 审阅各候选；一次性 Python 校验报告 52 处显式 M/C 文件行号存在且可唯一解析，并验证根 LICENSE 缺失/Agent 许可文本与 main 一致 | 通过 |
+| BC04 | 文档无空白错误，工作区只包含本轮文档变更 | `git diff --check` 和一次性 Python 检查 4 个文档文件，未修改运行代码、构建、Compose、Agent 或现有架构说明；候选功能均标记为未实施/未测试 | 通过 |
+| BC05 | 功能、构建与部署测试状态准确 | 本轮未运行 npm ci、geoip:download、build、test:all、test:acceptance 或 test:agent-deployment；这些属于后续实施的实际验收，不以源码审阅替代 | 未运行 |
+
+一次性核验程序退出 0，输出 status=passed、main_only_commits=18、codex_only_commits=26、main_net_files=51、tip_diff_files=295、explicit_source_references_checked=52、runtime_tests_run=false。它从 Git 对象及 4 个文档读取数据，不创建测试脚本、数据库或测试产物。没有读取生产 .env、数据库或操作容器，没有创建/修改 GitHub Issues、提交、推送或部署。新增候选的 ABS01–ABS08 验收条件及尚需决定的范围见分析文档；下方历史报告保留原执行含义，不作为本轮新功能的验证证据。
+
 ## 列表排序生产发布、仓库推送及清理（2026-10-15）
 
 按用户授权于 **19:48:46（Asia/Shanghai）** 部署至 https://jm.zedy.cc。当前生产镜像 ID 为 **`sha256:ecd36f492573eca827503910b44efde92615a66caf3354d3cd0dfd75f9cd3266`**，标签 `server-monitor:local`、`server-monitor:list-sort-20261015`。功能提交 **`81538a1b2e8f0330700a4b7b97e3c23d22c56d89`** 已通过既有 SSH 认证推送至 `codex/self-hosted-native-agent`，远端 SHA 已核对；发布及清理记录同步到同一分支。

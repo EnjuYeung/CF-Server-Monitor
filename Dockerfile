@@ -17,6 +17,7 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production PORT=8080 DATA_DIR=/app/data GEOIP_PATH=/app/geoip/dbip-country-lite.mmdb
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./
+COPY LICENSE ./LICENSE
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/src ./src
 COPY --from=build /app/dist ./dist

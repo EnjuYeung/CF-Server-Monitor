@@ -1,5 +1,20 @@
 # 最近一次改动
 
+## 吸收 main 基础改进并完成隔离验收（2026-10-19）
+
+- 按用户最终范围落实请求超时、自定义到期提醒、根 MIT 许可和离线 2 分钟选项；SMTP、GPU 增强、月流量阈值告警暂不吸收、不新增支持。自动续期继续提前 1 天顺延，保留周期流量报告和现有 Agent 协议/分发。
+- 前端 HTTP 支持按调用启用 timeoutMs，启动配置使用 15 秒且覆盖响应正文；组合原有取消信号并区分超时/取消，保留来源认证及 401 清理，未对历史、备份和写操作强加统一超时。
+- 到期提醒支持 1–365 天及关闭，旧布尔 true 固定为 7 天。后台保留预设并提供自定义输入、稳定焦点、整数范围提示与非法值阻止保存，补齐中英日文案和离线 2 分钟选项；相关控件至少 44px，手机/明暗布局沿用原界面。
+- 补齐主控根 LICENSE，运行镜像交付 /app/LICENSE，原版权及 Agent 独立许可保持；Dockerfile 仅增加许可文件复制，Compose、数据库布局、反代和 Agent 源码/版本不改。
+- 新增真实 HTTP 回归、扩展共享配置的真实 SQLite/通知验收和 npm run test:settings-browser。修复前 7 项预期失败，最终 191 项 Node、Agent 配置/Go vet/test、19 项主控、7 项原生 Agent、6 项设置浏览器、4 项认证/节点浏览器、5 项隔离 Docker 检查通过；四张界面截图已查看。环境、命令、证据及容器重启随机端口处理见 TEST_REPORT.md；本次未提交、推送或部署生产。
+
+## main 与 codex 吸收分析（2026-10-19）
+
+- 获取远端分支后固定 main `dfb9bf1`、codex `30a7ba3` 和共同祖先 `e25e47b`，逐项核查 main 独有 18 个提交及最终代码，分析保存在 `docs/main-codex-absorption-analysis.md`。
+- 给出保持 Node 24 单主控、SQLite WAL、Docker bridge、反代 TLS 和自托管 Linux 双目标 Agent 的移植边界；区分优先小改动、月流量告警、SMTP/GPU/续期行为可选项，以及已覆盖或不适合吸收的改动。
+- 记录提醒旧布尔值、HTTP 取消信号、GPU 采集缺项、SMTP Workers 依赖及流量告警账期/投递一致性风险，列出待实施验收项；补充“流量报告”和“自动续费”的领域定义。
+- 本轮只变更分析文档、术语与执行记录，未移植业务代码或操作部署；静态核验及未执行的功能测试范围见 TEST_REPORT.md。吸收范围尚待讨论，未创建 ADR 或远端 Issues。
+
 ## 列表排序发布、推送与清理（2026-10-15）
 
 - 按用户授权于北京时间 19:48:46 发布至 https://jm.zedy.cc，生产镜像为 server-monitor:local / server-monitor:list-sort-20261015。433 个运行文件与已验收产物一致，复用原 Node 24.21.0、依赖及 Agent v1.3.0；功能提交 81538a1 已通过既有 SSH 认证推送 codex/self-hosted-native-agent 并核对远端 SHA。

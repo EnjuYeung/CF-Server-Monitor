@@ -68,6 +68,7 @@ const handleResponse = async (res, options = {}) => {
         }
       }
     } catch (e) {
+      if (options.signal?.aborted) throw e
       // ignore
     }
     return { error: errorMessage, code: errorCode, status: res.status, message: errorMessageKey }
@@ -77,42 +78,58 @@ const handleResponse = async (res, options = {}) => {
     const data = await res.json()
     return { data, status: res.status }
   } catch (e) {
+    if (options.signal?.aborted) throw e
     return { data: null, status: res.status }
   }
 }
 
-const request = async (method, url, body, options = {}) => {
-  const { includeAuth = true, autoRedirect = true, baseUrl = null } = options
-  const headers = createHeaders(includeAuth, baseUrl)
-  const base = baseUrl || getApiBases()[0]
-
-  try {
-    const res = await fetch(`${base}${url}`, {
-      method,
-      headers,
-      body: body != null ? JSON.stringify(body) : undefined,
-      credentials: 'include'
-    })
-    return { ...(await handleResponse(res, { autoRedirect, baseUrl: base })), baseUrl: base }
-  } catch (e) {
-    return { error: e.message || 'Network error', status: 0, baseUrl: base }
-  }
-}
+const requestFailure = (error, baseUrl) => ({
+  error: error.message || 'Network error', status: 0, baseUrl,
+  ...(error.code ? { code: error.code } : {})
+})
 
 const fetchWithBase = async (baseUrl, url, options, method = 'GET', body = null) => {
   const { includeAuth = true, autoRedirect = true } = options
   const headers = createHeaders(includeAuth, baseUrl)
+  const timeoutMs = Number(options.timeoutMs)
+  const controller = Number.isFinite(timeoutMs) && timeoutMs > 0 ? new AbortController() : null
+  const signal = controller?.signal || options.signal
+  const cancel = () => controller.abort(options.signal.reason)
+  let timer, timedOut = false
+  if (controller) {
+    if (options.signal?.aborted) cancel()
+    else options.signal?.addEventListener('abort', cancel, { once: true })
+    timer = setTimeout(() => {
+      if (signal.aborted) return
+      timedOut = true
+      controller.abort()
+    }, timeoutMs)
+  }
 
-  const res = await fetch(`${baseUrl}${url}`, {
-    method,
-    headers,
-    body,
-    signal: options.signal,
-    credentials: 'include'
-  })
+  try {
+    const res = await fetch(`${baseUrl}${url}`, { method, headers, body, signal, credentials: 'include' })
+    const result = await handleResponse(res, { autoRedirect, baseUrl, signal })
+    return { ...result, baseUrl }
+  } catch (error) {
+    if (signal?.aborted) {
+      throw Object.assign(new Error(timedOut ? 'Request timed out' : 'Request aborted'), {
+        code: timedOut ? 'REQUEST_TIMEOUT' : 'REQUEST_ABORTED'
+      })
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+    if (controller) options.signal?.removeEventListener('abort', cancel)
+  }
+}
 
-  const result = await handleResponse(res, { autoRedirect, baseUrl })
-  return { ...result, baseUrl }
+const request = async (method, url, body, options = {}) => {
+  const base = options.baseUrl || getApiBases()[0]
+  try {
+    return await fetchWithBase(base, url, options, method, body != null ? JSON.stringify(body) : undefined)
+  } catch (error) {
+    return requestFailure(error, base)
+  }
 }
 
 export const http = {
@@ -144,7 +161,7 @@ export const http = {
     )
 
     const settled = await Promise.allSettled(promises)
-    return settled.map((r, i) => r.status === 'fulfilled' ? r.value : { error: r.reason?.message || 'Request failed', status: 0, baseUrl: bases[i] })
+    return settled.map((r, i) => r.status === 'fulfilled' ? r.value : requestFailure(r.reason, bases[i]))
   },
 
   async getAllWithProgress(url, onResult, options = {}) {
@@ -161,8 +178,8 @@ export const http = {
           onResult({ ...result, baseUrl })
         })
         .catch(e => {
-          const isCors = /failed to fetch|networkerror|cors/i.test(e.message)
-          onResult({ error: e.message, status: 0, baseUrl, corsError: isCors })
+          const isCors = !e.code && /failed to fetch|networkerror|cors/i.test(e.message)
+          onResult({ ...requestFailure(e, baseUrl), corsError: isCors })
         })
     )
 
@@ -181,7 +198,7 @@ export const http = {
     )
 
     const settled = await Promise.allSettled(promises)
-    return settled.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message || 'Request failed', status: 0, baseUrl: '' })
+    return settled.map(r => r.status === 'fulfilled' ? r.value : requestFailure(r.reason, ''))
   },
 
   getByIndex(url, index = 0, options = {}) {

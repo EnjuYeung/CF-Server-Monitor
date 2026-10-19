@@ -1,10 +1,10 @@
 # 功能代码地图
 
-更新时间：2026-10-15；版本：3.0.0。
+更新时间：2026-10-19；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
-| 安装与启动 | Dockerfile、compose.yaml、scripts/container-entrypoint.js | src/server.js；A01、D01 |
+| 安装与启动 | Dockerfile、compose.yaml、scripts/container-entrypoint.js | src/server.js；A01、D01；主控根 LICENSE 交付至 /app/LICENSE，Agent 许可继续独立交付 |
 | HTTP、反代、健康检查 | src/runtime/http.js、src/server.js | test/runtime-http.test.js；D04 |
 | Agent HTTP 上报 | src/handlers/update.js | src/services/agentReports.js；写库后记录接收和发布；A04、IR01–IR05 |
 | Agent WS、配置下发 | src/realtime/RealtimeHub.js | src/services/agentReports.js、src/utils/agentConfig.js、agentConfigNotify.js；A05、D03、IR01–IR06 |
@@ -34,11 +34,12 @@
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10；test/expiry-notification.test.js 验证到期送达及跨日/重启去重 |
 | 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；OneBot 同步业务成功才送达，失败保持退避重试；test/review-fixes.test.js RF01 |
-| 共用通知配置与资源规则编辑 | src/shared/notificationConfig.js | readNotificationConfig / prepareNotificationConfig；admin/index.vue、SettingsPanel.vue、handlers/admin.js、utils/settings.js 共用；test/notification-config.test.js 的 NC01–NC12 验证兼容读取、原始输入、部分更新及真实 HTTP/SQLite/本地投递 |
+| 共用通知配置与资源规则编辑 | src/shared/notificationConfig.js | readNotificationConfig / prepareNotificationConfig；admin/index.vue、SettingsPanel.vue、handlers/admin.js、utils/settings.js 共用；test/notification-config.test.js 的 NC01–NC14 验证兼容读取、原始输入、部分更新、1–365 天、旧 true=7 及真实 HTTP/SQLite/本地投递 |
+| 自定义到期提醒与离线 2 分钟选项 | src/frontend/views/admin/components/SettingsPanel.vue | 预设/自定义切换、稳定输入焦点、整数范围提示、中英日标签；test/settings-browser.js AS01–AS04 验证真实保存、刷新、明暗/手机与键盘 |
 | 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
 | 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10、UP06 |
-| 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | test/frontend-live-socket.test.js、frontend-api-base.test.js |
+| 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | 可选 timeoutMs，启动配置 15 秒覆盖正文；test/frontend-http.test.js HT01–HT06 验证超时/取消/分来源认证；test/settings-browser.js AS05–AS06 验证真实启动超时；frontend-live-socket.test.js、frontend-api-base.test.js |
 | 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、src/utils/csp.js | theme-develop.md；主题商店及 /theme 清单接口已移除 |
 | 第三方主题开发参考与专项验收 | examples/theme-minimal/；test/theme-contract.test.js、theme-acceptance.js、review-fixes-browser.js | theme-develop.md 统一入口；公开/私人、2FA、实时/历史、hash 产物、TLS/CORS 与隔离浏览器；npm run test:theme、test:review-fixes-browser |
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
@@ -56,6 +57,7 @@
 - `test/review-fixes.test.js`：RF01–RF05，真实 OneBot 响应、SQLite 重试、快速同 UUID 重建、401、重启及旧存储升级。
 - `npm run test:review-fixes-browser`：内置看板和最小主题的真实浏览器重建及权限切换；可用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE 指定独立测试工具，REVIEW_EVIDENCE_DIR 指定证据目录。
 - `npm run test:dashboard-sort`：隔离主控、SQLite 和真实浏览器的列表排序、筛选、偏好持久化、资料变化、键盘及桌面/手机明暗验收；复用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE，DASHBOARD_SORT_EVIDENCE_DIR 指定证据目录。
+- `npm run test:settings-browser`：隔离主控、SQLite、本地通知与代理、真实浏览器的自定义天数、旧配置、离线选项、中英日、明暗/手机、键盘和两种 15 秒启动超时；复用浏览器工具变量，SETTINGS_EVIDENCE_DIR 指定证据目录。
 - `test/credential-change.test.js`：密码撤销、多种令牌入口、重启、事务回滚及状态保持。
 - `test/agent-config.js`：Agent 配置兼容与规范化。
 - `test/load.js`：明确指定的空测试主控，50 Agent / 10 看板、60 秒负载；拒绝非空数据库。

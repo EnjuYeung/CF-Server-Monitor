@@ -230,17 +230,24 @@
         <div class="section-title"><span>▸</span> {{ trans.notifications }}</div>
         <div class="form-row">
           <div class="form-group flex-1">
-            <label class="form-label">{{ trans.offlineAlert }}</label>
-            <select v-model="settings.tg_notify" class="form-select">
+            <label class="form-label" for="offline-notify-minutes">{{ trans.offlineAlert }}</label>
+            <select id="offline-notify-minutes" v-model="settings.tg_notify" class="form-select">
               <option v-for="option in offlineNotifyOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
           </div>
 
           <div class="form-group flex-1">
-            <label class="form-label">{{ trans.expireReminder }}</label>
-            <select v-model="settings.expire_reminder" class="form-select">
+            <label class="form-label" for="expire-reminder-mode">{{ trans.expireReminder }}</label>
+            <select id="expire-reminder-mode" v-model="selectedExpireReminder" class="form-select">
               <option v-for="option in expireReminderOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              <option :value="CUSTOM_EXPIRE_REMINDER_VALUE">{{ trans.expireReminderCustom }}</option>
             </select>
+            <div v-if="showCustomExpireReminder" class="mt-2">
+              <label class="form-label" for="expire-reminder-days">{{ trans.expireReminderCustomDays }}</label>
+              <input id="expire-reminder-days" v-model="settings.expire_reminder" type="number" min="1" :max="EXPIRE_REMINDER_DAYS_MAX" step="1"
+                :class="['form-input', { 'input-invalid': hasExpireReminderError }]" :aria-invalid="hasExpireReminderError || undefined" aria-describedby="expire-reminder-help">
+              <p id="expire-reminder-help" :class="['text-sm', { 'text-danger': hasExpireReminderError }]" aria-live="polite">{{ expireReminderHelp }}</p>
+            </div>
           </div>
 
           <div class="form-group flex-1">
@@ -607,7 +614,7 @@
     </div>
 
     <div class="text-right mt-5">
-      <button @click="$emit('save-settings')" class="btn btn-primary btn-lg" :disabled="saving || hasPingNodeErrors">{{ saving ? '⏳' : '💾' }} {{ saving ? trans.saving : trans.saveConfig }}</button>
+      <button @click="$emit('save-settings')" class="btn btn-primary btn-lg" :disabled="saving || hasPingNodeErrors || hasExpireReminderError">{{ saving ? '⏳' : '💾' }} {{ saving ? trans.saving : trans.saveConfig }}</button>
     </div>
   </div>
 </template>
@@ -618,7 +625,7 @@ import HelpTooltip from '../../../components/HelpTooltip.vue'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
 import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
-import { RESOURCE_ALERT_RULES_MAX, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, normalizeResourceAlertThreshold, getResourceAlertThresholdMax } from '../../../../shared/notificationConfig.js'
+import { EXPIRE_REMINDER_DAYS_MAX, RESOURCE_ALERT_RULES_MAX, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, normalizeResourceAlertThreshold, getResourceAlertThresholdMax } from '../../../../shared/notificationConfig.js'
 
 const props = defineProps({
   trans: { type: Object, required: true },
@@ -692,7 +699,7 @@ const cspErrors = reactive({
 
 const offlineNotifyOptions = computed(() => [
   { value: '0', label: `${props.trans.disabled}` },
-  ...[3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30].map(minutes => {
+  ...[2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30].map(minutes => {
     const label = props.trans.notifyOfflineMinutes
       ? props.trans.notifyOfflineMinutes.replace('{minutes}', minutes)
       : `${minutes} min`
@@ -718,6 +725,31 @@ const expireReminderOptions = computed(() => [
     }
   })
 ])
+
+const CUSTOM_EXPIRE_REMINDER_VALUE = '__custom__'
+const manualCustomExpireReminder = ref(false)
+const selectedExpireReminder = computed({
+  get: () => {
+    const value = String(props.settings.expire_reminder ?? '0')
+    return manualCustomExpireReminder.value || !expireReminderOptions.value.some(option => option.value === value)
+      ? CUSTOM_EXPIRE_REMINDER_VALUE : value
+  },
+  set: value => {
+    manualCustomExpireReminder.value = value === CUSTOM_EXPIRE_REMINDER_VALUE
+    if (!manualCustomExpireReminder.value) props.settings.expire_reminder = value
+    else if (Number(props.settings.expire_reminder) === 0) props.settings.expire_reminder = '7'
+  }
+})
+const showCustomExpireReminder = computed(() => selectedExpireReminder.value === CUSTOM_EXPIRE_REMINDER_VALUE)
+const hasExpireReminderError = computed(() => {
+  if (!showCustomExpireReminder.value) return false
+  const value = props.settings.expire_reminder
+  const days = Number(value)
+  return String(value ?? '').trim() === '' || !Number.isInteger(days) || days < 1 || days > EXPIRE_REMINDER_DAYS_MAX
+})
+const expireReminderHelp = computed(() => props.trans.expireReminderDaysRange.replace('{max}', EXPIRE_REMINDER_DAYS_MAX))
+// Keep custom entry visible when typing through a preset (e.g. 1 → 12).
+watch(() => props.settings, () => { manualCustomExpireReminder.value = false })
 
 const longHistoryPointOptions = computed(() => (
   HISTORY.LONG_RANGE_POINT_OPTIONS.map(points => ({
@@ -979,3 +1011,11 @@ onBeforeUnmount(() => {
 
 defineExpose({ validateCspField, cspErrors, validatePingNodes, pingNodeErrors })
 </script>
+
+<style scoped>
+#offline-notify-minutes,
+#expire-reminder-mode,
+#expire-reminder-days {
+  min-height: 44px;
+}
+</style>

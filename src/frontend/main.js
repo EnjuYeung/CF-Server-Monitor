@@ -21,7 +21,7 @@ async function initApp() {
   const loadingText = document.querySelector('#loading .loading-text');
   if (loadingText) loadingText.textContent = `$ ${trans().initializing}`;
   await initConfig();
-  const result = await http.get('/api/config', { autoRedirect: false });
+  const result = await http.get('/api/config', { autoRedirect: false, timeoutMs: 15000 });
   if (result.error || !result.data) {
     const loading = document.getElementById('loading');
     if (loading) loading.textContent = trans().controllerUnavailable;
