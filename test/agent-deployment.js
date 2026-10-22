@@ -23,6 +23,7 @@ const legacyDirectory=process.env.AGENT_LEGACY_DIST ? resolve(process.env.AGENT_
 const oldVersion=legacyDirectory ? JSON.parse(await readFile(join(legacyDirectory,'manifest.json'),'utf8')).version : 'v1.0.99';
 const [oldMajor,oldMinor]=oldVersion.replace(/^v/,'').split('.').map(Number);
 const oldService=legacyDirectory&&oldMajor===1&&oldMinor<2 ? 'cf-probe' : 'jan-probe';
+const oldSupportsRemoval=oldMajor>1||(oldMajor===1&&oldMinor>=3);
 assert.notEqual(oldVersion,version,'Legacy fixture must precede the candidate release');
 const key='agent-deployment-fixture-secret';
 const adminPath='native-Agent-Deployment-92';
@@ -186,7 +187,7 @@ try{
     await verifyRemoved();
     return {http:true,offlineCommandPersisted:true,batchDelete:true,controllerRecreated:true,binaryRemoved:true,processStopped:true};
   });
-  if(legacyDirectory) await step('ND09','旧版兼容和手动卸载回退','安装修改前真实旧版，删除节点后等待一次 HTTP 上报，再手动卸载','旧版保持运行且不误删；新版临时卸载器可清理旧版',async()=>{
+  if(legacyDirectory&&!oldSupportsRemoval) await step('ND09','旧版兼容和手动卸载回退','安装修改前真实旧版，删除节点后等待一次 HTTP 上报，再手动卸载','旧版保持运行且不误删；新版临时卸载器可清理旧版',async()=>{
     const serverId=(await admin({action:'add',name:'Legacy deletion compatibility'})).body.id;
     const row=(await admin({action:'list'})).body.servers.find(s=>s.id===serverId);
     await admin({...row,action:'edit',connection_mode:'http',report_interval:30});

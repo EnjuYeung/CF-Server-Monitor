@@ -49,7 +49,7 @@ npm run geoip:download
 npm run build
 ```
 
-要求 Node.js 24.x（至少 24.11）、Go 1.26.8；Docker 自带构建工具链。启动隔离主控，再另开终端运行 `npm run dev:frontend`。Vite 默认 5173，代理后端 `http://localhost:8080`；其他测试端口用进程环境 `VITE_DEV_PROXY_TARGET`。
+要求 Node.js 24.x（至少 24.22.1）、Go 1.26.10；Docker 自带构建工具链。启动隔离主控，再另开终端运行 `npm run dev:frontend`。Vite 默认 5173，代理后端 `http://localhost:8080`；其他测试端口用进程环境 `VITE_DEV_PROXY_TARGET`。
 
 只重建前端可用 `npm run build:frontend`；完整交付仍用 `npm run build`。两者重建 dist，内置入口最终为 `dashboard.html`，资源为 `/static/`。Vite 预览不能代替主控注入配置和 CSP 后的验收。
 

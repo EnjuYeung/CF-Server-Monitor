@@ -1,6 +1,6 @@
 module github.com/EnjuYeung/CF-Server-Monitor/agent
 
-go 1.26.8
+go 1.26.10
 
 require (
 	github.com/prometheus-community/pro-bing v0.7.0

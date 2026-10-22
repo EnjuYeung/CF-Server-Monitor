@@ -1,5 +1,23 @@
 # 最近一次改动
 
+## Node / Go 安全基线升级（2026-10-22）
+
+- Docker 构建及运行锁定 Node 24.22.1，Node 最低版本同步至 24.22.1，CI 与中英文开发文档保持一致；包含 Brotli、Undici 7.30.1、OpenSSL 3.5.9 和 CA 安全修复。
+- Go 构建与模块基线升至 1.26.10，Agent 递增为 v1.3.1，保持 Linux amd64/arm64 两种程序、采集/协议、配置与历史归档；已有 v1.3.0 不被覆盖。
+- 新增真实 HTTP/2 上报/下载和 HTTPS/WSS 不可信证书拒绝测试；部署验收按旧版卸载能力选择 ND09，支持用真实 v1.3.0 完成更新验证。191 项 Node、Go vet/test、19+7 项验收、8 项部署和4项浏览器回归通过，生产副本验证通过。推送、上线及清理结果后续记录。
+
+## 近期运行时漏洞核验（2026-10-22）
+
+- 核对近 90 天 Node.js、Go、PHP 官方安全公告，并结合生产 Node 24.22.0、内置 Undici 7.29.1、Go 1.26.8 原生 Agent 的实际产物及调用路径记录适用性，资料见 `docs/security-runtime-advisories-2026-10-22.md`。
+- 确认出站 fetch 的自动 Brotli 解码、Undici 响应处理，以及 Agent 的 TLS 校验和 HTTP/2 客户端需要安全更新；区分未触发的接口、操作系统限制和已覆盖的旧公告。补充同机独立 FreshRSS 的未修复 PHP 包风险及官方 Debian 版本依据。
+- 完成只读版本/哈希/包依赖核对和临时进程的正常 Brotli 响应验证；没有漏洞攻击、代码升级或部署。结果与未测试范围记录于 TEST_REPORT.md，保留既有未提交文档内容。
+
+## archify 交互式系统架构图（2026-10-20）
+
+- 根据固定源码提交 6b754809e8bf 生成独立 HTML 架构图，涵盖反代与单进程边界、HTTP/WS 上报、AgentReports、看板发布、查询管理、SQLite 和通知调用链；补充地区库、Agent 分发/卸载、备份与停止行为说明。
+- 提供节点聚焦、30 处源码证据、搜索、路径追踪、缩放、明暗切换和图片/SVG 导出。图稿、规格及校验回执保存在 `.archify/architecture-server-monitor-20261020-193848/`，沿用本地忽略规则，未加入提交。
+- 完整构建、191 项 Node、Go vet/test、19 项主控及 7 项原生 Agent 验收通过；archify showcase 9/9 和真实浏览器门禁通过，6 项交互/导出检查通过，明暗截图及源码面板已实际查看。结果见 TEST_REPORT.md；运行与部署代码未改。
+
 ## 基础改进推送、生产发布与清理（2026-10-19）
 
 - 通过 SSH 将功能提交 b046f9f 推送 codex/self-hosted-native-agent 并核对远端 SHA；北京时间 16:50:56 使用已完整验收的 58c76d62665d 镜像上线 https://jm.zedy.cc，当前标签为 server-monitor:local / server-monitor:main-basics-20261019，Node 24.22.0、Agent v1.3.0。

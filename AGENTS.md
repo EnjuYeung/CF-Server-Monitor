@@ -8,7 +8,7 @@ Server Monitor 独立二开：Vue 3 看板、Node.js 24 单主控、SQLite WAL�
 
 开发先运行 npm ci、npm run geoip:download、npm run build。遵守 testing.md，先搭环境再实际验证；运行 npm run test:all 和 npm run test:acceptance。部署改动需实测。结果写 TEST_REPORT.md，改动写 changelog.md。架构和代码地图见 architecture.md、code_map.md。不提交密钥或测试产物。
 
-完整构建需要 Go 1.26.8；Docker 自带构建工具链。Agent 安装、更新或分发改动还需运行 npm run test:agent-deployment（先构建 server-monitor:agent-native 镜像），只使用隔离测试环境。
+完整构建需要 Go 1.26.10；Docker 自带构建工具链。Agent 安装、更新或分发改动还需运行 npm run test:agent-deployment（先构建 server-monitor:agent-native 镜像），只使用隔离测试环境。
 
 ## Agent skills
 

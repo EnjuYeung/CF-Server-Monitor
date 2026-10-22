@@ -1,6 +1,6 @@
 # 项目架构
 
-版本：3.0.0；更新时间：2026-10-19。全新安装、独立二开，不迁移 Workers/D1 数据。
+版本：3.0.0；更新时间：2026-10-22。全新安装、独立二开，不迁移 Workers/D1 数据。
 
 ## 部署结构
 
@@ -19,7 +19,7 @@ flowchart LR
 
 ## 同仓库原生 Agent 与分发
 
-`agent/` 纳入 cfsm-agent v1.0.16 源码和 MIT 许可，独立 Agent 版本 v1.3.0；具体来源由
+`agent/` 纳入 cfsm-agent v1.0.16 源码和 MIT 许可，独立 Agent 版本 v1.3.1；具体来源由
 `agent/UPSTREAM.md` 固定。保持原采集、探测、流量、HTTP/WS、配置协议和平台服务逻辑。
 `CONTROLLER_URL` 兼容 `WORKER_URL`，不要求 Workers 运行时。
 

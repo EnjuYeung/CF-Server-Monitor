@@ -75,4 +75,4 @@ Agent v1.2.0 的每日检查由 Go `testing/synctest` 推进 24/48/72 小时，�
 
 `test/agent-removal.test.js` 实连 HTTP/WS，覆盖在线删除、离线补发、重启保留、认证拒绝、同 UUID 恢复及批量删除回滚。Go 测试覆盖签名校验、普通 404 不卸载、HTTP/WS 停止、本地意图与自定义配置隔离、失败采样缓存上限。NA07 用真实前台 Agent 验证删除后停止和重启不采集；不在宿主机安装或卸载服务。
 
-部署 ND07–ND08 在隔离容器实测 WSS 自动卸载、HTTP 离线删除和主控重建；指定修改前真实 `AGENT_LEGACY_DIST` 时增加 ND09 旧版兼容及手动清理。可预建含 systemd、dbus-user-session、curl、ca-certificates、procps 的 Debian 测试镜像，通过 `AGENT_SYSTEMD_TEST_IMAGE` 启用 ND10–ND11。该可选测试使用独立 privileged 容器和私有 cgroup namespace，不挂载宿主 cgroup 或系统目录，验证真正的 systemd 系统服务及 cfsm 用户服务卸载。所有镜像及隔离环境在用例开始前准备。
+部署 ND07–ND08 在隔离容器实测 WSS 自动卸载、HTTP 离线删除和主控重建；指定修改前真实 `AGENT_LEGACY_DIST` 且该旧版早于 v1.3.0、不支持自动卸载时，增加 ND09 旧版兼容及手动清理；v1.3.0 及之后的真实旧版仍用于 ND02–ND03 实际升级验证。可预建含 systemd、dbus-user-session、curl、ca-certificates、procps 的 Debian 测试镜像，通过 `AGENT_SYSTEMD_TEST_IMAGE` 启用 ND10–ND11。该可选测试使用独立 privileged 容器和私有 cgroup namespace，不挂载宿主 cgroup 或系统目录，验证真正的 systemd 系统服务及 cfsm 用户服务卸载。所有镜像及隔离环境在用例开始前准备。

@@ -1,5 +1,59 @@
 # 最近一次测试报告
 
+## Node / Go 安全修复与发布准备（2026-10-22）
+
+本轮按授权升级 Node 24.22.1（内置 Undici 7.30.1、OpenSSL 3.5.9）及 Go 1.26.10，Agent 独立发布 v1.3.1。修改前在临时副本依次完成 npm ci、geoip:download 和完整 build；修改后使用官方新基础镜像提取的工具链重新安装、构建与验收。测试副本不读取生产 .env/数据库；生产数据副本验证另行使用受保护备份、network=none 和关闭调度，未向真实通知目标发送测试消息。保留原有未提交文档内容。
+
+| 编号 | 操作与预期 | 实际结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| SF01 | 最窄修复边界及独立兼容性检查 | fix-finding 的调查/候选复查各一次；Node 两个阶段锁 24.22.1，Go 构建与 go.mod 为 1.26.10，Agent v1.3.1；未改业务协议、TLS 验证、历史保留或自动更新策略。文档 Node 下限遗漏已修正 | 通过 |
+| SF02 | 隔离复现 Undici 进程退出并验证修复 | 两种超过五层的 Content-Encoding + 提前断连：旧 Node 24.22.0 子进程均 exit=1/unhandledError=true，新 Node 24.22.1 均 exit=0、fetch 拒绝被捕获、无未处理错误；正常 Brotli 响应可读取。仅回环独立子进程，未向生产发送载荷 | 通过 |
+| SF03 | Go 正常 HTTP/2 及 TLS 边界 | 新增 tls_transport_test.go：真实 TLS HTTP/2 POST 上报和下载成功，默认 HTTPS/WSS 拒绝自签名不可信证书；3 项通过。未关闭 HTTP/2 或放宽证书验证 | 通过 |
+| SF04 | 完整回归及主控/Agent 实际验收 | npm run test:all 退出 0：191 项 Node、Agent 配置、Go vet/test；npm run test:acceptance 退出 0：19 项主控、7 项原生 Agent | 通过 |
+| SF05 | 真正旧版升级、归档与安装卸载 | 先构建 server-monitor:agent-native，再使用生产保留的真实 v1.3.0 设置 AGENT_LEGACY_DIST，运行 npm run test:agent-deployment，ND01–ND08 全通过：v1.3.0→v1.3.1、TLS/WSS、配置/流量保留、主控重建、关闭自动更新、在线/离线卸载。ND09 只适用于不支持自动卸载的 <v1.3.0 旧版；修正此前无条件假设 | 通过 |
+| SF06 | 浏览器生命周期与权限回归 | npm run test:review-fixes-browser，RFB01–RFB04 全通过；真实浏览器的内置/最小主题同 UUID 重建与公开/私人切换保持 | 通过 |
+| SF07 | 最终镜像和两架构程序可追溯 | 镜像 sha256:2b2fdbf1db3699b92420c7769d039f2d195f4eedfc740419ae81028ed7e688a0；两种 Agent 与本地已验收构建逐字节一致，go version -m 均为 go1.26.10/CGO_ENABLED=0。amd64 SHA-256 f418a80f634ab0c8d3ccf79c8b57670f603c5c7b5ff98fd0aff094f4dceb9983；arm64 2ad395486c4b0309e40536913b5329cacf9040eb8054e3c193384c7b7443c292 | 通过 |
+| SF08 | 无网络生产副本使用新镜像启动 | 一致性备份 94,232,576 字节；9 个健康/页面/配置/列表/发布/新旧 manifest/后台入口均 200。16 节点、5 设置、16 实例、固定区间 47,329 条历史指纹不变，39 个旧文件保持，仅新增 4 个 v1.3.1 归档文件；integrity=ok、外键错误=0 | 通过 |
+
+原始证据在本轮私有临时目录（不纳入 Git），包含 baseline/install/build、runtime-trigger、test-all、acceptance、agent-deployment、browser-regression、candidate-image 与 data-before/data-copy。无网络副本验收脚本首次误用不存在的 /agent/version，已按实际接口改为 /agent/latest 后完整重跑通过；未修改产品路由。arm64 完成交叉编译、ELF/清单/构建信息及下载核对，未在 arm64 真机运行；可选真实 systemd 容器 ND10/ND11 未运行。本轮没有复现 Brotli RCE 或 Go 恶意证书/HTTP2 DoS，只验证官方修复运行时/标准库进入产物及正常协议兼容；不能把这些未执行项写作攻击复现通过。
+
+生产推送、部署、实际节点升级与清理在下一阶段执行，最终结果另记。
+
+## 近期 Node.js、Go、PHP 漏洞适用性核验（2026-10-22）
+
+本轮为公告、源码和运行产物核验，源码基点 `6b754809e8bf3fb9394be6acd932356b16c1d7c9`；详细依据见 `docs/security-runtime-advisories-2026-10-22.md`。保留本文件原有未提交内容。只读检查生产版本、文件哈希、进程和包元数据；无害响应解码验证在宿主临时目录使用复制的 Node 可执行文件、随机回环端口和独立进程进行，未使用生产配置、数据库或通知目标，临时目录自动删除。
+
+| 编号 | 操作与预期 | 实际结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| VS01 | 读取主控实际运行时，匹配最新官方安全版 | `docker exec jan-monitor node -p 'process.versions'`：Node 24.22.0、Undici 7.29.1、OpenSSL 3.5.8；官网 10 月 21 日修复版为 24.22.1 | 已核实：存在未修复版本 |
+| VS02 | 核对用于追踪的源码与生产相符 | 对本地与容器的 `src/server.js`、`src/services/notifications/delivery.js`、`src/services/geoipDatabase.js`、`src/handlers/frontend.js` 分别执行 SHA-256，四个文件逐一相同；并核对容器内置 fetch 的 `br → createBrotliDecompress` 分支 | 已核实 |
+| VS03 | 核对真正运行的 Agent，不只看 go.mod | 现有 Go 工具执行 `go version -m /proc/305141/exe`：Go 1.26.8、Linux amd64、CGO_ENABLED=0；进程为 `/usr/local/bin/jan-probe`，SHA-256 `9d98e1278f418161be86ec6065d3240b5a5b30bfe874fcf0ff59892ddd7e97e8` 与镜像 v1.3.0 清单一致；镜像 amd64/arm64 两个程序均包含 go1.26.8 构建信息 | 已核实：落后于 1.26.9 / 1.26.10 安全修复 |
+| VS04 | 隔离验证 fetch 是否在应用未直接调用 Brotli 时自动解码 | 从镜像复制 Node 到临时目录，启动只返回正常 Brotli 文本的本地 HTTP 服务，再用 fetch 读取。退出 0，输出 `node=v24.22.0`、`undici=7.29.1`、请求 `Accept-Encoding=gzip, deflate`、响应 `Content-Encoding=br`、`automaticBrotliDecode=true`、`maliciousPayload=false` | 通过：证明正常解码路径存在；不是漏洞利用复现 |
+| VS05 | 区分独立 x/net 模块和 Go 内置 HTTP/2 | 在 agent/ 使用现有 Go 1.26.8 执行 `GOTOOLCHAIN=local go list -deps ./cmd/cf-probe`；独立 x/net 为 bpf、icmp、ipv4/ipv6 和内部依赖，没有独立 `golang.org/x/net/http2`；标准库含 `net/http` 与 `vendor/golang.org/x/net/http2/hpack`。源码 `ForceAttemptHTTP2: true`、`tls.Client` 分别定位到出站 HTTP/2 与 WSS 路径 | 已核实：标准库须重新编译，不能只升级独立模块 |
+| VS06 | 核对 PHP 是否属于本项目，并检查已发现的同机 PHP 实例 | 本项目 Git 跟踪文件、Dockerfile、package.json 未发现 PHP 组成，主控容器无 php 命令。独立 `freshrss` 容器的 CLI 和 mod_php 均为 `8.4.24-1~deb13u1`，`apache2ctl -M` 返回 `php_module (shared)`；Debian 官方将此版本列为 CVE-2026-109618 / 109619 的 vulnerable，修复为 `8.4.27-1~deb13u1` | 项目不涉及 PHP；同机独立应用发现未修复版本 |
+| VS07 | 检查调查没有改变主控生命周期 | 调查前后镜像均 `58c76d62665d`，启动时间 `2026-10-19T08:50:56.626165185Z`，restart=0，结束检查 healthy；未重启 Agent 或修改任何服务配置 | 已核实 |
+
+范围限制：没有发送恶意压缩流、伪造证书或 DoS 载荷；未对全部远程 Agent、反代和同机应用做审计，未宣称成功利用、已被攻击或已修复。未读取生产密钥/数据库。仅新增调查资料与本次记录，未改运行代码，因此未执行 `npm ci`、`geoip:download`、`build`、`test:all`、`test:acceptance` 或 `test:agent-deployment`；既有回归结果不计作本轮升级验收。实际升级必须另行完成项目要求的隔离构建、回归和部署验收。
+
+## archify 交互式系统架构图（2026-10-20）
+
+新增本地独立 HTML 架构图，依据源码提交 `6b754809e8bf3fb9394be6acd932356b16c1d7c9` 追踪上报、查询、实时发布与通知链路；30 处节点源码引用经过固定提交校验。交付为 `.archify/architecture-server-monitor-20261020-193848/server-monitor.html`，规格及说明同目录。该目录沿用既有 `.git/info/exclude` 排除规则，未加入提交。
+
+测试前准备：从既有项目镜像只复制工具到忽略目录，使用 Node **24.22.0**、官方 Go **1.26.8**（下载 SHA-256 与已记录官方值一致）；先运行 `npm ci`、`npm run geoip:download`、`npm run build`，均退出 **0**。测试主控由验收程序在全新临时目录启动，通知只连接本地测试接收器。未读取生产配置或数据库，也未部署、提交或推送。
+
+| 编号 | 功能、操作与预期 | 实际结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| AG01 | 完整构建与回归：环境准备后运行 build、test:all，全部成功 | build 退出 0；191/191 Node、Agent 配置、Go vet/test 通过；日志 `output/test-results/archify-20261020-193848/{npm-ci,geoip-download,build,test-all}.log` | 通过 |
+| AG02 | 真实主控与原生 Agent 验收：HTTP、WS、SQLite、通知、重启与备份正常 | `npm run test:acceptance` 退出 0；主控 19/19、原生 Agent 7/7；`output/test-results/acceptance.json`、`output/test-results/agent-integration/native-acceptance.json` | 通过 |
+| AG03 | 规格、源码证据、HTML 产物与浏览器门禁一致 | 最终 finalize 退出 0；showcase 9/9、0 错误/警告；validate、deliver、严格 check、browser-check 全部通过；`.archify/architecture-server-monitor-20261020-193848/review-2/server-monitor.finalize-summary.json` | 通过 |
+| AG04 | 桌面视口与明暗/READ/Still 状态正常，无横向溢出 | 1440×900、1600×1000、1920×1080、2048×1320 自动检查通过；使用正常页面纵向滚动；同目录 review-2 下 browser-check 回执绑定最终 HTML SHA | 通过 |
+| AG05 | 实际交互：离线打开、查找与聚焦、源码、发布路径、缩放/复位、明暗切换、下载及手机包含 | 6/6；10 节点、14 关系、30 引用；AgentReports→RealtimeHub→浏览器追踪正常；真实 SVG 下载 169478 字节，DOM 中无临时聚焦/路径/来源覆盖层；390px/1440px 无横向溢出，pageErrors=[]；`output/test-results/archify-20261020-193848/viewer-interactions.json` | 通过 |
+| AG06 | 捕获并实际检查截图：节点、标签、交叉、源码面板与说明卡片可辨识 | visual-check 自动检查通过并生成四张明暗端点截图；实际查看 1440px 浅色、2048px 深色及交互截图 focus.png/cards.png。重排后交叉从 5 处降至 2 处，桥接区分、无穿过节点；人工目视通过，与自动 browser-check 分开记录 | 通过 |
+
+修正记录：第一稿触发桌面投影文字宽度限制，缩小右列节点宽度后通过；浏览器工具首次未自动发现 Chrome，显式设置 `ARCHIFY_CHROME` 后完整门禁通过。随后按工具建议只改节点位置做一次连接区域重排并重新 finalize。交互脚本的两处初始断言分别误把全图最短路径当作协议专用链、误把 SVG 样式选择器当作残留覆盖层；改为验证实际发布链及解析后的 SVG DOM 后 6/6 通过，未修改生成器或运行源码。
+
+规格 SHA-256：`a568b355d0605a2493f5cd06078842855ae6db5c3e0b89bde2f8aff0097da923`；HTML SHA-256：`6ac911e20125b8926b1df375b5f9a8562739dc98108940b30b4e46c6deb2af9b`。人工视觉状态 `passed`，连接重排 `correction_rounds: 1`。路径探测是图关系最短路径，具体 HTTP / WS 执行顺序以边标签与说明卡片为准。仅生成架构资料，部署和 Agent 安装/更新/分发实现未改，未运行部署专项。
+
 ## main 基础改进生产发布、推送与清理（2026-10-19）
 
 按本次授权于北京时间 **16:50:56** 发布到 https://jm.zedy.cc。功能提交 **`b046f9f1bd84b1084e53584b8ae54b5c45b22635`** 已通过既有 SSH 认证推送 `codex/self-hosted-native-agent` 并核对远端 SHA；本发布记录继续同步同一分支。生产镜像为 **`sha256:58c76d62665d2d8c50aa5fe6ed9136b6b2270d323a46e6a607560edc5775ddb7`**，标签 `server-monitor:local`、`server-monitor:main-basics-20261019`，运行 Node **24.22.0**、Agent **v1.3.0**。

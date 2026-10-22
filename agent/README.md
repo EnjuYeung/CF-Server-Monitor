@@ -1,7 +1,7 @@
 # Native Agent
 
 本目录直接纳入上游 **cfsm-agent v1.0.16** 的 Go 源码和测试，原始提交与许可见
-[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.3.0**。
+[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.3.1**。
 `UPSTREAM_README.md` 只保留上游功能说明和来源，安装与更新请使用本文。
 
 ## 运行结构与功能
@@ -27,7 +27,7 @@ Synology 的安装方式和路径保持兼容。FreeBSD 专用采集代码已删
 
 ## 构建
 
-使用 `go.mod` 要求的 Go 工具链（当前 1.26.8）。仓库根目录执行：
+使用 `go.mod` 要求的 Go 工具链（当前 1.26.10）。仓库根目录执行：
 
 ```sh
 npm run build                  # 前端 + 全部 2 种 Linux Agent 程序
@@ -61,7 +61,7 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 
 脚本自动识别 OS/CPU，确认属于上述两个 Linux 目标后才下载并校验程序，再调用原生安装器。
 Linux 专用 cfsm 用户的准备步骤继续由后台生成，其他 Linux 安装方式的权限要求沿用原版。
-`--install-version=v1.3.0` 指定主控已提供的版本；留空选最新稳定版。
+`--install-version=v1.3.1` 指定主控已提供的版本；留空选最新稳定版。
 `--download-url=https://mirror.example.com/agent` 覆盖下载源并保存到本地 `DOWNLOAD_URL`，用于后续自动更新，
 不会改变指标上报目的地。直接执行二进制 `jan-probe install ...` 也受支持。
 

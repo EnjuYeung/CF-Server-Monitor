@@ -18,7 +18,7 @@ Enable 2FA in Settings → Security using your current password, then scan the Q
 
 Download a consistent database snapshot in Admin → Database → Download database backup. Stop the controller before restoring the snapshot as `data/monitor.sqlite`, using a fresh data directory without stale WAL/SHM files. Keep the corresponding `.env` separately. No automatic backup or online restore is provided.
 
-Development requires Node.js 24.11+ (24.x) and Go 1.26.8: run `npm ci`, `npm run geoip:download`, `npm run build`, then `npm start`. Validate with `npm run test:all` and `npm run test:acceptance`.
+Development requires Node.js 24.22.1+ (24.x) and Go 1.26.10: run `npm ci`, `npm run geoip:download`, `npm run build`, then `npm start`. Validate with `npm run test:all` and `npm run test:acceptance`.
 
 GeoIP updates run in the background at startup and every 24 hours, requesting the current UTC month's DB-IP Country Lite database. Verified downloads are stored in `data/geoip/dbip-country-lite.mmdb` and loaded immediately for subsequent Agent reports. Unchanged files are not rewritten; failed downloads or writes retain the current database and retry the next day. Restarts select the newer valid bundled or persisted database. The data directory preserves updates across container recreation; SQLite backups do not include the downloadable GeoIP database.
 
