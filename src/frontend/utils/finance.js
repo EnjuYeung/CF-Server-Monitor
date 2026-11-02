@@ -223,16 +223,19 @@ export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANG
     if (priceCNY <= 0) continue
 
     summary.configuredCount++
-    summary.totalValueCNY += priceCNY
     summary.monthlyAverageCostCNY += calculateMonthlyAverageCostCNY(server, priceCNY)
 
     const expireDate = String(server?.expire_date || server?.expired_at || '').trim()
     if (!expireDate) {
       summary.missingExpireCount++
+      // 没有到期日无法按剩余时长折算，总价值按单个计费周期计入。
+      summary.totalValueCNY += priceCNY
       continue
     }
 
+    // 单价 ×（剩余时长 ÷ 计费周期）：预付多个周期不封顶，总价值与剩余价值同口径。
     const remainingValue = calculateRemainingValueCNY(server, priceCNY, now)
+    summary.totalValueCNY += remainingValue
     if (remainingValue <= 0) summary.expiredCount++
     summary.remainingValueCNY += remainingValue
   }
@@ -256,7 +259,7 @@ export function calculateRemainingValueCNY(server, priceCNY, now = Date.now()) {
   const billingCycleMs = getBillingCycleDays(server) * MS_PER_DAY
   if (billingCycleMs <= 0) return priceCNY
 
-  return Math.min(priceCNY, priceCNY * (diffMs / billingCycleMs))
+  return priceCNY * (diffMs / billingCycleMs)
 }
 
 // The dashboard snapshot already follows the server order saved in admin.

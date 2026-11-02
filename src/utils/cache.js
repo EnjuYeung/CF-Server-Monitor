@@ -8,6 +8,7 @@
  */
 
 import { clearAppearanceSettingsCache, clearSiteSettingsCache, debug } from './settings.js';
+import { METRICS_HISTORY_CACHE_MAX_ENTRIES, SERVER_DETAIL_CACHE_MAX_ENTRIES } from './config.js';
 
 const SERVERS_LIST_TTL = 120 * 1000;
 let serversListCache = null;
@@ -15,6 +16,15 @@ let serversListCache = null;
 const metricsHistoryCache = new Map();
 
 const serverDetailCache = new Map();
+
+// 超限时按写入顺序淘汰，避免额外定时任务。
+function setCacheEntry(cache, key, entry, maxEntries) {
+  cache.delete(key);
+  cache.set(key, entry);
+  while (cache.size > maxEntries) {
+    cache.delete(cache.keys().next().value);
+  }
+}
 
 export function getCacheDuration(hours) {
   if (hours >= 48) {
@@ -95,7 +105,7 @@ export async function getServerDetail(db, id, includeHidden = false) {
   const server = await db.prepare(`SELECT servers.*, instances.instance_id FROM servers
     LEFT JOIN server_instances AS instances ON instances.server_id=servers.id WHERE servers.id = ?`).bind(id).first();
 
-  serverDetailCache.set(id, { data: server, time: now });
+  setCacheEntry(serverDetailCache, id, { data: server, time: now }, SERVER_DETAIL_CACHE_MAX_ENTRIES);
   debug('服务器详情缓存更新');
   
   if (!server) {
@@ -117,12 +127,21 @@ function getCacheKey(serverId, hours, columns, samplePoints = null) {
 
 export function getMetricsHistoryCache(serverId, hours, columns, samplePoints = null) {
   const key = getCacheKey(serverId, hours, columns, samplePoints);
-  return metricsHistoryCache.get(key);
+  const cached = metricsHistoryCache.get(key);
+  if (cached && Date.now() >= cached.expiresAt) {
+    metricsHistoryCache.delete(key);
+    return undefined;
+  }
+  return cached;
 }
 
 export function setMetricsHistoryCache(serverId, hours, columns, data, samplePoints = null) {
   const key = getCacheKey(serverId, hours, columns, samplePoints);
-  metricsHistoryCache.set(key, { data, timestamp: Date.now() });
+  const now = Date.now();
+  for (const [cachedKey, cached] of metricsHistoryCache) {
+    if (now >= cached.expiresAt) metricsHistoryCache.delete(cachedKey);
+  }
+  setCacheEntry(metricsHistoryCache, key, { data, expiresAt: now + getCacheDuration(hours) }, METRICS_HISTORY_CACHE_MAX_ENTRIES);
 }
 
 export function clearMetricsHistoryCache(serverId) {

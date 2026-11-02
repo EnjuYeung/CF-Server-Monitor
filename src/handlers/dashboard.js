@@ -6,6 +6,7 @@ import { getAllServers, getServerDetail } from '../utils/cache.js';
 import { mergeMetricsIntoServer, coerceNumericMetricFields } from '../utils/metrics.js';
 import { normalizeLongHistoryPoints } from '../utils/settings.js';
 import { createSuccessResponse, createBadRequestResponse, createNotFoundResponse } from '../utils/errors.js';
+import { isValidUUID } from '../services/serverInput.js';
 import {
   DASHBOARD_LATENCY_WINDOW_HOURS,
   DASHBOARD_LATENCY_WINDOW_POINTS,
@@ -98,7 +99,7 @@ export async function handleServerAPI(request, env, sys) {
   
   if (!id) return createBadRequestResponse('Missing ID');
   
-  const server = await getServerDetail(env.DB, id, isLoggedIn);
+  const server = isValidUUID(id) ? await getServerDetail(env.DB, id, isLoggedIn) : null;
   if (!server) return createNotFoundResponse('Server not found');
   
   const [latestMetrics, realtimeState] = await Promise.all([

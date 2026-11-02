@@ -1,4 +1,4 @@
-import { clearAllCaches, getMetricsHistoryCache, setMetricsHistoryCache, getCacheDuration } from '../utils/cache.js';
+import { clearAllCaches, getMetricsHistoryCache, setMetricsHistoryCache } from '../utils/cache.js';
 import { normalizeLongHistoryPoints, DEFAULT_LONG_HISTORY_POINTS } from '../utils/settings.js';
 import { attachDiskMetricsObject, flattenDiskMetrics, isDisabledProbeMetric, normalizeProbeMetricRow } from '../utils/metrics.js';
 import { createHistoryTableSql, HISTORY_INSERT_COLUMNS, HISTORY_TABLE_COLUMNS } from '../utils/historyFields.js';
@@ -112,7 +112,7 @@ export async function getMetricsHistory(db, serverId, hours, columns, server = n
   if (!(queryHours > 0)) throw new Error('Invalid history range');
   const points = queryHours > 1 ? Number(normalizeLongHistoryPoints(longHistoryPoints)) : 160;
   const cached = getMetricsHistoryCache(serverId, queryHours, columns, points);
-  if (cached && Date.now() - cached.timestamp < getCacheDuration(queryHours)) return cached.data;
+  if (cached) return cached.data;
   const now = Date.now(); const start = now - queryHours * 3600000;
   const interval = Math.max(1000, Math.ceil((now - start + 1) / points));
   let rows;

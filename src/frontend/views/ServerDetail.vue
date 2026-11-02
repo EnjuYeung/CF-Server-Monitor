@@ -358,13 +358,13 @@ import { fetchServerDetail, fetchAllHistory, fetchConfig, formatBytes, isAdminLo
 import { getTrafficUsageBytes } from '../composables/useServerCardData'
 import { getPublicAssetUrl } from '../utils/config.js'
 import Chart from 'chart.js/auto'
-import 'chartjs-adapter-date-fns'
 import { t, currentLang, useTranslation } from '../utils/i18n'
 import { CHART, HISTORY } from '../utils/constants'
 import { formatDateTime, normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js'
 import useTheme from '../composables/useTheme'
 import { isDisabledProbeMetric } from '../utils/server.js'
 import { resolvePlaybackCursor } from '../utils/playback.js'
+import { buildLiveStatusData, getLiveChartTime } from '../utils/liveStatus.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -1286,7 +1286,7 @@ const loadAllHistory = async (hours) => {
         clearDiskIoChart()
         hasDiskIoData.value = false
         if (hasValidDiskIoPayload(server.value) && server.value.last_updated) {
-          appendDiskIoChart(server.value, new Date(server.value.last_updated).getTime())
+          appendDiskIoChart(server.value, getLiveChartTime(server.value))
         }
       }
       updateChartDataset(charts.proc, 0, allData, fieldAccessor('processes'))
@@ -1461,20 +1461,10 @@ const getReplaySampleData = (sample) => {
   return sample.data || sample.payload || sample.metrics || null
 }
 
-const buildLiveStatusData = (event) => {
-  const receiveTs = Date.now()
-  return {
-    ...event.data,
-    sample_timestamp: event.ts,
-    last_updated: receiveTs,
-    timestamp: receiveTs
-  }
-}
-
-const scheduleLatestReportReplay = (event, delay) => {
+const scheduleLatestReportReplay = (event, delay, reportTs) => {
   const timer = setTimeout(() => {
     latestReportReplayTimers.delete(timer)
-    fetchCurrentStatus(buildLiveStatusData(event), {
+    fetchCurrentStatus(buildLiveStatusData(event, reportTs), {
       mergeMode: 'sample',
       chartMode: 'sample'
     })
@@ -1503,17 +1493,17 @@ const replayReportUpdate = (update, { messageTs = Date.now(), replayCachedReport
   const events = toReplayEvents(update, messageTs)
   if (events.length === 0) return
 
+  const reportTs = normalizeMetricTimestamp(update.reportTs ?? update.report_timestamp, messageTs)
   const shouldReplaySamples = isRealtimeHistoryRange()
   if (includeReportUpdate) {
     const latestEvent = events[events.length - 1]
-    fetchCurrentStatus(buildLiveStatusData(latestEvent), {
+    fetchCurrentStatus(buildLiveStatusData(latestEvent, reportTs), {
       mergeMode: shouldReplaySamples ? 'report' : 'all',
       chartMode: 'report'
     })
   }
   if (!shouldReplaySamples) return
 
-  const reportTs = normalizeMetricTimestamp(update.reportTs ?? update.report_timestamp, messageTs)
   const reportAge = Number(update.reportAgeMs)
   const reportAgeMs = Math.max(0, Number.isFinite(reportAge)
     ? reportAge
@@ -1534,12 +1524,12 @@ const replayReportUpdate = (update, { messageTs = Date.now(), replayCachedReport
   }
 
   if (immediateEvent) {
-    scheduleLatestReportReplay(immediateEvent, 0)
+    scheduleLatestReportReplay(immediateEvent, 0, reportTs)
   }
 
   for (const event of futureEvents) {
     const delay = Math.max(0, Math.min(event.ts - playbackStartTs, LATEST_REPORT_MAX_REPLAY_DELAY))
-    scheduleLatestReportReplay(event, delay)
+    scheduleLatestReportReplay(event, delay, reportTs)
   }
 }
 
@@ -1660,7 +1650,7 @@ const fetchCurrentStatus = async (incomingData, options = {}) => {
     syncProbeChartVisibility()
 
     if (data.last_updated && chartsReady.value && isRealtimeHistoryRange()) {
-      const dataTimestamp = new Date(data.last_updated).getTime()
+      const dataTimestamp = getLiveChartTime(data)
       if (chartMode === 'sample' || chartMode === 'all') appendRealtimeSampleCharts(data, dataTimestamp)
       if (chartMode === 'report' || chartMode === 'all') appendReportChartsThrottled(data, dataTimestamp)
     }

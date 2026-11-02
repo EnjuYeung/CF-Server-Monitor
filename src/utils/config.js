@@ -6,6 +6,10 @@ export const DEFAULT_SITE_TITLE = 'Server Monitor';
 export const SITE_SETTINGS_CACHE_TTL_MS = 120 * 1000;
 export const JWT_SECRET_MIN_LENGTH = 32;
 
+// 内存缓存容量：主控进程长期运行，历史查询包含整组采样数据，使用更小的条目上限。
+export const SERVER_DETAIL_CACHE_MAX_ENTRIES = 1000;
+export const METRICS_HISTORY_CACHE_MAX_ENTRIES = 200;
+
 // 首页三网延迟/丢包小窗口：影响 /api/servers 的 servers[].ping/loss 抽样，并通过 /api/config 暴露给主题。
 export const DASHBOARD_LATENCY_WINDOW_POINTS = 20;
 export const DASHBOARD_LATENCY_WINDOW_HOURS = 2;

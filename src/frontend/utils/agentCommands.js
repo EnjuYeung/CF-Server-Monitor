@@ -1,5 +1,3 @@
-const hasCorrectionValue = (value) => value !== null && value !== undefined && value !== ''
-
 const quotePosixShellArg = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`
 
 
@@ -61,35 +59,19 @@ const buildInstallAsCfsmCommand = (command, runStep, trans) => {
 }
 
 export const buildAgentInstallCommand = (options, trans = {}) => {
-  const { selectedApiBase, targetOs, installMode, copyServerId, apiSecret, collectInterval, reportInterval, connectionMode, pingMode, resetDay, autoUpdate, customCt, customCu, customCm, customBd, node1, node2, node3, node4, explicitEmptyNodes, networkInterface, rxCorrection, txCorrection } = options
+  const { selectedApiBase, targetOs, installMode, copyServerId, apiSecret, autoUpdate } = options
   const HOST = selectedApiBase
   const downloadBase = `${HOST}/agent`
   const isDedicatedUserInstall = targetOs === 'linux' && installMode === 'cfsm-user'
+  // 采集间隔、连接模式、探测节点、网卡和流量校正都由主控在首次上报时下发，命令只保留连接主控所需的参数。
   const params = [
     'install',
     `--download-url=${downloadBase}`,
     `-id=${copyServerId}`,
     `-secret=${apiSecret}`,
     `-url=${HOST}/update`,
-    `-collect_interval=${collectInterval}`,
-    `-interval=${reportInterval}`,
-    `-connection_mode=${connectionMode}`,
-    `-ping_mode=${(isDedicatedUserInstall ? 'tcp' : pingMode)}`,
-    `-reset_day=${resetDay ?? 1}`,
     `-auto_update=${autoUpdate ? 1 : 0}`
   ]
-  const nodes = [
-    ['ct', 'custom_ct', customCt], ['cu', 'custom_cu', customCu],
-    ['cm', 'custom_cm', customCm], ['bd', 'custom_bd', customBd],
-    ['node_1', 'node_1', node1], ['node_2', 'node_2', node2],
-    ['node_3', 'node_3', node3], ['node_4', 'node_4', node4]
-  ]
-  for (const [flag, field, value] of nodes) {
-    if (value || explicitEmptyNodes[field]) params.push(`-${flag}=${value}`)
-  }
-  if (networkInterface) params.push(`-interface=${networkInterface}`)
-  if (hasCorrectionValue(rxCorrection)) params.push(`-rx_correction=${rxCorrection}`)
-  if (hasCorrectionValue(txCorrection)) params.push(`-tx_correction=${txCorrection}`)
   const scriptUrl = `${HOST}/agent/install.sh`
   const installCommand = `curl -fsSL ${quotePosixShellArg(scriptUrl)} | sh -s -- ${params.map(quotePosixShellArg).join(' ')}`
   return isDedicatedUserInstall ? buildInstallAsCfsmCommand(installCommand, trans.nonRootInstallRunStep, trans) : installCommand

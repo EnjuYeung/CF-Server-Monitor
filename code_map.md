@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-10-19；版本：3.0.0。
+更新时间：2026-11-03；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -21,14 +21,16 @@
 | 看板与节点详情（条形图、环形图、列表） | src/handlers/dashboard.js | src/frontend/views/Dashboard.vue、ServerDetail.vue；视图偏好：src/frontend/utils/displayMode.js；A05、B03 |
 | 首页快照、回放、三种时间、订阅及恢复/停止 | src/frontend/state/dashboardState.js | composables/useDashboardState.js 浏览器 adapter、utils/api.js/http.js 传输；test/dashboard-state.test.js 公共接口契约、frontend-live-socket.test.js；A05、DS01–DS17 |
 | 首页多来源同 UUID、删除后旧包隔离 | src/frontend/state/dashboardState.js、views/Dashboard.vue；src/shared/serverIdentity.js、database/schema.js | 按来源 + UUID 隔离，用持久实例区分重建，清旧指标/回放/订阅；REST 401 清受限来源；test/review-fixes.test.js RF02–RF05、dashboard-state.test.js |
-| 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；test/agent-commands.test.js；ND01–ND06 |
+| 后台服务器表单与一键安装命令 | src/frontend/utils/serverForm.js、agentCommands.js | admin/index.vue、CopyCommandModal.vue、EditServerModal.vue；命令只含连接参数，节点配置由主控首次上报时下发；test/agent-commands.test.js；ND01–ND06、ND12 |
 | 服务器标签、独立色表与语法帮助 | src/shared/serverTags.js | serverInput.js 统一保存规则；ServerTags.vue 统一渲染；ServerTagsHelp.vue 复用 HelpTooltip；test/server-tags.test.js |
-| 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；test/server-tags.test.js；TC03、FS01–FS04 |
+| 财务汇总与逐台剩余价值 | src/frontend/utils/finance.js、views/Dashboard.vue | 仅按有效价格计算，零价免费，不依赖标签；按剩余时长折算且不封顶，总价值同口径；test/server-tags.test.js；TC03、FS01–FS04、DV04 |
 | 首页顺序、分组和地区筛选 | src/frontend/views/Dashboard.vue | src/utils/cache.js 的 sort_order 升序；前端连续展示、地区和分组各自多选取并集，两类筛选取交集，空选择不限；src/frontend/styles/main.css；G01–G08、MS01–MS12 |
 | 首页列表按主机名/地区代码排序 | src/frontend/utils/listSort.js、views/Dashboard.vue | 两列列头升序/降序/默认循环；主机名自然数、忽略大小写、中文拼音；地区空值/XX 双向置底；同值保留快照默认顺序，卡片继续默认顺序；浏览器 monitor_list_sort 偏好；test/dashboard-sort.test.js、dashboard-sort-browser.js；LS01–LS11 |
 | 详情返回后的延迟图表重绘 | src/frontend/views/ServerDetail.vue | 历史加载排队的 animation frame 检查图表是否已销毁；dashboard-sort-browser.js LS06 暂停真实重绘帧、返回首页后释放，验证无空图表 resize 异常 |
+| 详情页最后更新与图表时间 | src/frontend/utils/liveStatus.js、views/ServerDetail.vue | last_updated 是主控接收时间，sample_timestamp 定位图表；test/live-status.test.js、display-values-browser.js DV01–DV03 |
 | 中/英/日文及默认语言 | src/frontend/utils/i18n.js、src/frontend/utils/locales/ja.js | src/utils/language.js、settings.js；TerminalHeader.vue（语言/主题方形循环按钮）、SettingsPanel.vue；test/frontend-i18n.test.js、UI07–UI08、A02b、A15 |
 | 历史曲线与采样 | src/index.js、src/database/schema.js | 超过 1 小时沿用现有索引逐桶取最后完整行；src/utils/historyFields.js、metrics.js；test/history-query.test.js；A07、A14、UP02–UP03 |
+| 服务器详情与历史内存缓存 | src/utils/cache.js、src/utils/config.js | 详情 1000 条、历史 200 条，超限按写入顺序淘汰，写入历史时清理过期项；公开接口先校验 UUID；test/cache-limits.test.js CL01–CL06 |
 | 看板延迟实时窗口与柱图 | src/frontend/utils/latencyWindow.js、state/dashboardState.js | utils/dashboardSnapshot.js 根据持久采样时间补取；composables/useServerCardData.js、components/ServerLatencyPanel.vue；styles/main.css 固定 10px 柱高；test/dashboard-latency-window.test.js、frontend-latency-window.test.js；A05、L01–L07 |
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
@@ -38,7 +40,7 @@
 | 自定义到期提醒与离线 2 分钟选项 | src/frontend/views/admin/components/SettingsPanel.vue | 预设/自定义切换、稳定输入焦点、整数范围提示、中英日标签；test/settings-browser.js AS01–AS04 验证真实保存、刷新、明暗/手机与键盘 |
 | 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
-| 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点；UI08–UI10、UP06 |
+| 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点、保存栏吸附视口底部；UI08–UI10、UP06、AS07 |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | 可选 timeoutMs，启动配置 15 秒覆盖正文；test/frontend-http.test.js HT01–HT06 验证超时/取消/分来源认证；test/settings-browser.js AS05–AS06 验证真实启动超时；frontend-live-socket.test.js、frontend-api-base.test.js |
 | 前端 HTML、第三方主题与 CSP | src/handlers/frontend.js、src/utils/csp.js | theme-develop.md；主题商店及 /theme 清单接口已移除 |
 | 第三方主题开发参考与专项验收 | examples/theme-minimal/；test/theme-contract.test.js、theme-acceptance.js、review-fixes-browser.js | theme-develop.md 统一入口；公开/私人、2FA、实时/历史、hash 产物、TLS/CORS 与隔离浏览器；npm run test:theme、test:review-fixes-browser |
@@ -58,6 +60,7 @@
 - `npm run test:review-fixes-browser`：内置看板和最小主题的真实浏览器重建及权限切换；可用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE 指定独立测试工具，REVIEW_EVIDENCE_DIR 指定证据目录。
 - `npm run test:dashboard-sort`：隔离主控、SQLite 和真实浏览器的列表排序、筛选、偏好持久化、资料变化、键盘及桌面/手机明暗验收；复用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE，DASHBOARD_SORT_EVIDENCE_DIR 指定证据目录。
 - `npm run test:settings-browser`：隔离主控、SQLite、本地通知与代理、真实浏览器的自定义天数、旧配置、离线选项、中英日、明暗/手机、键盘和两种 15 秒启动超时；复用浏览器工具变量，SETTINGS_EVIDENCE_DIR 指定证据目录。
+- `npm run test:display-values`：隔离主控、SQLite 和真实浏览器验证详情页最后更新、图表绘制及财务金额；复用浏览器工具变量，DISPLAY_VALUES_EVIDENCE_DIR 指定证据目录。
 - `test/credential-change.test.js`：密码撤销、多种令牌入口、重启、事务回滚及状态保持。
 - `test/agent-config.js`：Agent 配置兼容与规范化。
 - `test/load.js`：明确指定的空测试主控，50 Agent / 10 看板、60 秒负载；拒绝非空数据库。

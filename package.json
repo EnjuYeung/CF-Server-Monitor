@@ -20,6 +20,7 @@
     "test:review-fixes-browser": "node test/review-fixes-browser.js",
     "test:dashboard-sort": "node test/dashboard-sort-browser.js",
     "test:settings-browser": "node test/settings-browser.js",
+    "test:display-values": "node test/display-values-browser.js",
     "test:agent-acceptance": "node test/agent-acceptance.js",
     "test:agent-deployment": "node test/agent-deployment.js",
     "preview": "vite preview"
@@ -42,7 +43,6 @@
   },
   "dependencies": {
     "chart.js": "^4.4.0",
-    "chartjs-adapter-date-fns": "^3.0.0",
     "maxmind": "^5.0.0",
     "proxy-addr": "^2.0.7",
     "qrcode": "^1.5.4",

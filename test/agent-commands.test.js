@@ -8,14 +8,14 @@ import { createServerForm, buildServerFormPayload } from '../src/frontend/utils/
 import { validatePingNode } from '../src/shared/pingNode.js';
 import { validatePingNode as agentValidatePingNode } from '../src/utils/agentConfig.js';
 
-test('native commands remain shell-safe for all supported install modes', () => {
-  for (const targetOs of ['linux', 'unix']) for (const installMode of ['current-user', 'cfsm-user']) {
-    const command = buildAgentInstallCommand({ selectedApiBase: 'https://monitor.example', copyServerId: 'fixture-id', apiSecret: "fixture'\"$` secret", targetOs, installMode, collectInterval: 2, reportInterval: 180, connectionMode: 'auto', pingMode: 'icmp', resetDay: 1, autoUpdate: true, customCt: '', node1: '[2001:db8::1]:443', explicitEmptyNodes: { custom_ct: true }, rxCorrection: 0, txCorrection: 10 }, {});
+test('native commands remain shell-safe and carry only local connection settings', () => {
+  for (const targetOs of ['linux', 'unix']) for (const installMode of ['current-user', 'cfsm-user']) for (const [autoUpdate, flag] of [[true, 1], [false, 0]]) {
+    const command = buildAgentInstallCommand({ selectedApiBase: 'https://monitor.example', copyServerId: 'fixture-id', apiSecret: "fixture'\"$` secret", targetOs, installMode, autoUpdate }, {});
     assert.equal(spawnSync('sh', ['-n'], { input: command, encoding: 'utf8' }).status, 0);
     assert.match(command, /\/agent\/install\.sh/);
-    assert.match(command, /-ct=/);
-    assert.match(command, /-node_1=\[2001:db8::1\]:443/);
-    assert.match(command, /-rx_correction=0/);
+    for (const argument of ['--download-url=https://monitor.example/agent', '-id=fixture-id', '-url=https://monitor.example/update', `-auto_update=${flag}`]) assert.ok(command.includes(argument), argument);
+    // The controller delivers these on the first report; a copied command must not freeze them.
+    for (const name of ['collect_interval', 'interval', 'connection_mode', 'ping_mode', 'reset_day', 'ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4', 'interface', 'rx_correction', 'tx_correction']) assert.ok(!command.includes(`-${name}=`), name);
     assert.doesNotMatch(command, /cf-probe|cf-server-monitor|install-mac\.sh/);
     const uninstall = buildAgentUninstallCommand('https://monitor.example', targetOs, installMode, {});
     assert.equal(spawnSync('sh', ['-n'], { input: uninstall, encoding: 'utf8' }).status, 0);

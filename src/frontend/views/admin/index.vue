@@ -648,7 +648,6 @@ const node1 = ref('')
 const node2 = ref('')
 const node3 = ref('')
 const node4 = ref('')
-const explicitEmptyNodes = ref({})
 const networkInterface = ref('')
 const resetDay = ref(1)
 const rxCorrection = ref('')
@@ -1097,11 +1096,7 @@ const addServer = async () => {
 
 const resolveServerPingNode = (server, field) => {
   const value = server?.[field]
-  const explicitEmpty = value === 0 || value === '0'
-  return {
-    value: explicitEmpty ? '' : (value || settings.value[field] || ''),
-    explicitEmpty
-  }
+  return value === 0 || value === '0' ? '' : (value || settings.value[field] || '')
 }
 
 const getUninstallCommand = () => buildAgentUninstallCommand(selectedApiBase.value, deleteTargetOs.value, deleteInstallMode.value, trans.value)
@@ -1117,28 +1112,14 @@ const copyCmd = (serverId) => {
   wssReportInterval.value = server?.wss_report_interval || 2
   connectionMode.value = getEffectiveConnectionMode(server?.connection_mode)
   pingMode.value = getEffectivePingMode(server?.ping_mode)
-  const customCtNode = resolveServerPingNode(server, 'custom_ct')
-  const customCuNode = resolveServerPingNode(server, 'custom_cu')
-  const customCmNode = resolveServerPingNode(server, 'custom_cm')
-  const customBdNode = resolveServerPingNode(server, 'custom_bd')
-  const node1Value = resolveServerPingNode(server, 'node_1')
-  const node2Value = resolveServerPingNode(server, 'node_2')
-  const node3Value = resolveServerPingNode(server, 'node_3')
-  const node4Value = resolveServerPingNode(server, 'node_4')
-  explicitEmptyNodes.value = {
-    custom_ct: customCtNode.explicitEmpty, custom_cu: customCuNode.explicitEmpty,
-    custom_cm: customCmNode.explicitEmpty, custom_bd: customBdNode.explicitEmpty,
-    node_1: node1Value.explicitEmpty, node_2: node2Value.explicitEmpty,
-    node_3: node3Value.explicitEmpty, node_4: node4Value.explicitEmpty
-  }
-  customCt.value = customCtNode.value
-  customCu.value = customCuNode.value
-  customCm.value = customCmNode.value
-  customBd.value = customBdNode.value
-  node1.value = node1Value.value
-  node2.value = node2Value.value
-  node3.value = node3Value.value
-  node4.value = node4Value.value
+  customCt.value = resolveServerPingNode(server, 'custom_ct')
+  customCu.value = resolveServerPingNode(server, 'custom_cu')
+  customCm.value = resolveServerPingNode(server, 'custom_cm')
+  customBd.value = resolveServerPingNode(server, 'custom_bd')
+  node1.value = resolveServerPingNode(server, 'node_1')
+  node2.value = resolveServerPingNode(server, 'node_2')
+  node3.value = resolveServerPingNode(server, 'node_3')
+  node4.value = resolveServerPingNode(server, 'node_4')
   networkInterface.value = server?.interface || ''
   resetDay.value = server?.reset_day ?? 1
   rxCorrection.value = server?.rx_correction ?? ''
@@ -1153,24 +1134,7 @@ const getCustomInstallCommand = () => buildAgentInstallCommand({
   installMode: installMode.value,
   copyServerId: copyServerId.value,
   apiSecret: apiSecret.value,
-  collectInterval: collectInterval.value,
-  reportInterval: reportInterval.value,
-  connectionMode: getEffectiveConnectionMode(connectionMode.value),
-  pingMode: getEffectivePingMode(pingMode.value),
-  resetDay: resetDay.value,
-  autoUpdate: autoUpdate.value,
-  customCt: customCt.value,
-  customCu: customCu.value,
-  customCm: customCm.value,
-  customBd: customBd.value,
-  node1: node1.value,
-  node2: node2.value,
-  node3: node3.value,
-  node4: node4.value,
-  explicitEmptyNodes: explicitEmptyNodes.value,
-  networkInterface: networkInterface.value,
-  rxCorrection: rxCorrection.value,
-  txCorrection: txCorrection.value
+  autoUpdate: autoUpdate.value
 }, trans.value)
 
 const copyCustomCmd = async () => {

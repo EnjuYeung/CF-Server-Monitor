@@ -21,8 +21,8 @@
 | `GET /`、`GET /<ADMIN_PATH>` | 无 | 注入站点配置后的前端页面 |
 | GET /api/config | 始终公开 | 版本、前端配置及 theme_options；Bearer 鉴权后才含 admin_path 和 Agent 最新版本 |
 | GET /api/servers | 公共站点匿名，否则管理员 | `{servers,latestReportUpdates,...}` |
-| GET /api/server?id=UUID | 同上 | 单节点当前状态 |
-| GET /api/history/all?id=UUID&hours=24 | 同上；超过 24 小时需管理员 | 按时间升序的历史数组 |
+| GET /api/server?id=UUID | 同上 | 单节点当前状态；ID 格式无效或节点不存在均返回 404 |
+| GET /api/history/all?id=UUID&hours=24 | 同上；超过 24 小时需管理员 | 按时间升序的历史数组；ID 格式无效或节点不存在均返回 404 |
 | POST /update | Agent Secret | 指标上报、配置协商、流量校正确认 |
 | WS /update | 上报消息内认证 | Agent 实时上报及配置下发 |
 | WS /api/ws | 按站点/节点可见性 | 实时订阅 |

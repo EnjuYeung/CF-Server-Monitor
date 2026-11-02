@@ -613,7 +613,8 @@
       </div>
     </div>
 
-    <div class="text-right mt-5">
+    <div class="settings-save-bar">
+      <span class="settings-save-hint">{{ trans.saveHint }}</span>
       <button @click="$emit('save-settings')" class="btn btn-primary btn-lg" :disabled="saving || hasPingNodeErrors || hasExpireReminderError">{{ saving ? '⏳' : '💾' }} {{ saving ? trans.saving : trans.saveConfig }}</button>
     </div>
   </div>

@@ -75,7 +75,7 @@ try {
   });
   await step('AS02', '自定义天数与输入验证', '键入 12、切换预设、输入非法值后保存 365', '输入焦点稳定，非法值显示提示并阻止保存，实际 API 保存成功', async () => {
     const mode = page.locator('#expire-reminder-mode'), input = page.locator('#expire-reminder-days');
-    const save = page.locator('#tab-settings > .text-right button');
+    const save = page.locator('.settings-save-bar button');
     await mode.selectOption('__custom__'); await input.fill('1'); await input.press('2');
     assert.equal(await input.inputValue(), '12'); assert.equal(await input.evaluate(element => element === document.activeElement), true);
     await mode.selectOption('5'); assert.equal(await input.count(), 0);
@@ -120,6 +120,31 @@ try {
         await view.screenshot({ path: join(evidence, `${width}-${theme}.png`) });
         if (width === 375) { await view.setViewportSize({ width: 667, height: 375 }); assert.equal(await view.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); }
         layouts.push({ ...layout, theme });
+      } finally { await current.close(); }
+    }
+    return layouts;
+  });
+  await step('AS07', '长表单随时保存', '1440px/375px 明暗页面停留在设置页顶部及中部，直接点保存栏', '保存栏始终在视口内，不必滚到底也能保存；按钮不少于 44px，页面无横向溢出', async () => {
+    const layouts = [];
+    for (const width of [1440, 375]) for (const theme of ['dark', 'light']) {
+      const height = width === 375 ? 812 : 900;
+      const current = await context({ width, height, theme, authenticated: true });
+      try {
+        const view = await open(current); await showSettings(view);
+        const bar = view.locator('.settings-save-bar');
+        const inViewport = async () => { const box = await bar.boundingBox(); return box.y >= 0 && box.y + box.height <= height; };
+        const scrollHeight = await view.evaluate(() => document.documentElement.scrollHeight);
+        assert.ok(scrollHeight > height + 200, 'The settings form must be long enough to scroll');
+        await view.evaluate(() => window.scrollTo(0, 0)); assert.equal(await inViewport(), true);
+        await view.evaluate(top => window.scrollTo(0, top), Math.floor(scrollHeight / 2)); assert.equal(await inViewport(), true);
+        const layout = await view.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth,
+          button: document.querySelector('.settings-save-bar button').getBoundingClientRect().height }));
+        assert.ok(layout.content <= layout.width); assert.ok(layout.button >= 44);
+        assert.equal(await view.locator('.settings-save-hint').isVisible(), width === 1440);
+        await view.screenshot({ path: join(evidence, `save-bar-${width}-${theme}.png`) });
+        const response = view.waitForResponse(response => response.request().method() === 'POST' && response.request().postData()?.includes('save_settings'));
+        await bar.locator('button').click(); assert.equal((await response).status(), 200);
+        layouts.push({ ...layout, theme, scrollHeight });
       } finally { await current.close(); }
     }
     return layouts;

@@ -271,6 +271,7 @@ export default {
   invalidNotificationTimezone: 'Asia/Tokyo など、有効な IANA タイムゾーンを指定してください。',
   invalidExpireNotificationTime: '通知時刻は 0～23 の整数で指定してください。',
   saveConfig: '設定を保存',
+  saveHint: '変更は保存後にのみ反映されます',
   saving: '保存中…',
   hostnameLabel: 'ホスト名',
   groupName: 'グループ名',

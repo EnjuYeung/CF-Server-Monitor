@@ -7,6 +7,7 @@ import { isValidThemeOptions, loadSettings, loadSiteSettings, loadAppearanceOpti
 import { omitNullLossProbeFields } from './handlers/dashboard.js';
 import { checkAuth, simpleAuthResponse } from './middleware/auth.js';
 import { getServerDetail } from './utils/cache.js';
+import { isValidUUID } from './services/serverInput.js';
 import { createSuccessResponse, createUnauthorizedResponse, createBadRequestResponse, createNotFoundResponse } from './utils/errors.js';
 import { getCorsAllowedOrigins, createOptionsResponse, applyCors } from './utils/cors.js';
 import { getRemoteVersion } from './utils/version.js';
@@ -50,7 +51,7 @@ async function fetchHistoryData(env, request, id, hours, columns, sys = null) {
     return createUnauthorizedResponse();
   }
   
-  const server = await getServerDetail(env.DB, id, isLoggedIn);
+  const server = isValidUUID(id) ? await getServerDetail(env.DB, id, isLoggedIn) : null;
   if (!server) return createNotFoundResponse();
   
   // 最多查询7天数据

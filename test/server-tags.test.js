@@ -57,3 +57,22 @@ test('finance depends only on valid positive prices and zero alone is displayed 
   assert.equal(formatBillingPrice({ price: '0' }, 'zh'), '免费');
   assert.equal(calculateServerFinanceRows(['0', '-1', '', 'invalid'].map(price => ({ ...paid, price })), undefined, now).length, 0);
 });
+
+test('finance values each server by its remaining term instead of one billing cycle', () => {
+  const now = Date.UTC(2026, 8, 19);
+  const server = (days, overrides = {}) => ({ id: `days-${days}`, name: 'Paid', price: '30', currency: '¥', billing_cycle: 'month', expire_date: new Date(now + days * 86400000).toISOString(), ...overrides });
+  const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+  const prepaid = calculateFinanceSummary([server(90)], undefined, now);
+  near(prepaid.remainingValueCNY, 90); near(prepaid.totalValueCNY, 90); near(prepaid.monthlyAverageCostCNY, 30);
+  near(calculateServerFinanceRows([server(90)], undefined, now)[0].remainingValueCNY, 90);
+  const partial = calculateFinanceSummary([server(15)], undefined, now);
+  near(partial.remainingValueCNY, 15); near(partial.totalValueCNY, 15);
+  const expired = calculateFinanceSummary([server(-1)], undefined, now);
+  near(expired.remainingValueCNY, 0); near(expired.totalValueCNY, 0); assert.equal(expired.expiredCount, 1);
+  const noExpiry = calculateFinanceSummary([server(0, { expire_date: '' })], undefined, now);
+  near(noExpiry.totalValueCNY, 30); near(noExpiry.remainingValueCNY, 0); assert.equal(noExpiry.missingExpireCount, 1);
+  const longTerm = calculateFinanceSummary([server(365 * 120)], undefined, now);
+  near(longTerm.remainingValueCNY, 30); near(longTerm.totalValueCNY, 30);
+  const mixed = calculateFinanceSummary([server(90), server(15), server(0, { expire_date: '' })], undefined, now);
+  near(mixed.totalValueCNY, 135); near(mixed.remainingValueCNY, 105); assert.equal(mixed.configuredCount, 3);
+});

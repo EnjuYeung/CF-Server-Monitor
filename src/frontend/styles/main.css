@@ -2292,6 +2292,35 @@ html[lang="ja"] .stat-key {
     padding: 16px;
 }
 
+/* 设置页保存栏：吸附在视口底部，长表单滚动时也能随时保存 */
+.settings-save-bar {
+    position: sticky;
+    bottom: 12px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+    padding: 12px 16px;
+    /* 卡片色是半透明的，叠在不透明底色上，避免表单文字透到保存栏 */
+    background: linear-gradient(var(--bg-card), var(--bg-card)), var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.18);
+}
+
+.settings-save-hint {
+    margin-right: auto;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.settings-save-bar .btn {
+    min-height: 44px;
+    justify-content: center;
+}
+
 .ping-node-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4622,6 +4651,19 @@ body.server-row-drag-active * {
 
     .settings-section {
         margin-bottom: 12px;
+    }
+
+    .settings-save-bar {
+        bottom: 8px;
+        padding: 10px 12px;
+    }
+
+    .settings-save-hint {
+        display: none;
+    }
+
+    .settings-save-bar .btn {
+        width: 100%;
     }
 
     .settings-grid .form-row {

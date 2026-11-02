@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, cp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import https from 'node:https';
+import { buildAgentInstallCommand } from '../src/frontend/utils/agentCommands.js';
 
 const exec=promisify(execFile);
 const docker=process.env.TEST_DOCKER_CLI||'docker';
@@ -163,6 +164,27 @@ try{
     await cli(['exec',container,'sh','-c',"ps -eo comm=,stat= | awk '($1 == \"cf-probe\" || $1 == \"jan-probe\") && $2 !~ /^Z/ { found=1 } END { exit found }'"]);
     await until(async()=> {try {await cli(['exec',container,'sh','-c','for d in /tmp/jan-probe-uninstall-*; do test ! -d "$d" || exit 1; done']);return true;}catch{return false;}},'temporary uninstaller cleanup',10000);
   };
+  await step('ND12','后台精简安装命令','用后台命令生成器安装新节点，再由主控下发节点配置和流量校正','命令不含节点配置；首次上报后本地配置与后台一致，校正值生效并被确认',async()=>{
+    const serverId=(await admin({action:'add',name:'Minimal install command'})).body.id;
+    const row=(await admin({action:'list'})).body.servers.find(s=>s.id===serverId);
+    assert.equal((await admin({...row,action:'edit',connection_mode:'http',ping_mode:'tcp',report_interval:30,collect_interval:2,reset_day:15,custom_ct:'ct.fixture.invalid:443',custom_cu:'0',interface:'eth0',rx_correction:5,tx_correction:7})).status,200);
+    const command=buildAgentInstallCommand({selectedApiBase:'https://proxy:8443',targetOs:'linux',installMode:'current-user',copyServerId:serverId,apiSecret:key,autoUpdate:false},{});
+    for(const name of ['collect_interval','interval','connection_mode','ping_mode','reset_day','ct','cu','interface','rx_correction','tx_correction']) assert.ok(!command.includes(`-${name}=`),name);
+    await writeFile(join(evidence,'minimal-install-command.txt'),command.replaceAll(key,'<secret>'));
+    await writeFile(join(evidence,'minimal-install.log'),await cli(['exec',names.agent,'sh','-c',command]));
+    const config=()=>cli(['exec',names.agent,'cat','/etc/config/cf-probe/config.conf']);
+    await until(async()=>{const cfg=await config();return ['CONNECTION_MODE="http"','REPORT_INTERVAL="30"','COLLECT_INTERVAL="2"','RESET_DAY="15"','CT_NODE="ct.fixture.invalid:443"','CU_NODE=""','INTERFACE="eth0"','PING_MODE="tcp"'].every(line=>cfg.includes(line));},'controller-delivered configuration',60000);
+    assert.ok((await config()).includes('AUTO_UPDATE="0"'));
+    await until(async()=>{const current=(await admin({action:'list'})).body.servers.find(s=>s.id===serverId);return current.rx_correction===null&&current.tx_correction===null;},'traffic correction acknowledgement',60000);
+    const traffic=await cli(['exec',names.agent,'cat','/etc/config/cf-probe/traffic.dat']);
+    const period=name=>Number(traffic.match(new RegExp(`^${name}=([0-9]+)$`,'m'))?.[1]);
+    assert.ok(period('RX_PERIOD')>=5e9&&period('TX_PERIOD')>=7e9,traffic);
+    await until(async()=> (await request('/api/server?id='+serverId)).body.agent_version===version,'minimal install report',45000);
+    await cli(['exec',names.agent,'sh','-c','sh /tmp/install.sh uninstall --download-url=https://proxy:8443/agent']);
+    await verifyRemoved();
+    assert.equal((await admin({action:'delete',id:serverId})).status,200);
+    return {commandLength:command.length,configConverged:true,correctionApplied:true,reporting:true};
+  });
   await step('ND07','在线删除自动卸载','安装新版、建立 WSS，再从后台删除节点','Agent 无需手动命令即停止，程序、配置与临时卸载器清除',async()=>{
     const serverId=(await admin({action:'add',name:'Remote uninstall WSS'})).body.id;
     await installLatest(serverId);

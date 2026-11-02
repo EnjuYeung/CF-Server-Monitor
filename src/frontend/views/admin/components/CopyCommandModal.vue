@@ -47,7 +47,7 @@
         </div>
         <div class="config-row">
           <span class="config-label">{{ trans.pingMode }}</span>
-          <span class="config-value">{{ effectivePingMode === 'icmp' ? 'ICMP (root)' : 'TCP' }}</span>
+          <span class="config-value">{{ pingMode === 'icmp' ? 'ICMP (root)' : 'TCP' }}</span>
         </div>
         <div class="config-row">
           <span class="config-label">{{ trans.trafficResetDay }}</span>
@@ -113,10 +113,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 
-const props = defineProps({
+defineProps({
   trans: { type: Object, required: true },
   settings: { type: Object, default: () => ({}) },
   show: { type: Boolean, default: false },
@@ -148,12 +147,6 @@ const emit = defineEmits([
   'update:target-os',
   'update:install-mode'
 ])
-
-const effectivePingMode = computed(() => (
-  props.targetOs === 'linux' && props.installMode === 'cfsm-user'
-    ? 'tcp'
-    : (props.pingMode === 'icmp' ? 'icmp' : 'tcp')
-))
 
 const isBlank = (value) => value === '' || value === null || value === undefined
 const formatWithUnit = (value, unit) => (isBlank(value) ? '-' : `${value} ${unit}`)

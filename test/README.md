@@ -32,6 +32,8 @@ TEST_BASE_URL=http://127.0.0.1:18091 TEST_API_SECRET='<测试主控密钥>' ADMI
 
 `npm run test:settings-browser` 使用隔离主控、SQLite、本地 Webhook/代理和真实 Chromium，验证后台登录、自定义输入焦点、非法值、保存刷新、中英日、1440/375px 明暗布局、键盘，以及启动配置响应头/正文挂起后的实际 15 秒超时。先完成前述构建，再使用与主题验收相同的 `THEME_PLAYWRIGHT_MODULE`、`THEME_CHROMIUM_EXECUTABLE` 指定工具；`SETTINGS_EVIDENCE_DIR` 可指定 JSON 和截图目录。实际等待两个超时场景约需 30 秒，不缩短产品请求期限来代替验证。
 
+`npm run test:display-values` 使用隔离主控、SQLite 和真实 Chromium，验证详情页最后更新显示接收时间、图表绘制、桌面/手机财务金额。`npm test` 自动包含 `cache-limits.test.js`（缓存上限、过期清理与公开接口 ID 校验）和 `live-status.test.js`。
+
 ## 主题契约与可运行示例
 
 统一规范和 TH01–TH12 清单见 [theme-develop.md](../theme-develop.md)。`npm test` 自动包含 `theme-contract.test.js`：真实隔离 HTTP/WS/SQLite 验证主题产物、认证、隐藏节点、订阅、历史、选项整体替换/持久化、预览/启用/恢复、缓存与 CORS。

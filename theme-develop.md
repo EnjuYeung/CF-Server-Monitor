@@ -183,7 +183,7 @@ if (!response.ok) throw new Error(`保存失败：${response.status}`);
 | --- | --- |
 | GET /api/config | 始终公开；authorization/admin_path 按 Bearer 鉴权变化 |
 | GET /api/servers | 节点集合、顺序、资料、持久状态与 latestReportUpdates；私人需管理员 |
-| GET /api/server?id=UUID | 公开站点匿名查隐藏/不存在节点返回 404；私人站点匿名先返回 401 |
+| GET /api/server?id=UUID | 公开站点匿名查隐藏/不存在节点或 ID 格式无效返回 404；私人站点匿名先返回 401 |
 | GET /api/history/all?id=UUID&hours=24 | 直接数组；匿名最多 24 小时、管理员最多 168 小时 |
 | WS /api/ws | 可见节点订阅，列表与订阅 ID 同步 |
 
