@@ -19,20 +19,6 @@ func Install(opts InstallOptions, version string) error {
 		return err
 	}
 
-	if !paths.UserMode {
-		if cleaned, residuals := cleanupLegacyInstall(legacyServicePaths(paths)); len(cleaned) > 0 || len(residuals) > 0 {
-			if len(cleaned) > 0 {
-				fmt.Printf("[INFO] Cleaned legacy shell probe artifacts: %s\n", strings.Join(cleaned, ", "))
-			}
-			if len(residuals) > 0 {
-				for _, item := range residuals {
-					fmt.Printf("[WARN] Legacy shell probe residual: %s\n", item)
-				}
-				return fmt.Errorf("legacy shell probe cleanup incomplete: %s", strings.Join(residuals, ", "))
-			}
-		}
-	}
-
 	existing, existingPath, existingErr := readInstallConfig(paths)
 	usingExistingConfig := existingErr == nil
 	if usingExistingConfig {
@@ -54,6 +40,25 @@ func Install(opts InstallOptions, version string) error {
 	}
 	if _, err := agentDownloadBase(opts.Config); err != nil {
 		return err
+	}
+
+	// Validate and read counters before any cleanup, service stop or file replacement.
+	correctionNet, err := prepareInstallTrafficCorrection(opts, readNetBytes)
+	if err != nil {
+		return err
+	}
+	if !paths.UserMode {
+		if cleaned, residuals := cleanupLegacyInstall(legacyServicePaths(paths)); len(cleaned) > 0 || len(residuals) > 0 {
+			if len(cleaned) > 0 {
+				fmt.Printf("[INFO] Cleaned legacy shell probe artifacts: %s\n", strings.Join(cleaned, ", "))
+			}
+			if len(residuals) > 0 {
+				for _, item := range residuals {
+					fmt.Printf("[WARN] Legacy shell probe residual: %s\n", item)
+				}
+				return fmt.Errorf("legacy shell probe cleanup incomplete: %s", strings.Join(residuals, ", "))
+			}
+		}
 	}
 
 	fmt.Printf("[INFO] Platform: %s/%s (%s)\n", runtime.GOOS, runtime.GOARCH, platformName())
@@ -100,7 +105,7 @@ func Install(opts InstallOptions, version string) error {
 		return fmt.Errorf("写入配置失败: %w", err)
 	}
 	if opts.RXCorrectionGB != "" || opts.TXCorrectionGB != "" {
-		if err := applyTrafficCorrection(paths.TrafficFile, readNetBytes(opts.Interface), opts.Interface, opts.RXCorrectionGB, opts.TXCorrectionGB); err != nil {
+		if err := applyTrafficCorrection(paths.TrafficFile, correctionNet, opts.Interface, opts.RXCorrectionGB, opts.TXCorrectionGB); err != nil {
 			return err
 		}
 	}
@@ -123,6 +128,23 @@ func Install(opts InstallOptions, version string) error {
 	}
 	printInstallSummary(paths, opts)
 	return nil
+}
+
+func prepareInstallTrafficCorrection(opts InstallOptions, readCounters func(string) (NetBytes, error)) (NetBytes, error) {
+	if opts.RXCorrectionGB == "" && opts.TXCorrectionGB == "" {
+		return NetBytes{}, nil
+	}
+	if _, err := parseTrafficCorrectionGB(opts.RXCorrectionGB); err != nil {
+		return NetBytes{}, err
+	}
+	if _, err := parseTrafficCorrectionGB(opts.TXCorrectionGB); err != nil {
+		return NetBytes{}, err
+	}
+	current, err := readCounters(opts.Interface)
+	if err != nil {
+		return NetBytes{}, fmt.Errorf("read network counters before traffic correction: %w", err)
+	}
+	return current, nil
 }
 
 func mergeExplicitInstallConfig(dst *Config, src Config, explicit map[string]bool) {

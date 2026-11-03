@@ -1,7 +1,7 @@
 # Native Agent
 
 本目录直接纳入上游 **cfsm-agent v1.0.16** 的 Go 源码和测试，原始提交与许可见
-[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.3.1**。
+[UPSTREAM.md](UPSTREAM.md)、[LICENSE](LICENSE)。本项目 Agent 从 **v1.1.0** 开始独立版本管理，当前为 **v1.3.2**。
 `UPSTREAM_README.md` 只保留上游功能说明和来源，安装与更新请使用本文。
 
 ## 运行结构与功能
@@ -24,6 +24,8 @@ Synology 的安装方式和路径保持兼容。FreeBSD 专用采集代码已删
 - 安装、版本检查、更新下载都访问主控 `/agent`，可配置具有相同目录/API 的下载镜像。
 - 安装与自动更新均要求 SHA-256 校验通过；缺失或不匹配时不执行下载文件。
 - 旧 `UPDATE_PROXY` / `--install-ghproxy` 仍可读取，但不再构造 GitHub 下载地址；下载镜像请使用 `--download-url`。
+- 网卡计数读取失败时保留有效网速基线和月流量累计，不把失败当作零流量；启动或配置刷新时可恢复当前账期的已保存累计。故障首次出现与恢复均记录普通日志，流量检查点写入失败也输出告警。
+- 采集/查询外部命令最多执行 30 秒，继承输出管道额外等待最多 1 秒；HTTP 上报、回退和流量校正确认随 Agent 退出取消。覆盖安装在清理旧安装、停止服务和写入文件之前校验流量校正值并读取网卡。
 
 ## 构建
 
@@ -61,7 +63,7 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 
 脚本自动识别 OS/CPU，确认属于上述两个 Linux 目标后才下载并校验程序，再调用原生安装器。
 Linux 专用 cfsm 用户的准备步骤继续由后台生成，其他 Linux 安装方式的权限要求沿用原版。
-`--install-version=v1.3.1` 指定主控已提供的版本；留空选最新稳定版。
+`--install-version=v1.3.2` 指定主控已提供的版本；留空选最新稳定版。
 `--download-url=https://mirror.example.com/agent` 覆盖下载源并保存到本地 `DOWNLOAD_URL`，用于后续自动更新，
 不会改变指标上报目的地。直接执行二进制 `jan-probe install ...` 也受支持。
 

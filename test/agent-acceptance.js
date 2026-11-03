@@ -34,6 +34,20 @@ const badMirror = createServer((req,res)=>{
   else res.end('This corrupted file must never execute');
 });
 badMirror.listen(0,'127.0.0.1'); await once(badMirror,'listening');
+// Fault server is ready before any test; it also exercises the compiled binary's
+// shutdown path without registering a host service.
+let faultMode='', faultSeen=false, faultPackets=[];
+const faultServer=createServer(async(req,res)=>{
+  const chunks=[];for await(const chunk of req) chunks.push(chunk);
+  const payload=JSON.parse(Buffer.concat(chunks).toString());
+  faultPackets.push(payload);
+  if(faultMode==='healthy'){res.end('OK');return;}
+  if(faultMode==='correction'&&payload.metrics){res.end('rx_correction=1&tx_correction=2');return;}
+  if(faultMode==='response-body'){res.writeHead(200);res.flushHeaders();}
+  faultSeen=true; // Leave the response pending until the Agent is terminated.
+});
+faultServer.listen(0,'127.0.0.1');await once(faultServer,'listening');
+const faultUrl=`http://127.0.0.1:${faultServer.address().port}/update`;
 const run = promisify(execFile);
 const results = []; const agentLogs = createWriteStream(join(evidence,'native-agent.log'));
 let token='', id, agent, logs='', viewer;
@@ -60,8 +74,8 @@ async function stopAgent() {
   child.kill('SIGTERM');
   try { await ended; } finally { clearTimeout(timer);agent=null; }
 }
-function startAgent() {
-  agent=spawn(binary,['run','-config',join(root,'config.conf'),'-debug=1'],{env:{...process.env,TMPDIR:root,TMP:root,TEMP:root},stdio:['ignore','pipe','pipe']});
+function startAgent(debug=true) {
+  agent=spawn(binary,['run','-config',join(root,'config.conf'),`-debug=${debug?1:0}`],{env:{...process.env,TMPDIR:root,TMP:root,TEMP:root},stdio:['ignore','pipe','pipe']});
   for(const stream of [agent.stdout,agent.stderr]) stream.on('data',chunk=>{logs=(logs+chunk).slice(-200000);agentLogs.write(chunk);});
 }
 async function step(id,feature,operation,expected,callback) {
@@ -134,7 +148,36 @@ try {
     assert.ok(!logs.includes('Jan Monitor Probe started'));
     return {reportingStopped:true,restartDoesNotCollect:true,hostServicesUntouched:true};
   });
+  await step('NA08','慢请求期间正常退出','让真实 Agent 等待响应头、响应正文和校正确认，再发送 SIGTERM','三种等待均在 1.5 秒内正常退出，不等待原 8/4 秒请求超时',async()=>{
+    await stopAgent();await rm(join(root,'remote-uninstall.json'),{force:true});
+    const durations={};
+    for(const mode of ['report','response-body','correction']){
+      faultMode=mode;faultSeen=false;faultPackets=[];logs='';
+      await writeFile(join(root,'config.conf'),`SERVER_ID="shutdown-fixture"\nSECRET="fixture"\nCONTROLLER_URL="${faultUrl}"\nCONNECTION_MODE="http"\nAUTO_UPDATE="0"\n`);
+      startAgent();await until(()=>faultSeen,'pending '+mode,10000);
+      const child=agent,ended=once(child,'exit'),started=Date.now();child.kill('SIGTERM');
+      const result=await Promise.race([ended,wait(1500).then(()=>{throw new Error(mode+' shutdown exceeded 1500ms');})]);
+      durations[mode]=Date.now()-started;assert.deepEqual(result,[0,null]);agent=null;
+      faultServer.closeAllConnections();
+    }
+    return {exitCode:0,durationMs:durations};
+  });
+  await step('NA09','网卡读取失败与重启保留','指定不存在的网卡，使用已保存流量启动两次且关闭 debug','实际上报仍为已保存累计；流量文件不变；普通日志可见故障提示',async()=>{
+    faultMode='healthy';
+    const state=`RX_PREV=100\nTX_PREV=200\nRX_PERIOD=500\nTX_PERIOD=600\nLAST_CHECK=${Math.floor(Date.now()/1000)}\nPERIOD_START=0\nINTERFACE=cfsm_missing_interface_for_test\n`;
+    await writeFile(join(root,'traffic.dat'),state);
+    await writeFile(join(root,'config.conf'),`SERVER_ID="network-failure-fixture"\nSECRET="fixture"\nCONTROLLER_URL="${faultUrl}"\nINTERFACE="cfsm_missing_interface_for_test"\nRESET_DAY="0"\nCONNECTION_MODE="http"\nAUTO_UPDATE="0"\n`);
+    for(let i=0;i<2;i++){
+      logs='';faultPackets=[];startAgent(false);
+      await until(()=>faultPackets.some(p=>p.metrics),'failed network report',10000);
+      await stopAgent();const metrics=faultPackets.find(p=>p.metrics).metrics;
+      assert.equal(metrics.net_rx_monthly,'500');assert.equal(metrics.net_tx_monthly,'600');
+      assert.equal(await readFile(join(root,'traffic.dat'),'utf8'),state);
+      assert.ok(logs.includes('[WARN]')&&logs.includes('network counters unavailable'));
+    }
+    return {savedRX:500,savedTX:600,restarts:2,stateUnchanged:true,warningWithoutDebug:true};
+  });
 } finally {
-  await stopAgent();viewer?.terminate();await controller.close();badMirror.closeAllConnections();await new Promise(resolve=>badMirror.close(resolve));agentLogs.end();
+  await stopAgent();viewer?.terminate();await controller.close();badMirror.closeAllConnections();await new Promise(resolve=>badMirror.close(resolve));faultServer.closeAllConnections();await new Promise(resolve=>faultServer.close(resolve));agentLogs.end();
   await rm(root,{recursive:true,force:true});
 }

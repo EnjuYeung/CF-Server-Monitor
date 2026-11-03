@@ -46,6 +46,7 @@
 | 第三方主题开发参考与专项验收 | examples/theme-minimal/；test/theme-contract.test.js、theme-acceptance.js、review-fixes-browser.js | theme-develop.md 统一入口；公开/私人、2FA、实时/历史、hash 产物、TLS/CORS 与隔离浏览器；npm run test:theme、test:review-fixes-browser |
 | Agent 版本、安装与下载 | src/services/agentDistribution.js、src/utils/version.js | agent/install.sh；主控 /agent 与 data/agent-releases；NA01/NA06、agent-install-platforms.test.js |
 | 原生 Agent 采集与协议 | agent/internal/cfprobe、agent/cmd/cf-probe | 源码基线 v1.0.16；原生版本见 agent/release.json；NA02–NA05 |
+| Agent 网卡故障、流量基线、命令超时与退出取消 | agent/internal/cfprobe/agent.go、metrics_linux.go、traffic.go、command.go、install.go | network_stats*_test.go、traffic_test.go、command_test.go、report_context_test.go、install_test.go；NA08–NA09、ND13–ND14 |
 | Agent 自动更新与版本归档 | agent/internal/cfprobe/update.go、src/services/agentDistribution.js | 主控 manifest、SHA-256、原平台服务重启；native_distribution_test.go |
 | Agent 每日更新与 jan-probe 服务迁移 | agent/internal/cfprobe/update.go、service_migration.go、install.go、platform_unix.go | 本地 AUTO_UPDATE 开关、24 小时调度、新旧服务互斥与配置保留；update_schedule_test.go、service_migration_test.go、test/agent-deployment.js |
 | Agent 多架构构建 | agent/tools/build/main.go、scripts/agent.js | Linux amd64/arm64 共 2 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |

@@ -34,3 +34,8 @@ func (l logger) warnf(format string, args ...any) {
 		l.l.Printf("[WARN] %s %s", time.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...))
 	}
 }
+
+// Operational failures must remain visible with DEBUG=0.
+func (l logger) warn(format string, args ...any) {
+	l.l.Printf("[WARN] %s %s", time.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...))
+}

@@ -66,6 +66,10 @@ npm run test:theme
 
 ## 同仓库原生 Agent
 
+Agent v1.3.2 的 Go 回归覆盖网卡文件读取/解析失败、真实零值、恢复增量、当前/旧账期累计、检查点写入失败、命令超时及继承管道、HTTP 上报/回退/正文/校正确认取消，以及安装前校验。`go test -race ./...` 可在 agent 目录运行竞态检查。
+
+`npm run test:acceptance` 的 NA08 使用实际编译程序，在响应头、正文或校正确认等待中发送 SIGTERM，要求 1.5 秒内正常退出；NA09 在 debug 关闭及网卡缺失时验证实际上报、重启及流量文件。`npm run test:agent-deployment` 的 ND13 验证拒绝安装时 PID、程序、配置与流量保持，ND14 验证历史版本回退及重新升级。使用 `AGENT_LEGACY_DIST=/absolute/path/to/v1.3.1` 指向真实旧版清单和程序；未提供时默认的合成版本仅验证流程，不能作为真实旧版兼容证据。
+
 先安装 `agent/go.mod` 要求的 Go 工具链。`npm run build` 构建前端和全部 2 个 Agent 目标（Linux amd64/arm64）；`npm run build:frontend` 仅构建前端。
 `test/agent-build-targets.test.js` 使用完整构建的产物，实际验证两个 Linux ELF 程序的 OS/CPU、HTTP 下载、SHA-256 和归档；`test/agent-install-platforms.test.js` 使用明确标注的 shell 测试载荷验证平台选择、校验与不支持的平台在下载前失败（包括 FreeBSD amd64/arm64），不将该测试视为 Linux 程序运行验收。
 `npm run test:acceptance` 在既有主控验收之后运行 `test/agent-acceptance.js`，需要 Linux amd64/arm64 主机，使用对应的实际二进制程序，覆盖下载校验、旧配置、HTTP/WS、配置下发、重启保留及坏下载。前台进程使用临时配置和 TMPDIR，不在宿主机注册服务。其他系统上原生阶段会明确报错；可单独执行 `node test/acceptance.js` 验证主控，但不得将其当作完整原生验收通过。

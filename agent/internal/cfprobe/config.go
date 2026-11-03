@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -239,7 +240,7 @@ func parseTrafficCorrectionGB(raw string) (uint64, error) {
 		return 0, nil
 	}
 	f, err := strconv.ParseFloat(raw, 64)
-	if err != nil || f < 0 || f > maxTrafficCorrectionGB {
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > maxTrafficCorrectionGB {
 		return 0, fmt.Errorf("流量校正值非法: %s", raw)
 	}
 	return uint64(f * 1024 * 1024 * 1024), nil

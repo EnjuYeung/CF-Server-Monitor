@@ -132,6 +132,28 @@ try{
     await until(async()=> Number((await request('/api/server?id='+id)).body.last_updated)>Number(before.last_updated),'fresh report after controller restart',180000);
     return {dataRetained:true,instanceRetained:true,oldVersionRetained:true,reconnected:true};
   });
+  await step('ND13','非法安装参数保护运行中的服务','暂停测试 Agent，运行非法校正或无法读取网卡的覆盖安装，再恢复进程','安装返回失败，原 PID、程序、配置、流量与服务保持，恢复后继续上报',async()=>{
+    const read=path=>cli(['exec',names.agent,'cat',path]);
+    const pid=await read('/run/jan-probe.pid');
+    await cli(['exec',names.agent,'kill','-STOP',pid]);
+    const before={config:await read('/etc/config/cf-probe/config.conf'),traffic:await read('/etc/config/cf-probe/traffic.dat'),binary:await cli(['exec',names.agent,'sha256sum','/usr/local/bin/jan-probe'])};
+    const failures=[];
+    try{
+      for(const args of [['-rx_correction=-1'],['-tx_correction=invalid'],['-rx_correction=NaN'],['-rx_correction=1','-interface=cfsm_missing_interface_for_test']]){
+        await assert.rejects(cli(['exec',names.agent,'sh','/tmp/install.sh','install','--download-url=https://proxy:8443/agent',`--install-version=${version}`,...args]),error=>{
+          failures.push({args,code:error.code});return error.code!==0&&/流量校正值非法|read network counters before traffic correction/.test(error.stdout+error.stderr);
+        });
+        assert.equal(await read('/run/jan-probe.pid'),pid);
+        await cli(['exec',names.agent,'kill','-0',pid]);
+        assert.equal(await read('/etc/config/cf-probe/config.conf'),before.config);
+        assert.equal(await read('/etc/config/cf-probe/traffic.dat'),before.traffic);
+        assert.equal(await cli(['exec',names.agent,'sha256sum','/usr/local/bin/jan-probe']),before.binary);
+      }
+    }finally{await cli(['exec',names.agent,'kill','-CONT',pid]);}
+    const last=(await request('/api/server?id='+id)).body.last_updated;
+    await until(async()=>Number((await request('/api/server?id='+id)).body.last_updated)>Number(last),'report after rejected install',180000);
+    return {failures,pidPreserved:true,configPreserved:true,trafficPreserved:true,binaryPreserved:true,reportingResumed:true};
+  });
   await step('ND05','未启用自动更新的安装','覆盖安装显式关闭 AUTO_UPDATE，再通过主控下发配置','本地开关保持关闭，进程不上报自动更新任务，配置与流量保留',async()=>{
     await cli(['exec',names.agent,'/usr/local/bin/jan-probe','install','-auto_update=0','-debug=1']);
     const server=(await admin({action:'list'})).body.servers.find(s=>s.id===id);
@@ -144,6 +166,27 @@ try{
     assert.ok(!recent.includes('auto update enabled:')&&!recent.includes('auto update scheduled'));
     await cli(['exec',names.agent,'test','-s','/etc/config/cf-probe/traffic.dat']);
     return {autoUpdate:false,remoteCheckboxDoesNotEnable:true,configPreserved:true,trafficPreserved:true};
+  });
+  await step('ND14','指定历史版本回退再升级','关闭自动更新后安装真实旧版，再指定当前版本覆盖安装','两个版本均实际运行并上报，配置与月流量保留，归档不变',async()=>{
+    const archiveBefore=await readFile(join(root,'data','agent-releases',oldVersion,'manifest.json'),'utf8');
+    const totals=async()=>{
+      const raw=await cli(['exec',names.agent,'cat','/etc/config/cf-probe/traffic.dat']);
+      return ['RX_PERIOD','TX_PERIOD'].map(name=>BigInt(raw.match(new RegExp(`^${name}=([0-9]+)$`,'m'))[1]));
+    };
+    let previous=await totals();
+    const transitions=[];
+    for(const target of [oldVersion,version]){
+      await cli(['exec',names.agent,'sh','/tmp/install.sh','install','--download-url=https://proxy:8443/agent',`--install-version=${target}`,'-auto_update=0','-debug=1']);
+      assert.ok((await cli(['exec',names.agent,'/usr/local/bin/'+(target===oldVersion?oldService:'jan-probe'),'version'])).includes(target));
+      await until(async()=>(await request('/api/server?id='+id)).body.agent_version===target,'report after manual transition '+target,45000);
+      const cfg=await cli(['exec',names.agent,'cat','/etc/config/cf-probe/config.conf']);
+      assert.ok(cfg.includes(id)&&cfg.includes('AUTO_UPDATE="0"'));
+      await cli(['exec',names.agent,'test','-s','/etc/config/cf-probe/traffic.dat']);
+      const current=await totals();assert.ok(current.every((value,i)=>value>=previous[i]),'manual transition preserves accumulated traffic');previous=current;
+      transitions.push(target);
+    }
+    assert.equal(await readFile(join(root,'data','agent-releases',oldVersion,'manifest.json'),'utf8'),archiveBefore);
+    return {transitions,realLegacy:!!legacyDirectory,configPreserved:true,trafficPreserved:true,archiveUnchanged:true};
   });
   await step('ND06','原生卸载','从主控下载临时卸载器并执行 uninstall','新旧程序、配置和服务进程清除',async()=>{
     const result=await cli(['exec',names.agent,'sh','-c','sh /tmp/install.sh uninstall --download-url=https://proxy:8443/agent']);await writeFile(join(evidence,'linux-uninstall.log'),result);

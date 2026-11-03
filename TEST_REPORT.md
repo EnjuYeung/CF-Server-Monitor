@@ -1,5 +1,44 @@
 # 最近一次测试报告
 
+## 吸收 main 第二轮改进第二批：Agent v1.3.2（2026-11-03）
+
+按用户确认的计划适配 cfsm-agent `3d1c73768442159d0c0e136121d15a84d35e1025` 的网卡/流量、命令超时、退出取消及安装前校验，**完整构建、回归、真实验收及 11 项部署验收全部通过**。主控版本仍为 3.0.0，Agent 独立版本为 **v1.3.2**，来源基线仍为 v1.0.16。仅使用隔离主控、临时配置/SQLite、回环端口及一次性 Docker bridge；没有读取生产 `.env` 或数据库，没有安装宿主 Agent 服务，没有发布生产或升级实际节点。
+
+环境：Linux amd64、Node **24.22.1**、npm **11.19.1**、Go **1.26.10**、Docker **29.8.2**。Node 从既有发布镜像复制到本批工具目录，Go 官方压缩包 SHA-256 `ccfe7ae822d2c2f41f4fe7c956199967a4dac22d0ee0d2b2bfdb440aab3b20c5` 与官方元数据一致。先完成依赖、GeoIP、完整构建及安装/启动基线：200 项 Node、Go vet/test、19 项主控、7 项原生 Agent 验收通过。真实 v1.3.1 双架构产物从上一批镜像提取，作为本批升级夹具，未用新源码重标版本来代替旧版。
+
+| 编号 | 功能与操作 | 预期与验证方式 | 实际结果与证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| B201 | 安装、启动及双架构构建 | 完整 build、真实主控启动、Linux 两种 ELF、下载及校验通过 | baseline-install/geoip/build.log；build.log；agent-build-targets 回归；Docker 多阶段完整构建成功 | 通过 |
+| B202 | 网卡读取失败、连续失败、恢复及真实零值 | 实际读取正常/畸形/空/缺失网卡文件，失败时不替换有效基线，恢复只加真实增量 | network_stats_linux_test、network_stats_test；失败后 RX/TX 基线 100/200 保持，2 秒恢复到 110/220 时网速 5/10，月累计 510/620；真正的零值可正常读取 | 通过 |
+| B203 | 账期、网卡变更、检查点写入失败与恢复 | 当前/旧账期和旧格式状态正确区分，写入失败保留原文件且普通日志告警 | traffic_test 8 个账期案例；TestCheckpointFailureWarnsWithoutDebugAndRecovers 用真实 `.tmp` 目录阻止写入，再移除故障恢复落盘；原文件和累计保持 | 通过 |
+| B204 | 外部命令超时、非零退出及继承输出管道 | 真子进程执行上限和管道等待有界，失败输出不作为有效采集值 | command_test：注入 200ms 执行期限，实测 0.20 秒超时；继承输出管道 1.20 秒返回；生产执行上限仍为 30 秒，管道额外等待 1 秒；测试子进程自行清理 | 通过 |
+| B205 | 普通 HTTP、WS 回退、正文和校正确认退出取消 | 本地 HTTP 服务实际接收后取消上下文；真实 Agent 遇到慢响应时发 SIGTERM | report_context_test 全部通过；NA08 实际程序等待响应头/正文/校正确认，分别 1/2/2ms 正常退出，exit=0，没有等待原 8/4 秒超时 | 通过 |
+| B206 | 网卡读取失败时重启、上报与普通告警 | 使用保存状态和缺失网卡启动两次，debug=0，实际 HTTP 上报且不改流量文件 | NA09 两次重启累计均为 RX=500、TX=600；流量文件逐字节不变，普通日志含故障告警；Go 验证连续故障仅首次告警及恢复提示 | 通过 |
+| B207 | 非法安装及失败远程校正保护 | 拒绝负数、非法字符、NaN/Inf、读取失败；运行服务、程序、配置和流量保持；失败不发校正确认 | Go install/network_stats 测试通过；ND13 四种覆盖安装均 exit=1，原 PID、程序 SHA-256、配置及流量逐项不变，恢复后正常上报 | 通过 |
+| B208 | 真实旧版升级、主控重建、手动回退及重新升级 | 通过隔离 HTTPS/WSS、主控分发、SHA-256、服务重启验证配置/流量/归档 | deployment.json：ND01–ND08、ND12–ND14 共 11 项全通过；真实 v1.3.1→v1.3.2 自动更新 60.6 秒；ND14 手动回退/再升级成功，累计不回退、旧 manifest 不变；删除卸载及重建补发通过 | 通过 |
+| B209 | 完整回归与竞态 | 所有适用套件通过，既有协议、配置、失败补发、删除卸载不退化 | test-all-final.log：200 项 Node、Agent 配置、Go vet/test；acceptance.log：19 项主控、9 项原生 Agent；go-final-race.jsonl：161 个顶层 Go 测试（含子测试共 233）全部通过 | 通过 |
+| B210 | 镜像交付与产物一致性 | Docker 内双架构程序、manifest、checksums 与本地完整构建逐字节一致 | image-parity.json 五项均 matches=true（含 UPSTREAM.md）；候选镜像见下方 | 通过 |
+
+可复现命令（先将隔离 Node/Go 加入 PATH）：
+
+```sh
+npm ci
+npm run geoip:download
+npm run build
+npm run test:all
+npm run test:acceptance
+docker build --build-arg GEOIP_MONTH=2026-11 -t server-monitor:agent-native -t server-monitor:upstream-batch2-20261103 .
+AGENT_LEGACY_DIST=/absolute/path/to/real-v1.3.1 npm run test:agent-deployment
+cd agent
+go test -race ./...
+```
+
+候选镜像 `server-monitor:agent-native` / `server-monitor:upstream-batch2-20261103`，ID **sha256:ac6fd406735344559ab6d1810d236645c6baabbd237d14a1faa0167be481a066**。实际部署夹具主控镜像 ID 与之相同。程序 SHA-256：Linux amd64 `27a12b6b39f7e56d313f989867dfae7f893dfe9e2c5c070516b4a85cbbc60045`；Linux arm64 `33d9c97b053c3e49bb521ac1c87c6e8b7a6e471e3af8f69c553c9b7377595904`。镜像构建与宿主完整构建相同。
+
+测试修正记录：首次 Go 编译发现引入的上游测试仍使用 `WorkerURL` 字段，已改为本项目 `ControllerURL` 后完成回归。首次 ND13 在启动原生安装器之前被 shell 下载源检查拒绝，原因为新增测试命令漏传 `--download-url`；没有将这次提前拒绝记为安装保护通过。补上隔离下载源，并将恢复上报等待上限与既有 60 秒空闲调度相适应后，完整重跑部署套件，11/11 通过、退出 0。证据保留为 agent-deployment-first-failure.log / deployment-first-failure.json。
+
+证据位于 Git 忽略目录 `output/batch2/evidence/`，验收 JSON 位于 `output/test-results/`；临时证书、夹具和工具链不纳入源码。最终 `git diff --check` 通过；本批一次性测试容器及网络已由套件清理，未遗留测试 Agent 进程。未覆盖：arm64 实机运行（已交叉构建、ELF/下载/SHA-256 检查），独立真实 systemd 系统/用户服务专项及其他发行版服务管理器实机。Linux 安装/服务/升级采用隔离 Debian 容器的原生 nohup 路径；生产和实际节点尚未操作。本批无前端行为改动，未重跑浏览器专项。
+
 ## 第一批生产发布（2026-11-03）
 
 按用户“提交并部署”的授权，将上方已验收的第一批提交 **0020003** 部署至 https://jm.zedy.cc。北京时间 **00:26:30** 开始切换，生产镜像 **sha256:0a2697f3d8a579e8dba5f908a23d1cb476ddee07c4d0eb1bfbed14f3191d704d**，标签 `server-monitor:local`、`server-monitor:upstream-batch1-20261103`；Node 24.22.1，内置 Agent 仍为 v1.3.1。全程未登录生产后台，未修改生产配置。
