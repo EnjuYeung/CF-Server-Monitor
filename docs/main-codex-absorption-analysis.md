@@ -1,6 +1,6 @@
 # main → codex 改动吸收分析
 
-日期：2026-10-19。第二轮比较见文末。状态：比较及用户确认的基础改进已完成，隔离验收通过，已推送 codex 并部署生产；备份及测试/发布产物已按要求清理。
+日期：2026-10-19。第二轮、第三轮比较见文末。状态：比较及用户确认的基础改进已完成，隔离验收通过，已推送 codex 并部署生产；备份及测试/发布产物已按要求清理。
 
 用户最终决定：吸收 HTTP 请求超时、自定义到期提醒 1–365 天、根 LICENSE 和离线 2 分钟选项；自动续期保留提前 1 天顺延。**SMTP、GPU 增强、月流量阈值告警本次均不吸收，不新增对应支持。** 现有周期流量报告与原有采集/协议继续保留。
 
@@ -247,3 +247,78 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 - GitHub 登录：上游已删除。
 
 第一轮确认不吸收的 SMTP、GPU 增强（含 A 的 6d0c8fd）、月流量阈值告警和上游续期规则继续排除。
+
+## 第三轮比较（2026-11-14）
+
+状态：**仅完成比较和范围确认，尚未实施。** 本节全部结论来自阅读两个固定快照的源码，没有运行构建、测试或复现；标注“待复现”的项须先在隔离环境确认。
+
+本轮除列出 main 的新增功能外，按用户要求对两边都有的功能比较实现（代码量、性能、逻辑、数据准确度）。部署架构差异不比较。
+
+| 标记 | 分支 / 基线 | 完整提交 |
+| --- | --- | --- |
+| M3 | origin/main，与原作者 huilang-me main 一致 | 1be24f0eabdcc2d06c215c45258382b02e438b49 |
+| C3 | codex/self-hosted-native-agent | 387fe342869403dc3430effbd130e62261cfe381 |
+| B | 共同祖先 | e25e47b028c91871ebf40da2d60adfb8cc347d4a |
+
+`git rev-list --left-right --count M3...C3` 得到 **59 / 35**，其中 14 个 main 提交晚于第二轮快照 M2。服务器的 `origin/main` 跟踪引用已于本轮更新到 M3。上游 Agent 仓库不在本轮范围，只在某项功能必须改 Agent 时提及。
+
+下文 `M 路径:行号`、`C 路径:行号` 指 M3、C3 快照。
+
+### 共有功能的实现比较结论
+
+**main 在共有功能上没有成块的实现优势。** 同源部分（计费辅助函数、指标聚合策略、月流量透传、节点详情页）两边基本逐行相同；已分叉的部分 codex 更严谨。main 的价值主要在新增功能。
+
+| 维度 | 结论 | 主要证据 |
+| --- | --- | --- |
+| 代码量 | codex 更精简且没有丢共有功能 | 前端约 1.7 万行对 2.4 万行；历史存储 C `src/database/schema.js` 329 行对 M 866 行（差额为周分区与编码主键）；后台页 C 1509 行对 M 2650 行 |
+| 性能 | 实质等价 | main 的样本先截断再排序、延迟窗口只取延迟列，在 2MB 上报上限和 2 小时窗口下无可见收益；读库失败沿用缓存是为 D1 抖动设计 |
+| 逻辑 | codex 更好 | 上报拒绝超前 60 秒或早于 7 天的采样时间（C `src/services/agentReports.js:103`）；离线按接收时间并随上报周期放宽；告警状态与入队同一事务并由 outbox 重试；到期提醒按日去重；看板按节点实例隔离并拒收快照外节点 |
+| 数据准确度 | codex 更好，main 仅公网 IP 补位一处领先 | 延迟与丢包保留小数，M `src/database/schema.js:595` 用 parseInt 截断；历史写入失败 codex 抛出、M `schema.js:674` 只记日志仍返回成功；首页延迟区分“超时”和“无采样”，M 把 0 画成 0 ms |
+
+两边一致、不构成差距但需要知道的口径：流量上限与显示按 1024 进制换算却标 GB（C `src/frontend/composables/useServerCardData.js:74`、`src/frontend/utils/api.js:275`），用户确认保持现状；长区间历史每个时间桶只取一行，短暂尖峰在 24 小时和 7 天图上可能不可见；一包上报的多个采样样本只形成一条历史记录，是术语表已定的约定。
+
+已核实不存在的疑点：超时不会在历史图中画成 0 ms。Agent 超时上报字符串 `"null"`（C `agent/internal/cfprobe/agent.go:591`），落库为空值（C `src/database/schema.js:252`），前端读到空值断线（C `src/frontend/views/ServerDetail.vue:1200`）。
+
+### 确认吸收自 main（7 项，未实施）
+
+| 内容 | 来源 | 适配要求 |
+| --- | --- | --- |
+| 资源告警规则支持 TCP/UDP 连接数 | b18b36f；M `src/utils/settings.js:84` | Agent 已上报这两个值，只改主控；缺失值保持为空，不能当作 0，避免误发恢复；阈值按 codex 的严格校验，不照搬上游的夹取 |
+| Agent 未探到公网 IP 时用来源地址补位 | 612027c；M `src/utils/metrics.js:38` | 复用经可信代理解析的来源地址，不读原始请求头；过滤私网与 Docker bridge 地址，过滤后为空则保持为空 |
+| URL 输入框清除按钮、手机首页统计两列、详情图表横轴刻度防挤 | 82a697c；M `src/frontend/styles/main.css:3616`、`src/frontend/views/ServerDetail.vue:1143` | 清除按钮放大到 44px 触控尺寸 |
+| 导出节点失败时给出提示 | M `src/frontend/views/admin/components/DatabasePanel.vue:98` | C 同文件 `:101` 失败时静默 |
+| 财务弹窗显示缺到期日、已过期的节点数 | M `src/frontend/views/Dashboard.vue:349` | C `src/frontend/utils/finance.js:209` 仍在计算但未显示 |
+| 开启自动更新前确认 | M `src/frontend/views/admin/index.vue:2152` | 防误触 |
+| Agent 密钥改常量时间比较 | M `src/middleware/auth.js:179` | C `src/handlers/update.js:27`、`src/realtime/RealtimeHub.js:366` 两处 |
+
+### 对照中发现的 codex 自身问题（非来自 main）
+
+以下问题在 main 中同样存在或无对应实现，不是吸收项；单列是为避免日后误认为修复来自上游。
+
+**确认纳入本轮（6 项，未实施）**
+
+| 内容 | 证据 | 说明 |
+| --- | --- | --- |
+| 详情页切换范围时晚到响应覆盖图表；新范围无数据时不清图；初始化未完成即离开页面会泄漏连接和监听 | C `src/frontend/views/ServerDetail.vue:1668`、`:1255`、`:1764` | 三个小缺陷 |
+| 后台“WS 超时分钟”设置对看板不生效 | C `src/frontend/composables/useDashboardState.js:13` | 让设置对看板生效；不照搬 main 的隐藏即断开 |
+| 到期判定时区不一致 | 前端按 UTC 零点解析到期日；C `src/shared/billing.js:221` 自动续费按 UTC 日期，到期提醒按通知配置时区 | 前后端统一到通知配置的时区。现状下北京时间 0–8 点两者差一天，到期当天 08:00 起即显示已过期 |
+| 主控停机超过离线阈值后重启，可能先发全员离线再发恢复 | C `src/services/scheduler.js:31`、`src/services/notifications/offline.js:45` | **待复现**，属实再改 |
+| outbox 未送达记录永不过期 | C `src/services/outbox.js`、`src/database/schema.js:103` | 过期时长实施前由用户确定 |
+| 按月自动续费遇月末日期永久漂移（如 31 日漂到 28 日） | C `src/shared/billing.js:216` | 修正规则实施前由用户确定 |
+
+**只记录并各开一个 GitHub Issue（本轮不实施）**
+
+| 内容 | 证据 | 待定事项 |
+| --- | --- | --- |
+| 流量报告用开机以来的网卡计数求差，节点重启后少算；“每日”窗口是两次报告之间而非自然日 | C `src/services/notifications/traffic.js:27`、`:122`、`:231` | 报告按自然日还是报告间隔、改用月流量累计还是继续用网卡计数，需用户单独确定口径 |
+| 飞书、钉钉、企业微信、Server 酱、WxPusher 只看 HTTP 状态，业务失败也标记为已送达 | C `src/services/notifications/delivery.js:251` | 各渠道失败响应格式需逐个核对 |
+
+### 本轮确认不吸收
+
+- 用户确认不需要：iOS Scriptable 多节点与延迟小组件（0b62b14 等）、App 访问口令（8f86307、1be24f0）。
+- 按部署差异排除：登录下发 `cfsm_ua` Cookie（7f44660）、Docker 安装命令补参数（7d7dd34，codex 不分发 Docker Agent）。
+- 收益不足：语言包按需加载（切换语言变为异步，当前规模无感）、看板隐藏即断开（与现有恢复补取逻辑冲突）、保存设置函数内的字段白名单（上层已过滤）。
+- 第二轮“可选项”六项继续暂缓，复核均仍存在于 M3：自动发现、设置导入导出、iOS 主屏图标、新增语言与通知语言（现为 7 种）、三网面板自动补位、自定义 User-Agent。设置导出仍明文包含 Telegram token 与 Webhook 地址。
+- 第一轮排除的 SMTP、GPU 增强、月流量阈值告警和上游续期规则继续排除。
+
+本轮没有新增术语，未修改 GLOSSARY.md；没有新的架构取舍，未创建 ADR。
