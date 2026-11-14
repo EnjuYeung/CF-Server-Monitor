@@ -1,5 +1,25 @@
 # 最近一次测试报告
 
+## 第三轮生产发布、推送与清理（2026-11-14）
+
+按用户“开发测试完成后部署上线，删除备份、测试数据，代码推送到对应分支”的要求，将提交 **382b7ec** 部署至 https://jm.zedy.cc。北京时间 **19:59:09** 切换，生产镜像 **sha256:6f42273fa211ccdfb852705c0651aff183a9e565d41260964ecbc1cb45f348a8**（`server-monitor:local`），Node 24.22.1、内置 Agent v1.3.2。全程未登录生产后台，未修改生产配置。
+
+| 编号 | 操作与预期 | 实际结果与证据 | 状态 |
+| --- | --- | --- | --- |
+| R3P01 | 候选镜像与验收代码一致 | 镜像内 src 118 个、前端 315 个文件与工作区逐一一致；内置 Agent v1.3.2 两种程序、清单及 install.sh 与原生产镜像逐字节一致，同版本归档不会冲突 | 通过 |
+| R3P02 | 切换前在线一致性备份 | Node SQLite Backup API 生成 94,232,576 字节副本；integrity=ok、外键错误 0、user_version=1；17 节点、3 项配置、17 实例；6 天固定区间 174,508 条历史及 47 个归档/地区文件记录哈希 | 通过 |
+| R3P03 | 断网生产副本 | network=none、调度关闭、生产同组环境：healthy；健康、配置、节点列表、最新版本、安装脚本、后台入口均 200，返回 17 节点，有效详情与历史 200、无效 ID 404；sysConfig 时区为 Asia/Shanghai，billing_anchor_day 不公开；日志 error 0。停止后 user_version 1→2，17/17 账单日等于到期日日号，节点（不含新列）、配置、实例、固定历史哈希与 47 个文件全部不变 | 通过 |
+| R3P04 | 使用原生产配置切换 | docker compose 显式使用生产 .env、项目 jan_monitor 和 compose.yaml，up --no-build --no-deps --force-recreate monitor；healthy、restart=0。14 个环境变量、命令、入口、用户、工作目录、健康检查、停止超时、挂载、端口、重启策略、init、网络及 Compose 配置哈希逐项一致 | 通过 |
+| R3P05 | 节点恢复与数据保留 | 切换前 17 个节点在线，切换后 75 秒内 17/17 新上报；切换后一致性快照 integrity=ok、外键 0，节点、配置、实例与固定历史哈希一致，归档/地区文件相同；生产库 user_version=2；其他 23 个容器 ID、镜像、启动时间和重启次数不变；容器日志 error/exception 0 条 | 通过 |
+| R3P06 | 公网匿名实测 HTTPS/WSS 与新行为 | healthz、config、servers 200，17/17 在线；列表与详情 sysConfig.notification_timezone=Asia/Shanghai，billing_anchor_day 不公开；无效 ID 404。真实 WSS 收到 hello 1、subscribed 1、20 秒内 batchUpdate 20。1440/375px 各 17 张卡片、无横向溢出，手机统计两列；财务弹窗显示“已计价 16、已到期 0、无到期日 0”；详情页 10 张图表；pageErrors=[]、本站 HTTP 错误 0；手机首页与财务截图已查看 | 通过 |
+| R3P07 | 删除备份、测试数据 | 按用户决定删除本次备份及 11-03 的 upstream-batch2、agents-v132 两份回滚材料，免费云本轮工作/证据目录与原代码对照 worktree，11-02 旧测试证据，仓库 output，测试遗留 /tmp 目录，共 1,182 个文件、708,173,998 字节；移除候选标签和回滚镜像 ac6fd4067353。清理后主控 healthy、restart=0 | 通过 |
+
+未覆盖：后台操作（TCP 规则、清除按钮、导出失败、自动更新确认、账单日提示）没有在生产后台实际执行，因为本次不使用生产凭据；这些证据来自隔离验收 UB01–UB05，生产运行文件与验收版本一致。
+
+回退：备份和回滚镜像已按要求删除。如需回退，用提交 1f2d745 重新构建镜像，再用 R3P04 的 compose 命令重建容器；旧版本读写 v2 数据库时忽略新增的 billing_anchor_day 列，不需要还原数据库。
+
+生产提示：AaITR-LAX、xHosts-LHR 到期日为 11-30，账单日按 30 初始化；若实际账单日为 31 日，需要在后台重新填写一次到期日。生产通知时区为 Asia/Shanghai，“已到期”边界由北京时间 08:00 提前到 00:00，与提醒和自动续费一致。
+
 ## 吸收 main 第三轮改进与自身问题修复：免费云隔离验收（2026-11-14）
 
 环境：免费云 Debian（4 核、7.4 GiB），Node 24.22.1、Go 1.26.10、Playwright 1.64.1 + Chromium 1243；临时 SQLite、回环端口、调度按用例开关，外部 HTTPS 请求在浏览器中拦截；未使用生产凭据。实施前在原提交 `1f2d745` 上 npm ci、geoip:download、build、test:all 均退出 0（200 项 Node）。
