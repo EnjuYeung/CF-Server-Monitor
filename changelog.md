@@ -15,7 +15,7 @@
 - 账单日新增 `servers.billing_anchor_day`，数据库 user_version 1→2 时自动补列，旧节点按当前到期日的日号初始化；**已经从 31 日漂到 28 日的节点需要在后台重新填一次到期日**。后台编辑弹窗在账单日与到期日日号不同时显示“续费回到每月 N 日”。
 - 公开 `/api/servers`、`/api/server` 的 sysConfig 新增 `notification_timezone`；`billing_anchor_day` 不公开。原生 Agent、安装/更新/分发及版本均未修改。
 - 新增 test/absorb-round3.test.js（R3-01–R3-10）、test/restart-offline.test.js（OR01）和 `npm run test:round3-browser`（UB01–UB10）。验收结果见 TEST_REPORT.md。
-- 流量报告口径、五个通知渠道只看 HTTP 状态两项本轮只记录，按用户决定各开一个 GitHub Issue。
+- 流量报告口径、五个通知渠道只看 HTTP 状态两项本轮只记录，按用户决定各开一个 GitHub Issue：[EnjuYeung/CF-Server-Monitor#1](https://github.com/EnjuYeung/CF-Server-Monitor/issues/1)、[EnjuYeung/CF-Server-Monitor#2](https://github.com/EnjuYeung/CF-Server-Monitor/issues/2)。
 
 ## main 第三轮比较与范围确认（2026-11-14）
 

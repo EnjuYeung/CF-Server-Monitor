@@ -310,8 +310,8 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 
 | 内容 | 证据 | 待定事项 |
 | --- | --- | --- |
-| 流量报告用开机以来的网卡计数求差，节点重启后少算；“每日”窗口是两次报告之间而非自然日 | C `src/services/notifications/traffic.js:27`、`:122`、`:231` | 报告按自然日还是报告间隔、改用月流量累计还是继续用网卡计数，需用户单独确定口径 |
-| 飞书、钉钉、企业微信、Server 酱、WxPusher 只看 HTTP 状态，业务失败也标记为已送达 | C `src/services/notifications/delivery.js:251` | 各渠道失败响应格式需逐个核对 |
+| 流量报告用开机以来的网卡计数求差，节点重启后少算；“每日”窗口是两次报告之间而非自然日 | C `src/services/notifications/traffic.js:27`、`:122`、`:231` | 报告按自然日还是报告间隔、改用月流量累计还是继续用网卡计数，需用户单独确定口径；[EnjuYeung/CF-Server-Monitor#1](https://github.com/EnjuYeung/CF-Server-Monitor/issues/1) |
+| 飞书、钉钉、企业微信、Server 酱、WxPusher 只看 HTTP 状态，业务失败也标记为已送达 | C `src/services/notifications/delivery.js:251` | 各渠道失败响应格式需逐个核对；[EnjuYeung/CF-Server-Monitor#2](https://github.com/EnjuYeung/CF-Server-Monitor/issues/2) |
 
 ### 本轮确认不吸收
 
@@ -329,7 +329,7 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 | --- | --- | --- |
 | outbox 未送达记录过期时长 | 24 小时 | 发送时跳过、调度清理时删除超过 24 小时的未送达事件（含未配置渠道）；已送达记录仍保留 7 天 |
 | 按月续费月末漂移修正规则 | 记录原始账单日 | `servers.billing_anchor_day`（1–31），取保存到期日时的日号；续费取 min(账单日, 当月天数)。账单日只在与到期日吻合时沿用，新填日期即改为新日号；旧库升级按当前到期日初始化，已漂移节点需重新填一次到期日 |
-| 两个只记录的问题 | 各开一个 GitHub Issue | 流量报告口径、五个渠道只看 HTTP 状态 |
+| 两个只记录的问题 | 各开一个 GitHub Issue | 已创建：流量报告口径 [EnjuYeung/CF-Server-Monitor#1](https://github.com/EnjuYeung/CF-Server-Monitor/issues/1)；五个渠道只看 HTTP 状态 [EnjuYeung/CF-Server-Monitor#2](https://github.com/EnjuYeung/CF-Server-Monitor/issues/2) |
 | 旧备份 | 发布后连同 11-03 回滚材料一并删除 | 见 TEST_REPORT.md 发布记录 |
 
 ### 第三轮实施与验收结果
