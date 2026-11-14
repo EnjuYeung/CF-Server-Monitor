@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createThemeFixture, eventually, pause } from './helpers/themeFixture.js';
+import { drainNotifications, enqueueNotification } from '../src/services/outbox.js';
 
 const evidence = resolve(process.env.ROUND3_EVIDENCE_DIR || 'output/test-results/round3-browser');
 await mkdir(evidence, { recursive: true });
@@ -356,6 +357,49 @@ try {
     } finally {
       await current.close();
       await fixture.admin({ action: 'save_settings', settings: { frontend_ws_timeout_minutes: '0' } });
+    }
+  });
+
+  await step('UB11', '通知配置错误停止重试并提示原因', '飞书地址令牌失效时产生一条离线告警；打开后台设置，再改成正确地址保存', '只发一次即停止重试，设置页显示停止原因（不含令牌）；改正地址保存后提示消失，该告警按新地址补发', async () => {
+    const replies = [];
+    const feishu = createServer((req, res) => {
+      req.resume();
+      const ok = req.url.includes('fixed-token');
+      replies.push(req.url);
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(ok ? { code: 0, msg: 'success' } : { code: 19001, data: {}, msg: 'param invalid: incoming webhook access token invalid' }));
+    });
+    feishu.listen(0, '127.0.0.1'); await once(feishu, 'listening');
+    const hook = token => `http://127.0.0.1:${feishu.address().port}/open.feishu.cn/open-apis/bot/v2/hook/${token}`;
+    try {
+      await fixture.admin({ action: 'save_settings', settings: { notification_webhook_enabled: false, tg_bot_token: hook('wrong-token-0000-1111-2222') } });
+      const db = fixture.controller.env.DB;
+      enqueueNotification(db, '浏览器验收节点  最后上报: 刚刚', { event: '节点离线告警', clients: ['浏览器验收节点'] });
+      await drainNotifications(db);
+      await drainNotifications(db, { now: Date.now() + 3 * 3600000 });
+      assert.equal(replies.length, 1, 'stopped after one rejection');
+      const current = await context({ authenticated: true });
+      try {
+        const page = await open(current); await showTab(page, 1);
+        const notice = page.locator('.notification-delivery-issue');
+        await notice.waitFor();
+        const text = await notice.innerText();
+        assert.match(text, /1 条通知停止重试/); assert.match(text, /19001/); assert.doesNotMatch(text, /wrong-token/);
+        await notice.scrollIntoViewIfNeeded(); await pause(300);
+        await page.screenshot({ path: join(evidence, 'delivery-stopped.png') });
+        const token = page.locator('input[name="tg_bot_token"]');
+        await token.fill(hook('fixed-token-3333-4444-5555'));
+        const saved = page.waitForResponse(response => response.request().postData()?.includes('save_settings'));
+        await page.locator('.settings-save-bar button').click();
+        assert.equal((await saved).status(), 200);
+        await eventually(async () => (await notice.count()) === 0, 5000);
+        await drainNotifications(db);
+        assert.equal(replies.length, 2);
+        assert.match(replies[1], /fixed-token/);
+        return { notice: text, resentTo: 'fixed address' };
+      } finally { await current.close(); }
+    } finally {
+      feishu.closeAllConnections(); await new Promise(resolve => feishu.close(resolve));
+      await fixture.admin({ action: 'save_settings', settings: { notification_webhook_enabled: true, notification_webhook_url: `http://127.0.0.1:${receiver.address().port}/notify` } });
     }
   });
 

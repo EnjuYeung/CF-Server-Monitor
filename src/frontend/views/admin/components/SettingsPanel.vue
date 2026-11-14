@@ -439,6 +439,10 @@
         <div class="form-row">
           <div class="form-group flex-1">
             <button type="button" @click="$emit('send-test-notification')" class="btn btn-primary" :disabled="testNotificationLoading">{{ testNotificationLoading ? '⏳' : '📨' }} {{ trans.sendTestNotification }}</button>
+            <div v-if="deliveryIssue" class="danger-box mt-2 notification-delivery-issue" role="alert">
+              <p class="text-sm">{{ deliveryIssueText }}</p>
+              <p class="text-sm text-muted mt-1">{{ trans.notificationDeliveryStoppedHint }}</p>
+            </div>
           </div>
         </div>
 
@@ -653,6 +657,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
+import { formatDateTime } from '../../../utils/time.js'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
 import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
@@ -669,6 +674,7 @@ const props = defineProps({
   saving: { type: Boolean, default: false },
   changeAdminPassword: { type: Boolean, default: false },
   testNotificationLoading: { type: Boolean, default: false },
+  deliveryIssue: { type: Object, default: null },
 })
 
 defineEmits([
@@ -961,6 +967,15 @@ const normalizeRuleThreshold = (rule) => {
     rule.threshold = resourceAlertThresholdPlaceholder(rule.metric)
   }
 }
+
+const deliveryIssueText = computed(() => {
+  const issue = props.deliveryIssue
+  if (!issue) return ''
+  return String(props.trans.notificationDeliveryStopped || '')
+    .replace('{time}', formatDateTime(issue.failed_at))
+    .replace('{count}', issue.stopped)
+    .replace('{error}', issue.error)
+})
 
 const clearUrlField = (field, event) => {
   props.settings[field] = ''

@@ -2,25 +2,100 @@ import { DEFAULT_NOTIFICATION_TEMPLATE, normalizeBooleanSetting, normalizeNotifi
 import { NOTIFICATION_MAX_RETRIES, NOTIFICATION_RETRY_DELAY_MS } from '../../utils/config.js';
 import { formatNotificationTime } from './time.js';
 
-async function fetchWithRetry(url, options, retries = NOTIFICATION_MAX_RETRIES) {
+// Rejected credentials never succeed on retry.
+const PERMANENT_HTTP_STATUSES = new Set([401, 403]);
+// Business codes meaning the token/URL, bot or message must change before a send can succeed.
+// Verified from each channel's documentation and from real responses to invalid tokens.
+const PERMANENT_BUSINESS_CODES = Object.freeze({
+  feishu: new Set([9499, 19001, 19021, 19022, 19024]),
+  dingtalk: new Set([300005, 310000, 400013, 400101, 400102, 400105, 400106, 40035, 43004, 430101, 430102, 430103, 430104]),
+  wecom: new Set([93000, 93001, 93004, 93006, 93008, 93017, 93019, 40008, 44004, 45002]),
+  serverchan: new Set([40001]),
+  wxpusher: new Set([1001, 1002])
+});
+
+export class DeliveryFailure extends Error {
+  constructor(message, { permanent = false, status = 0 } = {}) {
+    super(message);
+    this.name = 'DeliveryFailure';
+    this.permanent = permanent;
+    this.status = status;
+  }
+}
+
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retries network errors, 5xx and 429 only; any other answer is final for this attempt.
+async function requestWithRetry(url, options, retries = NOTIFICATION_MAX_RETRIES) {
   for (let i = 0; i < retries; i++) {
+    const last = i === retries - 1;
     try {
       const response = await fetch(url, { ...options, signal: AbortSignal.timeout(5000) });
-      if (response.ok) return response;
-
-      if (i < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, NOTIFICATION_RETRY_DELAY_MS));
-      }
+      if (last || response.ok || (response.status < 500 && response.status !== 429)) return response;
     } catch (e) {
-      if (i < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, NOTIFICATION_RETRY_DELAY_MS));
-      } else {
-        throw e;
-      }
+      if (last) throw e;
     }
+    await pause(NOTIFICATION_RETRY_DELAY_MS);
   }
   throw new Error('Max retries exceeded');
 }
+
+async function readResponseText(response) {
+  try { return (await response.text()).slice(0, 4000); } catch { return ''; }
+}
+
+function parseJson(text) {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+function httpFailure(response, detail = '') {
+  const reason = String(detail || response.statusText || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return new DeliveryFailure(`HTTP ${response.status}${reason ? ` ${reason}` : ''}`, {
+    permanent: PERMANENT_HTTP_STATUSES.has(response.status), status: response.status
+  });
+}
+
+async function fetchWithRetry(url, options, retries) {
+  const response = await requestWithRetry(url, options, retries);
+  if (response.ok) return response;
+  const text = await readResponseText(response);
+  const body = parseJson(text);
+  throw httpFailure(response, body?.description || body?.message || body?.msg || body?.error || text);
+}
+
+// Channels that answer HTTP 200 for business errors must be judged by their body.
+async function postAndConfirm(channel, url, options, { isSuccess, code, message }) {
+  const response = await requestWithRetry(url, options);
+  const text = await readResponseText(response);
+  const body = parseJson(text);
+  if (response.ok && body && isSuccess(body)) return;
+  const businessCode = body ? code(body) : undefined;
+  if (businessCode === undefined || businessCode === null || businessCode === '') {
+    if (!response.ok) throw httpFailure(response, text);
+    throw new DeliveryFailure('无效的响应');
+  }
+  const reason = String(message(body) ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  throw new DeliveryFailure(`code ${businessCode}${reason ? ` ${reason}` : ''}`, {
+    permanent: PERMANENT_BUSINESS_CODES[channel].has(Number(businessCode)) || PERMANENT_HTTP_STATUSES.has(response.status),
+    status: response.status
+  });
+}
+
+// Never echo a token or webhook key back into stored failure reasons.
+function redactSecret(text, secret) {
+  let result = String(text ?? '');
+  for (const part of String(secret || '').split(/[^A-Za-z0-9_-]+/).filter(part => part.length >= 8)) {
+    result = result.split(part).join('***');
+  }
+  return result.slice(0, 500);
+}
+
+function deliveryFailure(label, error, secret) {
+  return { error: redactSecret(`${label}: ${error?.message || error}`, secret), permanent: error?.permanent === true };
+}
+
+// A missing or unrecognised configuration cannot succeed until it is changed.
+const configurationFailure = error => ({ error, permanent: true });
 
 function stripMarkdown(value) {
   return String(value || '')
@@ -202,12 +277,12 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
   const title = context.title;
 
   if (normalizeBooleanSetting(settings?.notification_webhook_enabled) === 'true') {
-    if (!String(settings?.notification_webhook_url || '').trim()) return "自定义 Webhook 通知失败: 缺少 URL";
+    if (!String(settings?.notification_webhook_url || '').trim()) return configurationFailure("自定义 Webhook 通知失败: 缺少 URL");
     try {
       await sendCustomWebhookNotification(settings, context);
       return;
     } catch (e) {
-      return "自定义 Webhook 通知发送失败: " + e.message;
+      return deliveryFailure("自定义 Webhook 通知发送失败", e, settings.notification_webhook_url);
     }
   }
 
@@ -219,7 +294,7 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
     const targetId = settings.tg_chat_id || '';
     const isGroup = onebotUrl.indexOf("send_group_msg") != -1;
     if (!targetId) {
-      return "OneBot 通知失败: 缺少 tg_chat_id（私人: QQ号，群: group:群号）";
+      return configurationFailure("OneBot 通知失败: 缺少 tg_chat_id（私人: QQ号，群: group:群号）");
     }
     try {
       const endpoint = onebotUrl.trim();
@@ -246,12 +321,12 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
         throw new Error(`OneBot did not confirm delivery (retcode ${code})`);
       }
     } catch (e) {
-      return "OneBot 通知发送失败: " + e.message;
+      return deliveryFailure("OneBot 通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("open.feishu.cn")) {
     // 飞书机器人 Webhook
     try {
-      await fetchWithRetry(settings.tg_bot_token, {
+      await postAndConfirm('feishu', settings.tg_bot_token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify({
@@ -262,23 +337,27 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
             body: { elements: [{ tag: "markdown", content: formattedMsg }] }
           }
         })
+      }, {
+        isSuccess: body => (body.code ?? body.StatusCode) === 0,
+        code: body => body.code ?? body.StatusCode,
+        message: body => body.msg ?? body.StatusMessage
       });
     } catch (e) {
-      return "飞书通知发送失败: " + e.message;
+      return deliveryFailure("飞书通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("oapi.dingtalk.com") || settings.tg_bot_token.includes("api.dingtalk.com")) {
     // 钉钉机器人 Webhook
     try {
-      await fetchWithRetry(settings.tg_bot_token, {
+      await postAndConfirm('dingtalk', settings.tg_bot_token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           msgtype: "markdown",
           markdown: { title: title, text: formattedMsg }
         })
-      });
+      }, { isSuccess: body => body.errcode === 0, code: body => body.errcode, message: body => body.errmsg });
     } catch (e) {
-      return "钉钉通知发送失败: " + e.message;
+      return deliveryFailure("钉钉通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("https://api.day.app/") || settings.tg_bot_token.indexOf("bark:") == 0) {
     let barkUrl = settings.tg_bot_token;
@@ -296,11 +375,11 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
         })
       });
     } catch (e) {
-      return "Bark通知发送失败: " + e.message;
+      return deliveryFailure("Bark通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("https://qyapi.weixin.qq.com")){
     try {
-      await fetchWithRetry(settings.tg_bot_token, {
+      await postAndConfirm('wecom', settings.tg_bot_token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -309,9 +388,9 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
             content: formattedMsg.replace(/\*/g, '')
           }
         })
-      });
+      }, { isSuccess: body => body.errcode === 0, code: body => body.errcode, message: body => body.errmsg });
     } catch (e) {
-      return "企业微信通知发送失败: " + e.message;
+      return deliveryFailure("企业微信通知发送失败", e, settings.tg_bot_token);
     }
   // Server 酱（使用 sendkey）
   }else if(settings.tg_bot_token.includes("https://sctapi.ftqq.com/") || settings.tg_bot_token.indexOf("server:") == 0) {
@@ -320,23 +399,25 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
       serverUrl = serverUrl.replace("server:", "");
     }
     try {
-      await fetchWithRetry(serverUrl, {
+      await postAndConfirm('serverchan', serverUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title,
           desp: formattedMsg
         })
-      });
+      }, { isSuccess: body => body.code === 0, code: body => body.code, message: body => body.message ?? body.info });
     } catch (e) {
-      return "Server酱通知发送失败: " + e.message;
+      return deliveryFailure("Server酱通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("https://wxpusher.zjiecode.com/api/send/message/SPT_")) {
     const match = settings.tg_bot_token.match(/\/message\/([^/]+)/);
     const spt = match ? match[1] : null;
-    if (!spt) return "WxPusher 通知失败: 无法提取 SPT";
+    if (!spt) return configurationFailure("WxPusher 通知失败: 无法提取 SPT");
     try {
-      await fetchWithRetry("https://wxpusher.zjiecode.com/api/send/message/simple-push", {
+      // 1000 only means accepted; a recipient list where every entry failed is not a send.
+      const rejected = body => Array.isArray(body.data) && body.data.length > 0 && body.data.every(target => target?.code !== 1000);
+      await postAndConfirm('wxpusher', "https://wxpusher.zjiecode.com/api/send/message/simple-push", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -345,9 +426,13 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
           "contentType":3,
           "spt": spt,
         })
+      }, {
+        isSuccess: body => body.code === 1000 && body.success !== false && !rejected(body),
+        code: body => (body.code !== 1000 ? body.code : body.data?.find(target => target?.code !== 1000)?.code),
+        message: body => (body.code !== 1000 ? body.msg : body.data?.find(target => target?.code !== 1000)?.status)
       });
     } catch (e) {
-      return "WxPusher通知发送失败: " + e.message;
+      return deliveryFailure("WxPusher通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_bot_token.includes("/message?token=")) {
     try {
@@ -364,7 +449,7 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
         })
       });
     } catch (e) {
-      return "Gotify通知发送失败: " + e.message;
+      return deliveryFailure("Gotify通知发送失败", e, settings.tg_bot_token);
     }
   }else if(settings.tg_chat_id) {
     // Telegram Bot (最后 fallback，通过 chat_id 判断)
@@ -378,10 +463,12 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
         })
       });
     } catch (e) {
-      return "Telegram 通知发送失败: " + e.message;
+      // 404 is an unknown bot token, 400 a wrong chat_id or rejected message.
+      if (e instanceof DeliveryFailure && (e.status === 400 || e.status === 404)) e.permanent = true;
+      return deliveryFailure("Telegram 通知发送失败", e, settings.tg_bot_token);
     }
   }else {
-    return "未知的通知方式";
+    return configurationFailure("未知的通知方式");
   }
 }
 
@@ -389,8 +476,11 @@ async function sendToTarget(settings, msg, notificationContext = {}) {
 export async function sendNotification(settings, msg, context = {}) {
   if (!hasNotificationTarget(settings)) return { status: 'unconfigured' };
   try {
-    const error = await sendToTarget(settings, msg, context);
-    return error ? { status: 'failed', error } : { status: 'delivered' };
+    const failure = await sendToTarget(settings, msg, context);
+    if (!failure) return { status: 'delivered' };
+    const { error, permanent } = typeof failure === 'string' ? { error: failure, permanent: false } : failure;
+    // permanent: retrying with the same configuration cannot succeed.
+    return permanent ? { status: 'failed', error, permanent: true } : { status: 'failed', error };
   } catch (error) {
     return { status: 'failed', error: error.message };
   }

@@ -82,13 +82,20 @@ export async function initDatabase(db) {
       CREATE TABLE IF NOT EXISTS notification_outbox (
         id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL,
         attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL, delivered_at INTEGER, last_error TEXT
+        created_at INTEGER NOT NULL, delivered_at INTEGER, last_error TEXT, failed_at INTEGER
       );`);
     db.exec(createHistoryTableSql());
     db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_history_server_time ON metrics_history(server_id, timestamp);`);
     migrateBillingAnchorDay(db);
-    db.exec('PRAGMA user_version = 2;');
+    migrateOutboxFailedAt(db);
+    db.exec('PRAGMA user_version = 3;');
   });
+}
+
+// v3: configuration failures stop retrying and keep their reason (failed_at + last_error).
+function migrateOutboxFailedAt(db) {
+  const columns = db.prepare('PRAGMA table_info(notification_outbox)').all().results;
+  if (!columns.some(column => column.name === 'failed_at')) db.exec('ALTER TABLE notification_outbox ADD COLUMN failed_at INTEGER;');
 }
 
 // v2: monthly renewals return to the original billing day instead of drifting to 28.
@@ -114,8 +121,10 @@ export async function clearHistory(db) {
 export function cleanupHistory(db, now = Date.now()) {
   const result = db.prepare('DELETE FROM metrics_history WHERE timestamp < ?').bind(now - 7 * DAY_MS).run();
   db.prepare('DELETE FROM notification_outbox WHERE delivered_at IS NOT NULL AND delivered_at < ?').bind(now - 7 * DAY_MS).run();
-  const expired = db.prepare('DELETE FROM notification_outbox WHERE delivered_at IS NULL AND created_at < ?')
+  const expired = db.prepare('DELETE FROM notification_outbox WHERE delivered_at IS NULL AND failed_at IS NULL AND created_at < ?')
     .bind(now - NOTIFICATION_OUTBOX_TTL_MS).run();
+  // Stopped events keep their reason for a week, like delivered ones.
+  db.prepare('DELETE FROM notification_outbox WHERE failed_at IS NOT NULL AND failed_at < ?').bind(now - 7 * DAY_MS).run();
   const discarded = Number(expired?.meta?.changes ?? expired?.changes ?? 0);
   if (discarded > 0) console.warn(JSON.stringify({ event: 'notification_outbox_expired', discarded }));
   return result;

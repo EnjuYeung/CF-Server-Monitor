@@ -155,7 +155,7 @@ POST /api/theme_options 使用 Bearer，body 为 `{theme_options:{...}}`；只�
 | action | 参数与用途 |
 | --- | --- |
 | login / logout | 登录 / 清除登录 Cookie；前端同步删除本地 token |
-| get_settings | 返回站点设置和 Agent 配置所需信息 |
+| get_settings | 返回站点设置和 Agent 配置所需信息；notification_delivery_issue 为最近一次因配置错误停止重试的通知（failed_at、error、stopped），之后已有送达时为 null |
 | list | 全部服务器（包括隐藏节点）及在线统计 |
 | add | name、server_group 等；返回 id，上限 50 |
 | edit | id 与完整服务器编辑字段；建议先 list 再合并修改。billing_anchor_day（1–31，可为 null）是自动续费回到的账单日，只在与 expire_date 吻合时沿用（如 31 对 02-28），否则取 expire_date 的日号；改到期日时传 null |

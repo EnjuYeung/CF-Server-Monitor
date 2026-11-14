@@ -310,8 +310,8 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 
 | 内容 | 证据 | 待定事项 |
 | --- | --- | --- |
-| 流量报告用开机以来的网卡计数求差，节点重启后少算；“每日”窗口是两次报告之间而非自然日 | C `src/services/notifications/traffic.js:27`、`:122`、`:231` | 报告按自然日还是报告间隔、改用月流量累计还是继续用网卡计数，需用户单独确定口径；[EnjuYeung/CF-Server-Monitor#1](https://github.com/EnjuYeung/CF-Server-Monitor/issues/1) |
-| 飞书、钉钉、企业微信、Server 酱、WxPusher 只看 HTTP 状态，业务失败也标记为已送达 | C `src/services/notifications/delivery.js:251` | 各渠道失败响应格式需逐个核对；[EnjuYeung/CF-Server-Monitor#2](https://github.com/EnjuYeung/CF-Server-Monitor/issues/2) |
+| 流量报告用开机以来的网卡计数求差，节点重启后少算；“每日”窗口是两次报告之间而非自然日 | C `src/services/notifications/traffic.js:27`、`:122`、`:231` | 报告按自然日还是报告间隔、改用月流量累计还是继续用网卡计数，需用户单独确定口径；[EnjuYeung/CF-Server-Monitor#1](https://github.com/EnjuYeung/CF-Server-Monitor/issues/1)。**2026-11-14 用户选择改用月流量累计、窗口保持报告间隔，已修复** |
+| 飞书、钉钉、企业微信、Server 酱、WxPusher 只看 HTTP 状态，业务失败也标记为已送达 | C `src/services/notifications/delivery.js:251` | 各渠道失败响应格式需逐个核对；[EnjuYeung/CF-Server-Monitor#2](https://github.com/EnjuYeung/CF-Server-Monitor/issues/2)。**2026-11-14 已按官方文档与实测返回修复；用户决定配置错误停止重试并保留原因** |
 
 ### 本轮确认不吸收
 

@@ -434,6 +434,8 @@ export default {
   notificationWebhookUrlRequired: 'カスタム Webhook を有効にするには URL が必要です',
   disableOfflineNotify: 'オフライン通知を無効にする',
   disableNodeNotify: 'このノードの通知を無効にする',
+  notificationDeliveryStopped: '{time} から {count} 件の通知の再試行を停止しました。チャネルが現在の設定を拒否しました：{error}',
+  notificationDeliveryStoppedHint: 'トークンまたはアドレスを修正して保存すると、過去 24 時間に未送信の通知が再送されます。先に「テスト送信」で確認できます。',
   sendTestNotification: 'テスト送信',
   testNotificationSent: 'テスト通知を送信しました。設定を保存してください。',
   testNotificationFailed: 'テスト通知の送信に失敗しました',

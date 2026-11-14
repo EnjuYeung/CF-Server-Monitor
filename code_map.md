@@ -35,10 +35,10 @@
 | 数据库初始化、事务、持久化 | src/database/schema.js、sqlite.js | test/history-query.test.js；A12、A15、D02 |
 | 自动地区识别、手动地区及每日 IP 库更新 | src/services/geolocation.js、geoipDatabase.js、scheduler.js、src/handlers/admin.js | scripts/download-geoip.js、geoip/NOTICE.md、test/geoip-update.test.js；A06、GU01–GU09 |
 | 离线 / 资源 / 流量 / 到期事件 | src/services/notifications/offline.js、resource.js、traffic.js、expiry.js | scheduler.js、outbox.js；A09、A10；test/expiry-notification.test.js 验证到期送达及跨日/重启去重 |
-| 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；OneBot 同步业务成功才送达，失败保持退避重试；test/review-fixes.test.js RF01 |
+| 通知渠道、模板与可靠投递 | src/services/notifications/delivery.js、time.js | src/services/outbox.js；OneBot、飞书、钉钉、企业微信、Server 酱、WxPusher 按业务码确认送达；配置错误（PERMANENT_BUSINESS_CODES、HTTP 401/403、Telegram 400/404）写 failed_at 停止重试，其余退避重试；admin.js get_settings 返回停止原因，渠道配置变化时 requeueStoppedNotifications；test/review-fixes.test.js RF01、test/issues-1-2.test.js I2-01–I2-04、UB11 |
 | 共用通知配置与资源规则编辑 | src/shared/notificationConfig.js | readNotificationConfig / prepareNotificationConfig；admin/index.vue、SettingsPanel.vue、handlers/admin.js、utils/settings.js 共用；test/notification-config.test.js 的 NC01–NC14 验证兼容读取、原始输入、部分更新、1–365 天、旧 true=7 及真实 HTTP/SQLite/本地投递 |
 | 自定义到期提醒与离线 2 分钟选项 | src/frontend/views/admin/components/SettingsPanel.vue | 预设/自定义切换、稳定输入焦点、整数范围提示、中英日标签；test/settings-browser.js AS01–AS04 验证真实保存、刷新、明暗/手机与键盘 |
-| 流量周期和报告计算 | src/services/notifications/traffic.js | test/traffic-report.test.js |
+| 流量周期和报告计算 | src/services/notifications/traffic.js | 账期累计增量（sumCounterIncrements）、只增总量（traffic_snapshots.meter）与 updateMeteredTrafficSnapshots；无账期累计的 Agent 回退 updateTrafficSnapshots；test/traffic-report.test.js、test/issues-1-2.test.js I1-01–I1-05 |
 | 手动备份 | src/handlers/backup.js | src/frontend/views/admin/components/DatabasePanel.vue；A08、A16、B02 |
 | 后台系统、外观、明暗配置 | src/utils/settings.js、src/handlers/admin.js | src/frontend/views/admin/components/SettingsPanel.vue；Mikus JSON 控件及前端装饰已删除；通知上下对齐、安全设置合并、全局四 PING 节点、保存栏吸附视口底部；UI08–UI10、UP06、AS07 |
 | 前端入口、API 会话、WS 重连 | src/frontend/main.js、utils/http.js、utils/api.js | 可选 timeoutMs，启动配置 15 秒覆盖正文；test/frontend-http.test.js HT01–HT06 验证超时/取消/分来源认证；test/settings-browser.js AS05–AS06 验证真实启动超时；frontend-live-socket.test.js、frontend-api-base.test.js |

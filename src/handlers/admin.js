@@ -1,4 +1,5 @@
-import { NOTIFICATION_FIELDS, prepareNotificationConfig } from '../shared/notificationConfig.js';
+import { NOTIFICATION_FIELDS, prepareNotificationConfig, readNotificationConfig } from '../shared/notificationConfig.js';
+import { getNotificationDeliveryIssue, requeueStoppedNotifications } from '../services/outbox.js';
 import { handleServerAction, SERVER_ACTIONS } from './servers.js';
 import { PING_NODE_FIELDS, normalizePingNodeFields } from '../services/serverInput.js';
 import { getServerLastSeen, isServerOffline } from '../services/serverPresence.js';
@@ -215,12 +216,19 @@ const PUBLIC_ADMIN_ACTION_HANDLERS = {
   clear_theme_preview_auth: handleClearThemePreviewAuthAction
 };
 
+// Changing any of these gives stopped notifications another chance.
+const DELIVERY_TARGET_FIELDS = Object.freeze([
+  'tg_bot_token', 'tg_chat_id', 'notification_webhook_enabled', 'notification_webhook_url',
+  'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body'
+]);
+
 async function handleGetSettingsAction({ env, sys, loadFullSettings }) {
   const fullSettings = loadFullSettings ? await loadFullSettings() : sys;
   const { jwt_secret, password, ...safeSettings } = fullSettings || {};
   return createSuccessResponse({
     success: true,
     settings: { ...safeSettings, username: safeSettings.username || env.API_USER_NAME || 'admin' },
+    notification_delivery_issue: getNotificationDeliveryIssue(env.DB),
     api_secret: env.API_SECRET
   });
 }
@@ -401,6 +409,9 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
 
       const notification = prepareNotificationConfig({ current: sys, input: settings });
       if (!notification.ok) return createBadRequestResponse(notification.issues[0].code);
+      const savedNotification = readNotificationConfig(sys);
+      const deliveryTargetChanged = DELIVERY_TARGET_FIELDS.some(field =>
+        notification.patch[field] !== undefined && notification.patch[field] !== savedNotification[field]);
       const hasResourceAlertRulesInput = settings.resource_alert_rules !== undefined;
       const resourceAlertEnabled = notification.config.resource_alert_rules.length > 0;
 
@@ -476,6 +487,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       if (!await checkAuth(request, env, sys)) return simpleAuthResponse();
       const committed = commitAdminSettings(env, securityVersion, siteOptions, shouldSaveAppearanceOptions ? appearanceOptions : null, hasResourceAlertRulesInput && !resourceAlertEnabled);
       if (!committed) return simpleAuthResponse();
+      if (deliveryTargetChanged) requeueStoppedNotifications(env.DB);
       env.REALTIME_HUB?.revokeFrontendSessions();
       const shouldCloseAgentWssReports = !isWssReportEnabled({ ...sys, ...siteOptions });
       Object.assign(sys, shouldSaveAppearanceOptions ? appearanceOptions : {}, siteOptions);

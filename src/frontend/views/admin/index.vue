@@ -132,6 +132,7 @@
           :saving="saving"
           :change-admin-password="changeAdminPassword"
           :test-notification-loading="testNotificationLoading"
+          :delivery-issue="notificationDeliveryIssue"
           @toggle-password="togglePassword"
           @toggle-admin-password-change="toggleAdminPasswordChange"
           @save-settings="saveSettings"
@@ -625,6 +626,7 @@ const validationError = ref(null)
 const alertMessage = ref(null)
 
 const testNotificationLoading = ref(false)
+const notificationDeliveryIssue = ref(null)
 
 const saveResult = ref(null)
 
@@ -874,6 +876,7 @@ const loadSettings = async () => {
     if (!result.error) {
       const data = result.data
       const settingsData = data.settings || {}
+      notificationDeliveryIssue.value = data.notification_delivery_issue || null
       const notification = readNotificationConfig(settingsData)
       settings.value = {
         site_title: settingsData.site_title || '',

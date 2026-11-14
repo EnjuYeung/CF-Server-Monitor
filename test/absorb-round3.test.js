@@ -316,7 +316,7 @@ test('R3-08 billing day survives admin edits, batch edits, export/import, cron r
     file.close();
   });
   const upgraded = new DatabaseSync(join(f.root, 'monitor.sqlite'), { readOnly: true });
-  assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(upgraded.prepare('SELECT count(*) AS n FROM servers').get().n, before);
   upgraded.close();
   const migrated = Object.fromEntries((await f.list()).map(row => [row.id, row.billing_anchor_day]));
