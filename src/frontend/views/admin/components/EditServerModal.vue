@@ -83,6 +83,7 @@
         <div class="form-group flex-1">
           <label class="form-label">{{ trans.expirationDate }}</label>
           <input type="date" name="edit_expire_date" autocomplete="off" v-model="editForm.expire_date" class="form-input" @click="openDatePicker">
+          <p v-if="billingAnchorHint" class="text-muted text-sm mt-1">{{ billingAnchorHint }}</p>
         </div>
         <div class="form-group flex-1">
           <label class="form-label">
@@ -227,7 +228,7 @@
       <div class="form-row">
         <div class="form-group">
           <div class="checkbox-item no-margin">
-            <input type="checkbox" v-model="editForm.auto_update">
+            <input type="checkbox" :checked="editForm.auto_update" @change="onAutoUpdateToggle">
             <label>
               <b>{{ trans.autoUpdate }}</b>
             </label>
@@ -257,18 +258,42 @@
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
     </div>
+
+    <div
+      v-if="autoUpdateConfirmOpen"
+      class="modal-overlay active auto-update-confirm"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="auto-update-confirm-title"
+      aria-describedby="auto-update-confirm-desc"
+      @keydown.esc="cancelAutoUpdate"
+    >
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div id="auto-update-confirm-title" class="modal-title">{{ trans.autoUpdateConfirmTitle }}</div>
+        </div>
+        <div class="warning-box mb-4">
+          <p id="auto-update-confirm-desc" class="text-secondary text-sm line-height-1-6">{{ trans.autoUpdateConfirmDesc }}</p>
+        </div>
+        <div class="modal-footer flex-justify-between">
+          <button type="button" class="btn btn-primary" @click="confirmAutoUpdate">{{ trans.autoUpdateConfirmEnable }}</button>
+          <button ref="autoUpdateCancelRef" type="button" class="btn" @click="cancelAutoUpdate">{{ trans.cancel }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { normalizeTgNotify } from '../../../../shared/notificationConfig.js'
 import { getBillingCycleLabel, getCurrencyName } from '../../../utils/server.js'
-import { computed, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
 import ServerTagsHelp from '../../../components/ServerTagsHelp.vue'
 import { PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
 import { currentLang } from '../../../utils/i18n.js'
 import { BILLING_CYCLES, CURRENCY_OPTIONS, normalizePrice, renewExpireDateIfNeeded } from '../../../utils/server.js'
+import { resolveBillingAnchorDay } from '../../../../shared/billing.js'
 
 const editForm = defineModel('editForm', { type: Object, required: true })
 
@@ -327,6 +352,21 @@ const openDatePicker = (event) => {
   } catch (_) {}
 }
 
+// A date the user enters sets the billing day; the preview renewal below keeps it.
+let previewedExpireDate = null
+watch(
+  () => [editForm.value, editForm.value.expire_date],
+  ([form, value], [previousForm]) => {
+    if (form !== previousForm) return
+    if (value === previewedExpireDate) {
+      previewedExpireDate = null
+      return
+    }
+    previewedExpireDate = null
+    form.billing_anchor_day = resolveBillingAnchorDay(value)
+  }
+)
+
 watch(
   () => [editForm.value.auto_renewal, editForm.value.billing_cycle, editForm.value.expire_date],
   () => {
@@ -334,13 +374,46 @@ watch(
     const renewal = renewExpireDateIfNeeded(
       editForm.value.expire_date,
       editForm.value.billing_cycle,
-      editForm.value.auto_renewal
+      editForm.value.auto_renewal,
+      Date.now(),
+      0,
+      { timezone: props.settings.notification_timezone, anchorDay: editForm.value.billing_anchor_day }
     )
     if (renewal.renewed) {
+      previewedExpireDate = renewal.expire_date
       editForm.value.expire_date = renewal.expire_date
     }
   }
 )
+
+const billingAnchorHint = computed(() => {
+  if (!editForm.value.auto_renewal) return ''
+  const day = Number(String(editForm.value.expire_date || '').slice(8, 10))
+  const anchor = resolveBillingAnchorDay(editForm.value.expire_date, editForm.value.billing_anchor_day ?? null)
+  return anchor && anchor !== day ? String(props.trans.billingAnchorDayHint || '').replace('{day}', anchor) : ''
+})
+
+const autoUpdateConfirmOpen = ref(false)
+const autoUpdateCancelRef = ref(null)
+// Enabling changes the install command for a node that will then replace itself daily.
+const onAutoUpdateToggle = (event) => {
+  if (!event.target.checked) {
+    editForm.value.auto_update = false
+    return
+  }
+  event.target.checked = false
+  autoUpdateConfirmOpen.value = true
+  nextTick(() => autoUpdateCancelRef.value?.focus())
+}
+const confirmAutoUpdate = () => {
+  editForm.value.auto_update = true
+  autoUpdateConfirmOpen.value = false
+}
+const cancelAutoUpdate = () => {
+  editForm.value.auto_update = false
+  autoUpdateConfirmOpen.value = false
+}
+watch(() => props.show, show => { if (!show) autoUpdateConfirmOpen.value = false })
 
 watch(
   isWssReportEnabled,

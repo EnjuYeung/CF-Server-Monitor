@@ -29,6 +29,7 @@
           <button @click="handleExport" class="btn btn-primary btn-lg" :disabled="dbLoading || exporting">
             {{ exporting ? trans.exporting : '📤 ' + trans.exportServers }}
           </button>
+          <p v-if="exportError" role="alert" class="text-red">{{ exportError }}</p>
         </div>
 
         <div class="form-group">
@@ -92,25 +93,31 @@ const fileInput = ref(null)
 const exporting = ref(false)
 const importing = ref(false)
 const importResult = ref(null)
+const exportError = ref('')
+const describeExportError = code => (typeof code === 'string' && props.trans[code]) || props.trans.serversExportFailed
 
 const handleExport = async () => {
   exporting.value = true
   importResult.value = null
+  exportError.value = ''
   try {
     const result = await adminApi({ action: 'export_servers' }, props.selectedApiIndex)
-    if (!result.error && result.data && result.data.servers) {
-      const blob = new Blob([JSON.stringify(result.data.servers, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `servers-backup-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+    if (result?.error || !Array.isArray(result?.data?.servers)) {
+      exportError.value = describeExportError(result?.error)
+      return
     }
+    const blob = new Blob([JSON.stringify(result.data.servers, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `servers-backup-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   } catch (e) {
     console.error('Export failed:', e)
+    exportError.value = describeExportError(e?.message)
   } finally {
     exporting.value = false
   }

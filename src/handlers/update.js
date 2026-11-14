@@ -7,6 +7,7 @@ import { scheduleAgentConfigChanged } from '../utils/agentConfigNotify.js';
 import { getAgentUninstallCommand } from '../services/agentRemoval.js';
 import { isValidUUID } from '../services/serverInput.js';
 import { normalizeAgentVersion, normalizeCorrectionValue } from '../services/ingestion.js';
+import { secretEquals } from '../utils/secret.js';
 const logUpdateBadRequest = (reason, details) => console.warn('[Update]', reason, details);
 const AGENT_WSS_MODE_HEADER = 'X-Agent-Wss-Mode';
 const AGENT_WSS_REASON_HEADER = 'X-Agent-Wss-Reason';
@@ -24,7 +25,7 @@ export async function handleUpdate(request, env, ctx) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return createBadRequestResponse('Invalid report payload');
     const { id, secret } = data;
 
-    if (secret !== env.API_SECRET) {
+    if (!secretEquals(secret, env.API_SECRET)) {
       return createUnauthorizedResponse('Invalid secret');
     }
     if (!isValidUUID(id)) return createBadRequestResponse('Invalid server ID');
@@ -68,7 +69,7 @@ export async function handleUpdate(request, env, ctx) {
     }
 
     try {
-      await env.AGENT_REPORTS.receive(id, data, { transport: 'http', regionCode, agentVersion });
+      await env.AGENT_REPORTS.receive(id, data, { transport: 'http', regionCode, agentVersion, clientIp: request.clientIp });
     } catch (error) {
       if (!(error instanceof InvalidAgentReport)) throw error;
       if (error.message === 'Missing metrics') {

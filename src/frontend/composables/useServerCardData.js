@@ -4,6 +4,7 @@ import { getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n'
 import { LATENCY_WINDOW, PING } from '../utils/constants'
 import { formatBillingPrice } from '../utils/server.js'
+import { getExpireTimestamp } from '../../shared/billing.js'
 
 export const DEFAULT_SERVER_CARD_CONFIG = {
   show_price: true,
@@ -235,13 +236,16 @@ export function useServerCardData(props) {
   const ramUsageText = computed(() => formatMetricUsage(props.server.ram_used, props.server.ram_total))
   const diskUsageText = computed(() => formatMetricUsage(props.server.disk_used, props.server.disk_total))
 
+  // Expiry dates end at 00:00 in the notification time zone, like reminders and renewal.
+  const expireTime = computed(() => getExpireTimestamp(props.server.expire_date, props.sysConfig?.notification_timezone))
+
   const isExpired = computed(() => {
-    const expTime = new Date(props.server.expire_date).getTime()
-    return !isNaN(expTime) && expTime < currentTime.value
+    const expTime = expireTime.value
+    return !isNaN(expTime) && expTime <= currentTime.value
   })
 
   const expireText = computed(() => {
-    const expTime = new Date(props.server.expire_date).getTime()
+    const expTime = expireTime.value
     if (isNaN(expTime)) return ''
     const diff = expTime - currentTime.value
     const days = Math.ceil(diff / (1000 * 3600 * 24))

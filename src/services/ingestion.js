@@ -3,6 +3,27 @@ import { DISK_IO_FIELD_TO_COLUMN, DISK_IO_METRIC_FIELDS, mergeMetricsIntoServer,
 import { HISTORY_METRIC_AGGREGATION_POLICY } from '../utils/historyFields.js';
 import { UPDATE_MAX_BATCH_SAMPLES } from '../utils/config.js';
 import { isValidTrafficCorrection } from '../utils/agentConfig.js';
+import { isIP } from 'node:net';
+import { isPublicIp, normalizeIp } from './geolocation.js';
+
+const BLANK_IP_VALUES = new Set(['', '0', 'false', 'null', 'undefined']);
+const CONNECTION_COUNT_FIELDS = ['tcp_conn', 'udp_conn'];
+const isBlankIpField = value => BLANK_IP_VALUES.has(String(value ?? '').trim().toLowerCase());
+const isMissingMetric = value => value === undefined || value === null || value === '';
+// 100.64.0.0/10 is carrier-grade NAT or overlay space, not the Agent's public address.
+const isCarrierGradeNat = ip => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+
+/**
+ * When the Agent found neither public address, use the trusted-proxy source
+ * address of this report. Private, bridge, loopback and CGNAT sources stay empty.
+ */
+export function getClientIpFallback(metrics, clientIp) {
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+  if (!isBlankIpField(metrics.ip_v4) || !isBlankIpField(metrics.ip_v6)) return null;
+  const ip = normalizeIp(clientIp);
+  if (!isPublicIp(ip) || isCarrierGradeNat(ip)) return null;
+  return isIP(ip) === 4 ? { ip_v4: ip } : { ip_v6: ip };
+}
 // 将最新一次上报打包成前端可直接消费的 "当前状态" 对象
 // 与 /api/server 和 /api/servers 返回的字段保持一致，便于页面直接合并
 function buildPayloadForBroadcast(id, metrics = {}, extra = {}) {
@@ -235,6 +256,8 @@ export function toBroadcastSamples(id, samples, regionCode, agentVersion = '', r
     });
     const filtered = Object.assign({}, payload);
     SERVER_METADATA_FIELDS.forEach(field => delete filtered[field]);
+    // Display code shows 0; alert windows must still see an unreported count as unknown.
+    for (const field of CONNECTION_COUNT_FIELDS) if (isMissingMetric(metrics[field])) filtered[field] = null;
     filtered.sample_timestamp = sample.ts;
     return { ts: sample.ts, payload: filtered };
   });

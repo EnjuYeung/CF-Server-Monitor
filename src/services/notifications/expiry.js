@@ -1,6 +1,6 @@
 import { enqueueNotification } from '../outbox.js';
 import { clearServersListCache, getAllServers } from '../../utils/cache.js';
-import { getExpireReminderDays } from '../../shared/notificationConfig.js';
+import { getExpireReminderDays, normalizeNotificationTimezone } from '../../shared/notificationConfig.js';
 import { loadSiteSettings, debug } from '../../utils/settings.js';
 import { detectBillingCycle, normalizeBillingCycle, renewExpireDateIfNeeded } from '../../shared/billing.js';
 import { isExpireNotificationTimeDue, getZonedDateSerial, parseDateSerial } from './time.js';
@@ -27,7 +27,10 @@ export async function checkExpiringServers(db, options = {}) {
       if (!s.expire_date) continue;
 
       const billingCycle = normalizeBillingCycle(detectBillingCycle(s.price) || s.billing_cycle);
-      const renewal = renewExpireDateIfNeeded(s.expire_date, billingCycle, s.auto_renewal, now, 1);
+      const renewal = renewExpireDateIfNeeded(s.expire_date, billingCycle, s.auto_renewal, now, 1, {
+        timezone: normalizeNotificationTimezone(siteSettings.notification_timezone),
+        anchorDay: s.billing_anchor_day
+      });
       if (renewal.renewed) {
         await db.prepare(
           'UPDATE servers SET expire_date = ?, billing_cycle = ? WHERE id = ?'

@@ -1,4 +1,4 @@
-import { normalizePrice, normalizeBillingCycle, detectBillingCycle, normalizeCurrency, detectCurrencySymbol, renewExpireDateIfNeeded } from '../../shared/billing.js';
+import { normalizePrice, normalizeBillingCycle, detectBillingCycle, normalizeCurrency, detectCurrencySymbol, renewExpireDateIfNeeded, resolveBillingAnchorDay } from '../../shared/billing.js';
 import { PING_NODE_FIELDS, validatePingNode } from '../../shared/pingNode.js';
 
 export const createServerForm = (server, connectionMode) => ({
@@ -13,6 +13,7 @@ export const createServerForm = (server, connectionMode) => ({
     auto_renewal: server.auto_renewal === '1' || server.auto_renewal === 1 || server.auto_renewal === true,
     currency: normalizeCurrency(server.currency || detectCurrencySymbol(server.price) || '¥'),
     expire_date: server.expire_date || '',
+    billing_anchor_day: server.billing_anchor_day ?? null,
     traffic_limit: server.traffic_limit || '',
     traffic_calc_type: server.traffic_calc_type || 'total',
     interface: server.interface || '',
@@ -34,7 +35,7 @@ export const createServerForm = (server, connectionMode) => ({
     offline_notify_disabled: server.offline_notify_disabled === '1'
 })
 
-export const buildServerFormPayload = (form, connectionMode) => {
+export const buildServerFormPayload = (form, connectionMode, { timezone = 'UTC' } = {}) => {
   const values = {};
   for (const field of PING_NODE_FIELDS) {
     const result = validatePingNode(form[field]);
@@ -46,10 +47,14 @@ export const buildServerFormPayload = (form, connectionMode) => {
   const normalizedAutoRenewal = form.auto_renewal ? '1' : '0'
   const normalizedPrice = normalizePrice(form.price)
   const normalizedCurrency = normalizeCurrency(form.currency || detectCurrencySymbol(form.price) || '¥')
+  const anchorDay = resolveBillingAnchorDay(form.expire_date, form.billing_anchor_day ?? null)
   const normalizedExpireDate = renewExpireDateIfNeeded(
     form.expire_date,
     normalizedBillingCycle,
-    normalizedAutoRenewal
+    normalizedAutoRenewal,
+    Date.now(),
+    0,
+    { timezone, anchorDay }
   ).expire_date
 
   return {
@@ -66,6 +71,7 @@ export const buildServerFormPayload = (form, connectionMode) => {
       auto_renewal: normalizedAutoRenewal,
       currency: normalizedCurrency,
       expire_date: normalizedExpireDate,
+      billing_anchor_day: anchorDay,
       traffic_limit: form.traffic_limit,
       traffic_calc_type: form.traffic_calc_type,
       interface: form.interface,

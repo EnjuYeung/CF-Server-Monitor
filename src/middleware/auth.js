@@ -1,5 +1,6 @@
 const ALGORITHM = { name: 'HMAC', hash: 'SHA-256' };
 import { verifyPasswordHash } from '../utils/common.js';
+import { secretEquals } from '../utils/secret.js';
 import { isValidJwtSecret } from '../utils/settings.js';
 import { digest, readSecurity } from '../services/twoFactor.js';
 
@@ -190,7 +191,7 @@ export async function validatePasswordCredentials(username, password, env, sys) 
       typeof env.API_SECRET === 'string' &&
       env.API_SECRET.length > 0 &&
       username === validUsername &&
-      password === env.API_SECRET
+      secretEquals(password, env.API_SECRET)
     );
     return { valid, needsPasswordUpgrade: false };
   } catch (e) {

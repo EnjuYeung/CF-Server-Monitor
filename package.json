@@ -21,6 +21,7 @@
     "test:dashboard-sort": "node test/dashboard-sort-browser.js",
     "test:settings-browser": "node test/settings-browser.js",
     "test:display-values": "node test/display-values-browser.js",
+    "test:round3-browser": "node test/round3-browser.js",
     "test:agent-acceptance": "node test/agent-acceptance.js",
     "test:agent-deployment": "node test/agent-deployment.js",
     "preview": "vite preview"

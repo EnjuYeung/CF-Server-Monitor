@@ -38,3 +38,6 @@ export const RESOURCE_ALERT_NOTIFICATION_SOFT_LIMIT = 3200;
 export const THEME_ASSET_CACHE_TTL_SECONDS = 3600;
 export const THEME_COMMIT_CACHE_TTL_SECONDS = 86400;
 export const THEME_PREVIEW_AUTH_TTL_SECONDS = 600;
+
+// Undelivered notifications older than this are stale; newer reminders and reports replace them.
+export const NOTIFICATION_OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;

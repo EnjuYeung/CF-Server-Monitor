@@ -205,7 +205,22 @@ function toDateString(year, month, day) {
   ].join('-');
 }
 
-function addBillingCycleToDate(dateString, billingCycle) {
+/**
+ * The billing day (1–31) a renewal returns to. A stored anchor is used only when
+ * it explains the date (31 explains 02-28); otherwise the date's own day wins.
+ */
+export function resolveBillingAnchorDay(expireDate, anchorDay = null) {
+  const parsed = parseDateOnly(expireDate);
+  if (!parsed) return null;
+  const anchor = Number(anchorDay);
+  if (anchorDay !== null && anchorDay !== '' && Number.isInteger(anchor) && anchor >= 1 && anchor <= 31
+    && Math.min(anchor, daysInUtcMonth(parsed.year, parsed.month)) === parsed.day) {
+    return anchor;
+  }
+  return parsed.day;
+}
+
+function addBillingCycleToDate(dateString, billingCycle, anchorDay = null) {
   const parsed = parseDateOnly(dateString);
   if (!parsed) return String(dateString || '').trim();
 
@@ -213,29 +228,75 @@ function addBillingCycleToDate(dateString, billingCycle) {
   const zeroBasedMonth = parsed.month - 1 + monthsToAdd;
   const year = parsed.year + Math.floor(zeroBasedMonth / 12);
   const month = ((zeroBasedMonth % 12) + 12) % 12 + 1;
-  const day = Math.min(parsed.day, daysInUtcMonth(year, month));
+  const anchor = resolveBillingAnchorDay(dateString, anchorDay);
+  const day = Math.min(anchor, daysInUtcMonth(year, month));
 
   return toDateString(year, month, day);
 }
 
-function utcDateStringWithOffset(now = Date.now(), offsetDays = 0) {
-  const date = new Date(now + (Number(offsetDays) || 0) * 86400000);
+const zonedFormatters = new Map();
+function getZonedFormatter(timezone) {
+  const requested = String(timezone || '').trim() || 'UTC';
+  if (zonedFormatters.has(requested)) return zonedFormatters.get(requested);
+  let formatter;
+  const options = {
+    hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  };
+  try { formatter = new Intl.DateTimeFormat('en-US', { ...options, timeZone: requested }); }
+  catch { formatter = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }); }
+  if (zonedFormatters.size > 64) zonedFormatters.clear();
+  zonedFormatters.set(requested, formatter);
+  return formatter;
+}
+
+function getZonedParts(timestamp, timezone) {
+  const parts = Object.fromEntries(getZonedFormatter(timezone).formatToParts(new Date(timestamp))
+    .map(part => [part.type, Number(part.value)]));
+  return { ...parts, hour: parts.hour === 24 ? 0 : parts.hour };
+}
+
+/** Calendar date in the notification time zone, shifted by whole days. */
+export function getZonedDateString(now = Date.now(), timezone = 'UTC', offsetDays = 0) {
+  const parts = getZonedParts(Number(now), timezone);
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + (Number(offsetDays) || 0)));
   return toDateString(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
 }
 
-export function renewExpireDateIfNeeded(expireDate, billingCycle, autoRenewal, now = Date.now(), renewBeforeDays = 0) {
+function getZoneOffsetMs(timestamp, timezone) {
+  const parts = getZonedParts(timestamp, timezone);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+    - Math.floor(timestamp / 1000) * 1000;
+}
+
+/** An expiry date ends at 00:00 of that day in the notification time zone. */
+export function getExpireTimestamp(dateString, timezone = 'UTC') {
+  const parsed = parseDateOnly(dateString);
+  if (!parsed) {
+    const fallback = new Date(String(dateString || '').trim()).getTime();
+    return Number.isFinite(fallback) ? fallback : NaN;
+  }
+  const localMidnight = Date.UTC(parsed.year, parsed.month - 1, parsed.day);
+  const firstGuess = localMidnight - getZoneOffsetMs(localMidnight, timezone);
+  return localMidnight - getZoneOffsetMs(firstGuess, timezone);
+}
+
+export function renewExpireDateIfNeeded(expireDate, billingCycle, autoRenewal, now = Date.now(), renewBeforeDays = 0, {
+  timezone = 'UTC', anchorDay = null
+} = {}) {
   const original = String(expireDate || '').trim();
   if (!original || !parseDateOnly(original) || !isEnabledFlag(autoRenewal)) {
     return { expire_date: original, renewed: false };
   }
 
   let nextDate = original;
-  const renewalDate = utcDateStringWithOffset(now, renewBeforeDays);
+  const renewalDate = getZonedDateString(now, timezone, renewBeforeDays);
+  const anchor = resolveBillingAnchorDay(original, anchorDay);
   let renewed = false;
   let guard = 0;
 
   while (nextDate <= renewalDate && guard < 1200) {
-    nextDate = addBillingCycleToDate(nextDate, billingCycle);
+    nextDate = addBillingCycleToDate(nextDate, billingCycle, anchor);
     renewed = true;
     guard++;
   }

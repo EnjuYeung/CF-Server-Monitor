@@ -111,6 +111,8 @@ GET /api/servers 摘录：
 
 列表拥有成员、顺序、资料及最近持久状态，须合并 latestReportUpdates 才有落库间隔内的最新指标。未上报节点可无指标/时间字段，空列表 servers=[]。server.timestamp 是创建时间，样本取 sample_timestamp，在线取 last_updated 的接收时间。
 
+sysConfig.notification_timezone 是通知配置时区（IANA 名称，默认 UTC），`/api/server` 的 sysConfig 同样提供。expire_date 在该时区当天 0 点到期，主题计算剩余天数或“已到期”时应使用同一边界，与提醒和自动续费一致。
+
 instance_id 是公开的不透明节点实例标识，不是认证凭据。创建后持久保留，编辑、排序、清历史和主控重启不改变；删除并导入同 UUID 必须生成新值，导入不会接受旧值。补取发现实例变化时，清除该节点旧指标、时间、延迟窗口和待回放数据，并更新订阅寿命；WS/replay 的 instance_id 与当前实例不符时忽略。旧来源没有该字段时可保留原协议兼容处理。
 
 WS 更新摘录：
@@ -156,7 +158,7 @@ POST /api/theme_options 使用 Bearer，body 为 `{theme_options:{...}}`；只�
 | get_settings | 返回站点设置和 Agent 配置所需信息 |
 | list | 全部服务器（包括隐藏节点）及在线统计 |
 | add | name、server_group 等；返回 id，上限 50 |
-| edit | id 与完整服务器编辑字段；建议先 list 再合并修改 |
+| edit | id 与完整服务器编辑字段；建议先 list 再合并修改。billing_anchor_day（1–31，可为 null）是自动续费回到的账单日，只在与 expire_date 吻合时沿用（如 31 对 02-28），否则取 expire_date 的日号；改到期日时传 null |
 | delete / batch_delete | id / ids；级联删除历史与最新状态 |
 | save_order | orders：按顺序排列的 UUID 数组 |
 | save_settings | settings 对象；保存系统、采集、通知及外观设置 |
@@ -164,7 +166,9 @@ POST /api/theme_options 使用 Bearer，body 为 `{theme_options:{...}}`；只�
 | start_theme_preview / clear_theme_preview_auth | 主题预览认证 |
 | send_test_notification | 实际发送测试通知，仅在用户配置的测试渠道使用 |
 | export_servers | 返回 servers 数组，仅配置；完整备份请用 `/<ADMIN_PATH>/backup` |
-| import_servers | servers 数组；重复/无效 UUID 跳过，返回 imported/skipped/skippedIds |
+| import_servers | servers 数组；重复/无效 UUID 跳过，返回 imported/skipped/skippedIds。导出含 billing_anchor_day，导入按上述规则沿用 |
+
+save_settings 的 resource_alert_rules 中 metric 可为 cpu、ram、disk、netIn、netOut、tcpConn、udpConn；tcpConn/udpConn 的阈值是 1–10,000,000 的整数连接数，默认 1000。
 
 ## 错误与备份
 

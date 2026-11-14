@@ -5,6 +5,7 @@ import { AppError } from '../utils/errors.js';
 import {
   applyHistoryMetricAggregates,
   collectHistoryMetricAggregates,
+  getClientIpFallback,
   getReportMetrics,
   mergeHistoryMetricAggregates,
   normalizeMetricSamples,
@@ -92,7 +93,7 @@ export class AgentReports {
   }
 
   async #receive(serverId, data, {
-    transport = 'http', regionCode = '', agentVersion = '', reportIntervalMs
+    transport = 'http', regionCode = '', agentVersion = '', reportIntervalMs, clientIp = ''
   }) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       throw new InvalidAgentReport('Invalid report payload');
@@ -104,8 +105,14 @@ export class AgentReports {
       throw new InvalidAgentReport('Invalid sample timestamp');
     }
     if (!samples.length) throw new InvalidAgentReport('Missing metrics');
-    const latestSample = samples.at(-1);
-    const metrics = getReportMetrics(data, latestSample);
+    let latestSample = samples.at(-1);
+    let metrics = getReportMetrics(data, latestSample);
+    const ipFallback = getClientIpFallback(metrics, clientIp);
+    if (ipFallback) {
+      metrics = { ...metrics, ...ipFallback };
+      latestSample = { ...latestSample, metrics: { ...latestSample.metrics, ...ipFallback } };
+      samples[samples.length - 1] = latestSample;
+    }
     const aggregate = collectHistoryMetricAggregates(samples);
     const payload = { metrics, regionCode, agentVersion, timestamp: latestSample.ts, reportIntervalMs };
     const key = String(serverId);

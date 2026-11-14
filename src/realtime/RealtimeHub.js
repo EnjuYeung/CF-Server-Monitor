@@ -1,5 +1,6 @@
 import { isValidRealtimeId } from '../utils/realtimeId.js';
 import { ResourceAlertWindows } from './ResourceAlertWindows.js';
+import { secretEquals } from '../utils/secret.js';
 import { maskPublicIpUpdate } from '../utils/publicMetrics.js';
 import { AgentReports, AgentReportsClosed, InvalidAgentReport } from '../services/agentReports.js';
 import { getServerDetail, clearServerDetailCache } from '../utils/cache.js';
@@ -363,7 +364,7 @@ export class RealtimeHub {
 
     const hasSecret = Object.prototype.hasOwnProperty.call(data, 'secret');
     if (!attachment.authenticated || hasSecret) {
-      if (data.secret !== this.env.API_SECRET) {
+      if (!secretEquals(data.secret, this.env.API_SECRET)) {
         this._closeWsWithError(ws, 'Invalid secret', 401);
         return null;
       }
@@ -828,7 +829,8 @@ export class RealtimeHub {
         transport: 'ws',
         regionCode: context.regionCode,
         agentVersion: context.agentVersion,
-        reportIntervalMs: context.reportIntervalMs
+        reportIntervalMs: context.reportIntervalMs,
+        clientIp: context.attachment?.clientIp || attachment?.clientIp || ''
       });
     } catch (error) {
       if (error instanceof AgentReportsClosed) {

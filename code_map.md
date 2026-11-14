@@ -1,6 +1,6 @@
 # 功能代码地图
 
-更新时间：2026-11-03；版本：3.0.0。
+更新时间：2026-11-14；版本：3.0.0。
 
 | 用户功能 / 维护任务 | 主要入口 | 下游模块 / 验证 |
 | --- | --- | --- |
@@ -51,6 +51,14 @@
 | Agent 每日更新与 jan-probe 服务迁移 | agent/internal/cfprobe/update.go、service_migration.go、install.go、platform_unix.go | 本地 AUTO_UPDATE 开关、24 小时调度、新旧服务互斥与配置保留；update_schedule_test.go、service_migration_test.go、test/agent-deployment.js |
 | Agent 多架构构建 | agent/tools/build/main.go、scripts/agent.js | Linux amd64/arm64 共 2 个目标；agent-build-targets.test.js、Go 测试及 Docker 多阶段构建 |
 | 构建 | scripts/build.js、vite.config.js | npm run build、Dockerfile、.github/workflows/test.yml |
+| 资源告警 TCP/UDP 连接数 | src/shared/notificationConfig.js、src/realtime/ResourceAlertWindows.js | notifications/resource.js 整数文案；ingestion.js 最新广播保留未上报为 null；SettingsPanel.vue 按单位重置阈值；test/absorb-round3.test.js R3-01–R3-03、UB01 |
+| Agent 公网 IP 来源补位 | src/services/ingestion.js（getClientIpFallback） | agentReports.js；handlers/update.js 与 RealtimeHub.js 传入可信来源地址；geolocation.js isPublicIp；R3-04 |
+| Agent 密钥常量时间比较 | src/utils/secret.js | handlers/update.js、realtime/RealtimeHub.js、middleware/auth.js；R3-05 |
+| 账单日与到期时区 | src/shared/billing.js（resolveBillingAnchorDay、getZonedDateString、getExpireTimestamp、renewExpireDateIfNeeded） | database/schema.js v2 补列；serverInput.js、notifications/expiry.js；前端 serverForm.js、EditServerModal.vue、finance.js、useServerCardData.js、ServerDetail.vue；R3-07–R3-09、UB05、UB07 |
+| 未送达通知过期 | src/services/outbox.js、database/schema.js cleanupHistory | utils/config.js NOTIFICATION_OUTBOX_TTL_MS（24 小时）；R3-06 |
+| 主控重启后的离线宽限 | src/services/serverPresence.js、notifications/offline.js | scheduler.js 传入启动时间；test/restart-offline.test.js OR01 |
+| 看板 WS 超时 | src/frontend/state/dashboardState.js | composables/useDashboardState.js、views/Dashboard.vue、components/LiveConnectionTimeoutModal.vue；R3-10、UB10 |
+| 详情页范围切换与离开 | src/frontend/views/ServerDetail.vue | 请求序号、空范围清图、卸载标记；UB08、UB09 |
 
 ## 测试入口
 
@@ -62,6 +70,7 @@
 - `npm run test:dashboard-sort`：隔离主控、SQLite 和真实浏览器的列表排序、筛选、偏好持久化、资料变化、键盘及桌面/手机明暗验收；复用 THEME_PLAYWRIGHT_MODULE、THEME_CHROMIUM_EXECUTABLE，DASHBOARD_SORT_EVIDENCE_DIR 指定证据目录。
 - `npm run test:settings-browser`：隔离主控、SQLite、本地通知与代理、真实浏览器的自定义天数、旧配置、离线选项、中英日、明暗/手机、键盘和两种 15 秒启动超时；复用浏览器工具变量，SETTINGS_EVIDENCE_DIR 指定证据目录。
 - `npm run test:display-values`：隔离主控、SQLite 和真实浏览器验证详情页最后更新、图表绘制及财务金额；复用浏览器工具变量，DISPLAY_VALUES_EVIDENCE_DIR 指定证据目录。
+- `npm run test:round3-browser`：第三轮吸收的真实浏览器验收 UB01–UB10（连接数规则、清除按钮、导出失败、自动更新确认、账单日提示、财务计数与手机两列、到期时区、详情范围切换/提前离开、看板 WS 超时）；ROUND3_EVIDENCE_DIR 指定证据目录。
 - `test/credential-change.test.js`：密码撤销、多种令牌入口、重启、事务回滚及状态保持。
 - `test/agent-config.js`：Agent 配置兼容与规范化。
 - `test/load.js`：明确指定的空测试主控，50 Agent / 10 看板、60 秒负载；拒绝非空数据库。

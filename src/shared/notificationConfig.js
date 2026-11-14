@@ -32,12 +32,23 @@ export const RESOURCE_ALERT_METRIC_RAM = 'ram';
 export const RESOURCE_ALERT_METRIC_DISK = 'disk';
 export const RESOURCE_ALERT_METRIC_NET_IN = 'netIn';
 export const RESOURCE_ALERT_METRIC_NET_OUT = 'netOut';
+export const RESOURCE_ALERT_METRIC_TCP_CONN = 'tcpConn';
+export const RESOURCE_ALERT_METRIC_UDP_CONN = 'udpConn';
+// Connection rules use absolute integer counts, not percentages or Mbps.
+export const RESOURCE_ALERT_CONNECTION_METRICS = Object.freeze([
+  RESOURCE_ALERT_METRIC_TCP_CONN,
+  RESOURCE_ALERT_METRIC_UDP_CONN
+]);
+export const RESOURCE_ALERT_CONNECTION_MAX = 10000000;
+export const RESOURCE_ALERT_CONNECTION_DEFAULT = '1000';
 export const RESOURCE_ALERT_METRICS = [
   RESOURCE_ALERT_METRIC_CPU,
   RESOURCE_ALERT_METRIC_RAM,
   RESOURCE_ALERT_METRIC_DISK,
   RESOURCE_ALERT_METRIC_NET_IN,
-  RESOURCE_ALERT_METRIC_NET_OUT
+  RESOURCE_ALERT_METRIC_NET_OUT,
+  RESOURCE_ALERT_METRIC_TCP_CONN,
+  RESOURCE_ALERT_METRIC_UDP_CONN
 ];
 const BYTES_PER_MEGABIT = 1000 * 1000 / 8;
 
@@ -187,6 +198,17 @@ export function normalizeResourceAlertMbps(value) {
   return String(Math.round(number * 100) / 100);
 }
 
+export function isResourceAlertConnectionMetric(metric) {
+  return RESOURCE_ALERT_CONNECTION_METRICS.includes(metric);
+}
+
+export function normalizeResourceAlertConnectionCount(value) {
+  if (value === undefined || value === null || value === '') return '0';
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > RESOURCE_ALERT_CONNECTION_MAX) return '0';
+  return String(number);
+}
+
 export function normalizeResourceAlertMode(value) {
   const mode = String(value || '').trim().toLowerCase();
   return mode === RESOURCE_ALERT_MODE_CONTINUOUS
@@ -230,7 +252,9 @@ function normalizeResourceAlertRuleName(value, metric, index) {
     [RESOURCE_ALERT_METRIC_RAM]: 'RAM',
     [RESOURCE_ALERT_METRIC_DISK]: 'DISK',
     [RESOURCE_ALERT_METRIC_NET_IN]: 'NET In',
-    [RESOURCE_ALERT_METRIC_NET_OUT]: 'NET Out'
+    [RESOURCE_ALERT_METRIC_NET_OUT]: 'NET Out',
+    [RESOURCE_ALERT_METRIC_TCP_CONN]: 'TCP Conn',
+    [RESOURCE_ALERT_METRIC_UDP_CONN]: 'UDP Conn'
   };
   return `${labels[metric] || 'Resource'} Alert ${index + 1}`;
 }
@@ -250,7 +274,8 @@ function normalizeResourceAlertServers(value) {
   return servers.slice(0, 1000);
 }
 
-function getDefaultResourceAlertThreshold(metric) {
+export function getDefaultResourceAlertThreshold(metric) {
+  if (isResourceAlertConnectionMetric(metric)) return RESOURCE_ALERT_CONNECTION_DEFAULT;
   return metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
     ? '100'
     : '80';
@@ -258,9 +283,11 @@ function getDefaultResourceAlertThreshold(metric) {
 
 export function normalizeResourceAlertThreshold(value, metric) {
   const fallback = getDefaultResourceAlertThreshold(metric);
-  const normalized = metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
-    ? normalizeResourceAlertMbps(value)
-    : normalizeResourceAlertPercent(value);
+  const normalized = isResourceAlertConnectionMetric(metric)
+    ? normalizeResourceAlertConnectionCount(value)
+    : metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
+      ? normalizeResourceAlertMbps(value)
+      : normalizeResourceAlertPercent(value);
   return Number(normalized) > 0 ? normalized : fallback;
 }
 
@@ -319,7 +346,9 @@ export function getResourceAlertRuleThresholds(rule) {
     diskPercent: metric === RESOURCE_ALERT_METRIC_DISK ? threshold : 0,
     netInBps: metric === RESOURCE_ALERT_METRIC_NET_IN ? threshold * BYTES_PER_MEGABIT : 0,
     netOutBps: metric === RESOURCE_ALERT_METRIC_NET_OUT ? threshold * BYTES_PER_MEGABIT : 0,
-    netTotalBps: 0
+    netTotalBps: 0,
+    tcpConn: metric === RESOURCE_ALERT_METRIC_TCP_CONN ? threshold : 0,
+    udpConn: metric === RESOURCE_ALERT_METRIC_UDP_CONN ? threshold : 0
   };
 }
 
@@ -368,6 +397,7 @@ export function readNotificationConfig(stored = {}) {
 }
 
 export function getResourceAlertThresholdMax(metric) {
+  if (isResourceAlertConnectionMetric(metric)) return RESOURCE_ALERT_CONNECTION_MAX;
   return metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT ? 100000 : 100;
 }
 
@@ -399,8 +429,11 @@ function validateRules(value, issues) {
     if (rule.threshold !== undefined) {
       const max = getResourceAlertThresholdMax(metric);
       const threshold = Number(rule.threshold);
-      if (!['string', 'number'].includes(typeof rule.threshold) || !Number.isFinite(threshold)
-        || threshold > max || Math.round(threshold * 100) <= 0) issue('invalidResourceAlertThreshold', index, 'threshold');
+      const invalid = isResourceAlertConnectionMetric(metric)
+        ? !isIntegerValue(rule.threshold, 1, max)
+        : !['string', 'number'].includes(typeof rule.threshold) || !Number.isFinite(threshold)
+          || threshold > max || Math.round(threshold * 100) <= 0;
+      if (invalid) issue('invalidResourceAlertThreshold', index, 'threshold');
     }
     const interval = [rule.intervalMinutes, rule.windowMinutes, rule.interval, rule.minutes].find(value => value !== undefined);
     if (interval !== undefined && !isIntegerValue(interval, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX)) {

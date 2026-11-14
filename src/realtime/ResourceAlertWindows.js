@@ -20,6 +20,13 @@ function toFiniteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+// A missing count stays null; treating it as 0 would recover alerts on agents that omit it.
+function toOptionalCount(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = toFiniteNumber(value);
+  return number === null || number < 0 ? null : number;
+}
+
 function normalizeMetricTimestamp(value, fallback = Date.now()) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
@@ -60,7 +67,9 @@ function normalizeResourceAlertSample(sample) {
     disk,
     netIn,
     netOut,
-    netTotal: netIn + netOut
+    netTotal: netIn + netOut,
+    tcpConn: toOptionalCount(metrics.tcp_conn),
+    udpConn: toOptionalCount(metrics.udp_conn)
   };
 }
 
@@ -76,7 +85,9 @@ function normalizeThresholds(thresholds = {}) {
     disk: normalize(thresholds.diskPercent),
     netIn: normalize(thresholds.netInBps),
     netOut: normalize(thresholds.netOutBps),
-    netTotal: normalize(thresholds.netTotalBps)
+    netTotal: normalize(thresholds.netTotalBps),
+    tcpConn: normalize(thresholds.tcpConn),
+    udpConn: normalize(thresholds.udpConn)
   };
 }
 
@@ -322,7 +333,9 @@ export class ResourceAlertWindows {
       ['disk', thresholds.disk],
       ['netIn', thresholds.netIn],
       ['netOut', thresholds.netOut],
-      ['netTotal', thresholds.netTotal]
+      ['netTotal', thresholds.netTotal],
+      ['tcpConn', thresholds.tcpConn],
+      ['udpConn', thresholds.udpConn]
     ].filter(([, threshold]) => threshold > 0);
 
     const alerts = [];

@@ -23,41 +23,41 @@ function formatPercent(value) {
   return `${number.toFixed(number >= 10 ? 1 : 2)}%`;
 }
 
-function formatResourceMetric(metric) {
-  const metricLabels = {
-    cpu: 'CPU',
-    ram: 'RAM',
-    disk: 'DISK',
-    netIn: '下行网速',
-    netOut: '上行网速',
-    netTotal: '总网速'
-  };
-  const label = metricLabels[metric.metric] || metric.metric;
-  const valueLabel = metric.mode === 'average' ? '平均' : '当前';
-  const value = metric.triggerValue ?? metric.current;
-  if (metric.metric === 'cpu' || metric.metric === 'ram' || metric.metric === 'disk') {
-    return `${label} ${valueLabel} ${formatPercent(value)} > ${formatPercent(metric.threshold)}`;
-  }
-  return `${label} ${valueLabel} ${formatMegabitsPerSecond(value)} > ${formatMegabitsPerSecond(metric.threshold)}`;
+const RESOURCE_METRIC_LABELS = Object.freeze({
+  cpu: 'CPU',
+  ram: 'RAM',
+  disk: 'DISK',
+  netIn: '下行网速',
+  netOut: '上行网速',
+  netTotal: '总网速',
+  tcpConn: 'TCP 连接数',
+  udpConn: 'UDP 连接数'
+});
+
+function formatConnectionCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return '0';
+  return String(Math.round(number));
 }
 
 function getResourceMetricLabel(metric) {
-  const metricLabels = {
-    cpu: 'CPU',
-    ram: 'RAM',
-    disk: 'DISK',
-    netIn: '下行网速',
-    netOut: '上行网速',
-    netTotal: '总网速'
-  };
-  return metricLabels[metric?.metric] || metric?.metric || '';
+  return RESOURCE_METRIC_LABELS[metric?.metric] || metric?.metric || '';
 }
 
 function formatResourceMetricValue(metric, value) {
   if (metric?.metric === 'cpu' || metric?.metric === 'ram' || metric?.metric === 'disk') {
     return formatPercent(value);
   }
+  if (metric?.metric === 'tcpConn' || metric?.metric === 'udpConn') {
+    return formatConnectionCount(value);
+  }
   return formatMegabitsPerSecond(value);
+}
+
+function formatResourceMetric(metric) {
+  const valueLabel = metric.mode === 'average' ? '平均' : '当前';
+  const value = metric.triggerValue ?? metric.current;
+  return `${getResourceMetricLabel(metric)} ${valueLabel} ${formatResourceMetricValue(metric, value)} > ${formatResourceMetricValue(metric, metric.threshold)}`;
 }
 
 function formatRecoveredResourceMetric(metric) {

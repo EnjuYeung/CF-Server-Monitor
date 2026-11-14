@@ -103,18 +103,24 @@
       <div class="stat-item">
         <div class="stat-label">{{ trans.servers }}</div>
         <div class="stat-main-value stat-main-value-sm stat-sub-info">
-          <span class="stat-online-color">{{ trans.online }}:{{ stats.online }}</span> |
+          <span class="stat-online-color">{{ trans.online }}:{{ stats.online }}</span>
+          <span class="stat-sep" aria-hidden="true">|</span>
           <span class="stat-offline-color">{{ trans.offline }}:{{ stats.offline }}</span>
         </div>
       </div>
       <div class="stat-item">
         <div class="stat-label">{{ trans.totalTraffic }}</div>
-        <div class="stat-main-value stat-main-value-sm">{{ formatBytes(stats.globalNetRx) }} ↓ | ↑ {{ formatBytes(stats.globalNetTx) }}</div>
+        <div class="stat-main-value stat-main-value-sm">
+          <span>↓ {{ formatBytes(stats.globalNetRx) }}</span>
+          <span class="stat-sep" aria-hidden="true">|</span>
+          <span>↑ {{ formatBytes(stats.globalNetTx) }}</span>
+        </div>
       </div>
-      <div class="stat-item">
+      <div class="stat-item" :class="{ 'stat-item-full': !sysConfig.show_price }">
         <div class="stat-label">{{ trans.realtimeSpeed }}</div>
         <div class="stat-main-value stat-main-value-sm">
-          <span class="stat-net-down-color">↓ {{ formatBytes(stats.globalSpeedIn) }}/s</span> |
+          <span class="stat-net-down-color">↓ {{ formatBytes(stats.globalSpeedIn) }}/s</span>
+          <span class="stat-sep" aria-hidden="true">|</span>
           <span class="stat-net-up-color">↑ {{ formatBytes(stats.globalSpeedOut) }}/s</span>
         </div>
       </div>
@@ -358,11 +364,24 @@
         </ul>
         <div v-else class="finance-empty">{{ trans.financeNoPaidServers }}</div>
 
+        <div class="finance-modal-meta">
+          <span>{{ trans.configuredPrices }}: {{ financeSummary.configuredCount }}</span>
+          <span>{{ trans.financeExpiredCount }}: {{ financeSummary.expiredCount }}</span>
+          <span>{{ trans.financeMissingExpire }}: {{ financeSummary.missingExpireCount }}</span>
+        </div>
+
         <div class="modal-footer flex-justify-end">
           <button @click="financeModalOpen = false" class="btn">OK</button>
         </div>
       </div>
     </div>
+
+    <LiveConnectionTimeoutModal
+      :show="dashboard.state.liveTimedOut"
+      :trans="trans"
+      @close="dashboard.dismissLiveTimeout"
+      @continue="dashboard.resumeLive"
+    />
 
     <Footer />
   </div>
@@ -377,6 +396,7 @@ import ServerBarCard from '../components/ServerBarCard.vue'
 import ServerRingCard from '../components/ServerRingCard.vue'
 import Footer from '../components/Footer.vue'
 import OsIcon from '../components/OsIcon.vue'
+import LiveConnectionTimeoutModal from '../components/LiveConnectionTimeoutModal.vue'
 import { formatBytes, getFlagRegionCode, getApiBases, isServerOnline } from '../utils/api.js'
 import { calcTrafficUsagePercent, getUsageColor } from '../composables/useServerCardData'
 import { getPublicAssetUrl } from '../utils/config'
@@ -442,7 +462,7 @@ const getListSortAction = column => {
     .replace('{column}', column.label)
 }
 const financeRateCurrencies = DISPLAY_FINANCE_CURRENCIES
-const financeSummary = computed(() => calculateFinanceSummary(servers.value, exchangeRates.value, now.value))
+const financeSummary = computed(() => calculateFinanceSummary(servers.value, exchangeRates.value, now.value, sysConfig.value.notification_timezone))
 const formattedRemainingValue = computed(() => formatFinanceMetric(financeSummary.value.remainingValueCNY))
 const formattedTotalValue = computed(() => formatFinanceMetric(financeSummary.value.totalValueCNY))
 const formattedMonthlyAverageCost = computed(() => formatFinanceMetric(financeSummary.value.monthlyAverageCostCNY))
@@ -460,7 +480,7 @@ const financeSummaryItems = computed(() => [
 ])
 
 const financeServerRows = computed(() =>
-  calculateServerFinanceRows(servers.value, exchangeRates.value, now.value).map(row => ({
+  calculateServerFinanceRows(servers.value, exchangeRates.value, now.value, sysConfig.value.notification_timezone).map(row => ({
     ...row,
     amount: formatFinanceMetric(row.remainingValueCNY)
   }))

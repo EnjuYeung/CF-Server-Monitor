@@ -2,7 +2,7 @@ import { clearAllCaches, getMetricsHistoryCache, setMetricsHistoryCache } from '
 import { normalizeLongHistoryPoints, DEFAULT_LONG_HISTORY_POINTS } from '../utils/settings.js';
 import { attachDiskMetricsObject, flattenDiskMetrics, isDisabledProbeMetric, normalizeProbeMetricRow } from '../utils/metrics.js';
 import { createHistoryTableSql, HISTORY_INSERT_COLUMNS, HISTORY_TABLE_COLUMNS } from '../utils/historyFields.js';
-import { DASHBOARD_LATENCY_WINDOW_POINTS, DASHBOARD_LATENCY_WINDOW_HOURS, DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS } from '../utils/config.js';
+import { NOTIFICATION_OUTBOX_TTL_MS, DASHBOARD_LATENCY_WINDOW_POINTS, DASHBOARD_LATENCY_WINDOW_HOURS, DASHBOARD_LATENCY_WINDOW_CACHE_TTL_MS } from '../utils/config.js';
 const DAY_MS = 86400000;
 const LATENCY_NODE_FIELDS = ['ct', 'cu', 'cm', 'bd', 'node_1', 'node_2', 'node_3', 'node_4'];
 const dashboardLatencyHistoryCache = new Map();
@@ -50,7 +50,8 @@ export async function initDatabase(db) {
           offline_notify_disabled TEXT DEFAULT '0',
           is_hidden TEXT DEFAULT '0',
           sort_order INTEGER DEFAULT 0,
-          timestamp INTEGER DEFAULT 0
+          timestamp INTEGER DEFAULT 0,
+          billing_anchor_day INTEGER DEFAULT NULL
         )
 ;
 
@@ -84,9 +85,21 @@ export async function initDatabase(db) {
         created_at INTEGER NOT NULL, delivered_at INTEGER, last_error TEXT
       );`);
     db.exec(createHistoryTableSql());
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_history_server_time ON metrics_history(server_id, timestamp);
-      PRAGMA user_version = 1;`);
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_history_server_time ON metrics_history(server_id, timestamp);`);
+    migrateBillingAnchorDay(db);
+    db.exec('PRAGMA user_version = 2;');
   });
+}
+
+// v2: monthly renewals return to the original billing day instead of drifting to 28.
+// Existing rows start from their current day; an already drifted date is re-entered once.
+function migrateBillingAnchorDay(db) {
+  const columns = db.prepare('PRAGMA table_info(servers)').all().results;
+  if (columns.some(column => column.name === 'billing_anchor_day')) return;
+  db.exec(`ALTER TABLE servers ADD COLUMN billing_anchor_day INTEGER DEFAULT NULL;
+    UPDATE servers SET billing_anchor_day = CAST(substr(expire_date, 9, 2) AS INTEGER)
+      WHERE expire_date GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'
+        AND CAST(substr(expire_date, 9, 2) AS INTEGER) BETWEEN 1 AND 31;`);
 }
 
 export async function clearHistory(db) {
@@ -101,6 +114,10 @@ export async function clearHistory(db) {
 export function cleanupHistory(db, now = Date.now()) {
   const result = db.prepare('DELETE FROM metrics_history WHERE timestamp < ?').bind(now - 7 * DAY_MS).run();
   db.prepare('DELETE FROM notification_outbox WHERE delivered_at IS NOT NULL AND delivered_at < ?').bind(now - 7 * DAY_MS).run();
+  const expired = db.prepare('DELETE FROM notification_outbox WHERE delivered_at IS NULL AND created_at < ?')
+    .bind(now - NOTIFICATION_OUTBOX_TTL_MS).run();
+  const discarded = Number(expired?.meta?.changes ?? expired?.changes ?? 0);
+  if (discarded > 0) console.warn(JSON.stringify({ event: 'notification_outbox_expired', discarded }));
   return result;
 }
 

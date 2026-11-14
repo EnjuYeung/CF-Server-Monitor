@@ -11,7 +11,7 @@ export function useDashboardState(appConfig) {
     loadConfig: async () => appConfig || await fetchConfig(),
     fetchSnapshots: (onResult, signal) => http.getAllWithProgress('/api/servers', onResult, { signal }),
     connect: (_source, index, ids, handlers) => createLiveSocket('all', {
-      ...handlers, replay: false, timeoutMinutes: 0, reconnectForever: true
+      replay: false, reconnectForever: true, ...handlers
     }, index, ids),
     now: () => Date.now(),
     every: (callback, delay) => setInterval(callback, delay),

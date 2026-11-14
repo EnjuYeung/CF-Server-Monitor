@@ -1,6 +1,7 @@
 import { validateAgentConfigInput, validatePingNode, validateNetworkInterfaces, isValidTrafficCorrection } from '../utils/agentConfig.js';
 import { isWssReportConfigured } from '../utils/settings.js';
-import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded } from '../shared/billing.js';
+import { detectBillingCycle, detectCurrencySymbol, normalizeBillingCycle, normalizeCurrency, normalizePrice, renewExpireDateIfNeeded, resolveBillingAnchorDay } from '../shared/billing.js';
+import { normalizeNotificationTimezone } from '../shared/notificationConfig.js';
 
 import { PING_NODE_FIELDS } from '../shared/pingNode.js';
 import { normalizeServerTags } from '../shared/serverTags.js';
@@ -45,6 +46,12 @@ export function normalizeServerInput(input, settings) {
   };
   const cycle = normalizeBillingCycle(input.billing_cycle || detectBillingCycle(input.price));
   const renewal = flag(input.auto_renewal);
+  const enteredExpireDate = String(input.expire_date || '').trim();
+  // The anchor is kept only while it explains the entered date; a new date sets a new day.
+  const anchorDay = resolveBillingAnchorDay(enteredExpireDate, input.billing_anchor_day ?? null);
+  const expireDate = renewExpireDateIfNeeded(enteredExpireDate, cycle, renewal, Date.now(), 0, {
+    timezone: normalizeNotificationTimezone(settings?.notification_timezone), anchorDay
+  }).expire_date;
   return {
     name: input.name.trim(), server_group: String(input.server_group || 'Default'),
     region: String(input.region || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16),
@@ -52,7 +59,7 @@ export function normalizeServerInput(input, settings) {
     note: String(input.note || '').trim().slice(0, 500),
     price: normalizePrice(input.price), billing_cycle: cycle, auto_renewal: renewal,
     currency: normalizeCurrency(input.currency || detectCurrencySymbol(input.price) || '¥'),
-    expire_date: renewExpireDateIfNeeded(input.expire_date || '', cycle, renewal).expire_date,
+    expire_date: expireDate, billing_anchor_day: anchorDay,
     traffic_limit: String(input.traffic_limit || ''), traffic_calc_type: ['total', 'max', 'dl', 'ul'].includes(input.traffic_calc_type) ? input.traffic_calc_type : 'total',
     interface: interfaces.value, ...config,
     ...Object.fromEntries(PING_NODE_FIELDS.map(field => [field, probes.values[field] ?? ''])),

@@ -1,13 +1,13 @@
 import { getLatestMetricsForAllServers } from '../../database/schema.js';
 import { enqueueNotification } from '../outbox.js';
-import { getServerLastSeen, isServerOffline } from '../serverPresence.js';
+import { getServerLastSeen, isAwaitingFirstReceiptSinceStart, isServerOffline } from '../serverPresence.js';
 import { getAllServers } from '../../utils/cache.js';
 import { getTgNotifyMinutes } from '../../shared/notificationConfig.js';
 import { loadSiteSettings } from '../../utils/settings.js';
 import { formatLastReportTime } from './time.js';
 import { hasNotificationTarget } from './delivery.js';
 
-export async function checkOfflineNodes(env) {
+export async function checkOfflineNodes(env, { startedAt = 0, now: checkTime } = {}) {
   const db = env.DB;
   const siteSettings = await loadSiteSettings(db);
   const tgNotifyMinutes = getTgNotifyMinutes(siteSettings.tg_notify);
@@ -32,7 +32,7 @@ export async function checkOfflineNodes(env) {
       }
     }
 
-    const now = Date.now();
+    const now = Number(checkTime) || Date.now();
     const offlineThreshold = tgNotifyMinutes * 60 * 1000;
     const offlineNodes = [];
     const recoveredNodes = [];
@@ -43,6 +43,8 @@ export async function checkOfflineNodes(env) {
       const latestMetrics = latestMetricsMap.get(s.id);
 
       const lastSeen = getServerLastSeen(env, s.id, latestMetrics);
+      // Keep the previous alert state; downtime of the controller is not node downtime.
+      if (isAwaitingFirstReceiptSinceStart(s, lastSeen, offlineThreshold, startedAt, now)) continue;
       const isOffline = isServerOffline(s, lastSeen, offlineThreshold, now);
 
       if (isOffline && !alertState[s.id]) {

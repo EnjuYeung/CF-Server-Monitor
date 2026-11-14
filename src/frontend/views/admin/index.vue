@@ -1193,7 +1193,9 @@ const closeEditModal = () => {
 }
 
 const buildEditPayloadFromForm = form => {
-  const result = buildServerFormPayload(form, getEffectiveConnectionMode(form.connection_mode))
+  const result = buildServerFormPayload(form, getEffectiveConnectionMode(form.connection_mode), {
+    timezone: settings.value.notification_timezone
+  })
   return result.invalidField ? { error: buildPingNodeError(result.invalidField) } : result
 }
 
@@ -1326,6 +1328,8 @@ const saveBatchEdit = async () => {
       for (const field of enabledFields) {
         form[field] = batchEditForm.value[field]
       }
+      // A newly entered date sets its own billing day.
+      if (enabledFields.includes('expire_date')) form.billing_anchor_day = null
       const built = buildEditPayloadFromForm(form)
       if (built.error) {
         validationError.value = built.error

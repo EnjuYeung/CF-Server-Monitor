@@ -1,5 +1,6 @@
 import { loadSiteSettings } from '../utils/settings.js';
 import { sendNotification } from './notifications/delivery.js';
+import { NOTIFICATION_OUTBOX_TTL_MS } from '../utils/config.js';
 
 export function enqueueNotification(db, msg, context, now = Date.now()) {
   db.prepare('INSERT INTO notification_outbox (payload, created_at) VALUES (?, ?)')
@@ -12,7 +13,7 @@ export function drainNotifications(db, { now = Date.now(), sender = sendNotifica
   const task = (async () => {
     const settings = await loadSiteSettings(db);
     const rows = db.prepare(`SELECT * FROM notification_outbox WHERE delivered_at IS NULL
-      AND next_attempt <= ? ORDER BY id LIMIT 12`).bind(now).all().results;
+      AND next_attempt <= ? AND created_at >= ? ORDER BY id LIMIT 12`).bind(now, now - NOTIFICATION_OUTBOX_TTL_MS).all().results;
     for (let offset = 0; offset < rows.length; offset += 3) {
       await Promise.all(rows.slice(offset, offset + 3).map(async row => {
         let result;

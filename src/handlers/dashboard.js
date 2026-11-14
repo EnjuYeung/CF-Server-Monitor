@@ -5,6 +5,7 @@ import { getDashboardLatencyHistory, getLatestMetrics, getLatestMetricsForAllSer
 import { getAllServers, getServerDetail } from '../utils/cache.js';
 import { mergeMetricsIntoServer, coerceNumericMetricFields } from '../utils/metrics.js';
 import { normalizeLongHistoryPoints } from '../utils/settings.js';
+import { normalizeNotificationTimezone } from '../shared/notificationConfig.js';
 import { createSuccessResponse, createBadRequestResponse, createNotFoundResponse } from '../utils/errors.js';
 import { isValidUUID } from '../services/serverInput.js';
 import {
@@ -46,6 +47,7 @@ function withoutPrivateServerFields(server) {
   delete item.note;
   delete item.auto_update;
   delete item.traffic_snapshots;
+  delete item.billing_anchor_day;
   return normalizePublicIpFields(item);
 }
 
@@ -109,7 +111,8 @@ export async function handleServerAPI(request, env, sys) {
   mergeMetricsIntoServer(server, latestMetrics, getServerLastSeen(env, id, latestMetrics));
   server.latestReportUpdates = realtimeState.latestReportUpdates;
   server.sysConfig = {
-    long_history_points: Number(normalizeLongHistoryPoints(sys.long_history_points))
+    long_history_points: Number(normalizeLongHistoryPoints(sys.long_history_points)),
+    notification_timezone: normalizeNotificationTimezone(sys.notification_timezone)
   };
   
   return createSuccessResponse(omitNullLossProbeFields(withoutPrivateServerFields(server)));
@@ -192,6 +195,8 @@ export async function handleServersAPI(request, env, sys) {
       custom_cm_name: sys.custom_cm_name || '移动',
       custom_bd_name: sys.custom_bd_name || 'BGP',
       display_mode: sys.display_mode || 'bar',
+      // Expiry dates end at 00:00 in this zone, the same day boundary used by reminders and renewal.
+      notification_timezone: normalizeNotificationTimezone(sys.notification_timezone),
       latency_window: {
         points: DASHBOARD_LATENCY_WINDOW_POINTS,
         hours: DASHBOARD_LATENCY_WINDOW_HOURS

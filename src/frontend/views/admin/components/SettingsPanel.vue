@@ -48,7 +48,17 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.custom_bg" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.custom_bg" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.custom_bg"
+                  type="button"
+                  class="input-clear-btn"
+                  :aria-label="trans.clear"
+                  :title="trans.clear"
+                  @click="clearUrlField('custom_bg', $event)"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*" @change="$emit('upload-bg', $event)">
@@ -63,7 +73,17 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.custom_bg_mobile" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.custom_bg_mobile" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.custom_bg_mobile"
+                  type="button"
+                  class="input-clear-btn"
+                  :aria-label="trans.clear"
+                  :title="trans.clear"
+                  @click="clearUrlField('custom_bg_mobile', $event)"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*" @change="$emit('upload-bg-mobile', $event)">
@@ -80,7 +100,17 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.favicon" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.favicon" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.favicon"
+                  type="button"
+                  class="input-clear-btn"
+                  :aria-label="trans.clear"
+                  :title="trans.clear"
+                  @click="clearUrlField('favicon', $event)"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*,.ico" @change="$emit('upload-favicon', $event)">
@@ -454,7 +484,7 @@
 
               <div class="form-group flex-1">
                 <label class="form-label">{{ trans.resourceAlertMetric }}</label>
-                <select v-model="rule.metric" class="form-select" @change="normalizeRuleThreshold(rule)">
+                <select :value="rule.metric" class="form-select" @change="onResourceAlertMetricChange(rule, $event)">
                   <option v-for="option in resourceAlertMetricOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
               </div>
@@ -626,7 +656,7 @@ import HelpTooltip from '../../../components/HelpTooltip.vue'
 import TwoFactorPanel from './TwoFactorPanel.vue'
 import { FRONTEND_WS_TIMEOUT_MINUTES_MAX, HISTORY } from '../../../utils/constants.js'
 import { SETTINGS_PING_NODE_FIELDS, validatePingNode } from '../../../../shared/pingNode.js'
-import { EXPIRE_REMINDER_DAYS_MAX, RESOURCE_ALERT_RULES_MAX, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, normalizeResourceAlertThreshold, getResourceAlertThresholdMax } from '../../../../shared/notificationConfig.js'
+import { EXPIRE_REMINDER_DAYS_MAX, RESOURCE_ALERT_RULES_MAX, RESOURCE_ALERT_WINDOW_MIN, RESOURCE_ALERT_WINDOW_MAX, normalizeResourceAlertThreshold, getResourceAlertThresholdMax, isResourceAlertConnectionMetric } from '../../../../shared/notificationConfig.js'
 
 const props = defineProps({
   trans: { type: Object, required: true },
@@ -837,7 +867,9 @@ const resourceAlertMetricOptions = computed(() => [
   { value: 'ram', label: props.trans.resourceAlertMetricRam || 'RAM (%)' },
   { value: 'disk', label: props.trans.resourceAlertMetricDisk || 'DISK (%)' },
   { value: 'netIn', label: props.trans.resourceAlertMetricNetIn || 'NET In (Mbps)' },
-  { value: 'netOut', label: props.trans.resourceAlertMetricNetOut || 'NET Out (Mbps)' }
+  { value: 'netOut', label: props.trans.resourceAlertMetricNetOut || 'NET Out (Mbps)' },
+  { value: 'tcpConn', label: props.trans.resourceAlertMetricTcp || 'TCP Connections' },
+  { value: 'udpConn', label: props.trans.resourceAlertMetricUdp || 'UDP Connections' }
 ])
 
 const resourceAlertIntervalOptions = computed(() => (
@@ -924,9 +956,29 @@ const resourceAlertThresholdMax = getResourceAlertThresholdMax
 const normalizeRuleThreshold = (rule) => {
   const threshold = Number(rule.threshold)
   const max = resourceAlertThresholdMax(rule.metric)
-  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > max) {
+  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > max
+    || (isResourceAlertConnectionMetric(rule.metric) && !Number.isInteger(threshold))) {
     rule.threshold = resourceAlertThresholdPlaceholder(rule.metric)
   }
+}
+
+const clearUrlField = (field, event) => {
+  props.settings[field] = ''
+  event?.currentTarget?.parentElement?.querySelector('input')?.focus()
+}
+
+const resourceAlertMetricUnit = metric => {
+  if (isResourceAlertConnectionMetric(metric)) return 'count'
+  return metric === 'netIn' || metric === 'netOut' ? 'mbps' : 'percent'
+}
+
+// Percent, Mbps and connection counts differ in unit; keep a value only within the same unit.
+const onResourceAlertMetricChange = (rule, event) => {
+  const next = String(event?.target?.value || '')
+  const unitChanged = resourceAlertMetricUnit(rule.metric) !== resourceAlertMetricUnit(next)
+  rule.metric = next
+  if (unitChanged) rule.threshold = resourceAlertThresholdPlaceholder(next)
+  else normalizeRuleThreshold(rule)
 }
 
 const addResourceAlertRule = () => {

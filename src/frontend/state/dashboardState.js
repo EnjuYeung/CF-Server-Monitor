@@ -1,5 +1,5 @@
 import { readonly, shallowReactive } from 'vue'
-import { DEFAULT_SITE_TITLE, LATENCY_WINDOW, TIME } from '../utils/constants.js'
+import { DEFAULT_SITE_TITLE, FRONTEND_WS_TIMEOUT_MINUTES_MAX, LATENCY_WINDOW, TIME } from '../utils/constants.js'
 import { normalizeTimestamp } from '../utils/time.js'
 import { resolveDisplayMode } from '../utils/displayMode.js'
 import { getPlaybackElapsedMs, resolvePlaybackCursor } from '../utils/playback.js'
@@ -13,6 +13,10 @@ const nodeKey = (source, id) => JSON.stringify([source, String(id)])
 const sampleTime = server => normalizeTimestamp(server?.sample_timestamp ?? (server?.instance_id ? server?.last_updated : server?.timestamp ?? server?.last_updated), null)
 const reportTime = server => normalizeTimestamp(server?.report_timestamp ?? server?.last_updated, null)
 const displayTime = server => normalizeTimestamp(server?.display_timestamp, null)
+const normalizeLiveTimeoutMinutes = value => {
+  const minutes = Number(value)
+  return Number.isInteger(minutes) && minutes >= 0 && minutes <= FRONTEND_WS_TIMEOUT_MINUTES_MAX ? minutes : 0
+}
 
 // A session owns state and event ordering; adapters supply transport and browser time/events.
 export function createDashboardState(adapter, initialConfig = {}) {
@@ -20,7 +24,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
     servers: [],
     stats: { total: '-', online: 0, offline: 0, globalNetRx: 0, globalNetTx: 0, globalSpeedIn: 0, globalSpeedOut: 0 },
     regionStats: {}, unknownStats: 0, now: adapter.now(),
-    isLoading: true, liveConnected: false, sitesRemaining: 0, corsErrorSites: [], authenticationRequired: false,
+    isLoading: true, liveConnected: false, liveTimedOut: false, sitesRemaining: 0, corsErrorSites: [], authenticationRequired: false,
     config: {
       show_price: true, show_expire: true, show_tf: true, show_three_net_details: true,
       custom_ct_name: initialConfig?.custom_ct_name || '电信',
@@ -45,6 +49,9 @@ export function createDashboardState(adapter, initialConfig = {}) {
   let removeRestoreListener = null
   let connectionsStarted = false
   let reconnectAfterResume = false
+  // The admin WS timeout ends live updates until the viewer chooses to continue.
+  let liveTimeoutMinutes = 0
+  let livePaused = false
 
   const sources = () => {
     const configured = adapter.getSources()
@@ -240,6 +247,11 @@ export function createDashboardState(adapter, initialConfig = {}) {
       connections.delete(source)
       entry.socket?.close()
     }
+    if (livePaused) {
+      updateConnectedStatus()
+      recomputeStats()
+      return
+    }
     bases.forEach((source, apiIndex) => {
       const ids = state.servers.filter(server => server.source === source).map(server => server.id).filter(Boolean)
       const key = JSON.stringify(state.servers.filter(server => server.source === source).map(serverInstanceKey).sort((a, b) => a[0].localeCompare(b[0])))
@@ -252,6 +264,8 @@ export function createDashboardState(adapter, initialConfig = {}) {
       connections.set(source, entry)
       const current = () => active && connections.get(source) === entry
       entry.socket = adapter.connect(source, apiIndex, ids, {
+        timeoutMinutes: liveTimeoutMinutes,
+        onTimeout: () => { if (current()) pauseLive() },
         onMessage: message => { if (current()) receive(source, message) },
         onStatus: ({ connected, reason }) => {
           if (!current()) return
@@ -321,8 +335,40 @@ export function createDashboardState(adapter, initialConfig = {}) {
     return refreshTask
   }
 
+  function closeConnections() {
+    for (const entry of connections.values()) {
+      const socket = entry.socket
+      entry.socket = null
+      socket?.close()
+    }
+    connections.clear()
+  }
+
+  function pauseLive() {
+    if (!active || livePaused) return
+    livePaused = true
+    refreshAbort?.abort()
+    closeConnections()
+    state.liveTimedOut = true
+    updateConnectedStatus()
+  }
+
+  /** Continue after the timeout prompt: reconnect every source and catch up by snapshot. */
+  function resumeLive() {
+    if (!active || !livePaused) return
+    livePaused = false
+    state.liveTimedOut = false
+    if (connectionsStarted) updateConnections()
+    refresh()
+  }
+
+  /** Close the prompt and keep the page paused. */
+  function dismissLiveTimeout() {
+    state.liveTimedOut = false
+  }
+
   function restore(event = {}) {
-    if (!active) return
+    if (!active || livePaused) return
     if (event.type === 'resume' || event.type === 'online' || (event.type === 'pageshow' && event.persisted)) reconnectAfterResume = true
     if (adapter.isHidden()) return
     tick()
@@ -342,6 +388,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
       try {
         const config = await adapter.loadConfig()
         if (!active) return
+        liveTimeoutMinutes = normalizeLiveTimeoutMinutes(config?.frontend_ws_timeout_minutes)
         const title = String(adapter.getTitle() || '').trim()
         state.config = {
           ...state.config,
@@ -357,7 +404,7 @@ export function createDashboardState(adapter, initialConfig = {}) {
       updateConnections()
       removeRestoreListener = adapter.onRestore(restore)
       tick()
-      timers.push(adapter.every(tick, TICK_MS), adapter.every(() => refresh(), TIME.POLL_INTERVAL_MS))
+      timers.push(adapter.every(tick, TICK_MS), adapter.every(() => (livePaused ? Promise.resolve() : refresh()), TIME.POLL_INTERVAL_MS))
     })()
     return startTask
   }
@@ -369,17 +416,12 @@ export function createDashboardState(adapter, initialConfig = {}) {
     refreshAbort?.abort()
     removeRestoreListener?.()
     for (const timer of timers) adapter.cancel(timer)
-    for (const entry of connections.values()) {
-      const socket = entry.socket
-      entry.socket = null
-      socket?.close()
-    }
-    connections.clear()
+    closeConnections()
     playbackBuffers.clear()
     latestAppliedSamples.clear()
     unauthorizedSources.clear()
     state.liveConnected = false
   }
 
-  return { state: readonly(state), start, stop }
+  return { state: readonly(state), start, stop, resumeLive, dismissLiveTimeout }
 }

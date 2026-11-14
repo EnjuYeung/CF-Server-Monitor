@@ -365,6 +365,7 @@ import useTheme from '../composables/useTheme'
 import { isDisabledProbeMetric } from '../utils/server.js'
 import { resolvePlaybackCursor } from '../utils/playback.js'
 import { buildLiveStatusData, getLiveChartTime } from '../utils/liveStatus.js'
+import { getExpireTimestamp } from '../../shared/billing.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -567,15 +568,18 @@ const diskPercent = computed(() => {
 const diskIo = computed(() => hasValidDiskIoPayload(server.value) ? normalizeDiskIo(server.value) : EMPTY_DISK_IO)
 const hasGpuData = computed(() => gpuInfoList.value.length > 0)
 
+// Expiry dates end at 00:00 in the notification time zone, like reminders and renewal.
+const expireTime = computed(() => getExpireTimestamp(server.value.expire_date, config.value?.notification_timezone))
+
 const isExpired = computed(() => {
   if (!server.value.expire_date) return false
-  const expTime = new Date(server.value.expire_date).getTime()
-  return isNaN(expTime) ? false : expTime < Date.now()
+  const expTime = expireTime.value
+  return isNaN(expTime) ? false : expTime <= Date.now()
 })
 
 const expireDaysText = computed(() => {
   if (!server.value.expire_date) return ''
-  const expTime = new Date(server.value.expire_date).getTime()
+  const expTime = expireTime.value
   if (isNaN(expTime)) return ''
   const diff = expTime - Date.now()
   const days = Math.ceil(diff / (1000 * 3600 * 24))
@@ -617,6 +621,10 @@ const avgLossNode2 = ref(null)
 const avgLossNode3 = ref(null)
 const avgLossNode4 = ref(null)
 let isInitializingCharts = false
+// Only the newest range request may draw; the page may also leave before init finishes.
+let historyLoadSeq = 0
+let disposed = false
+let chartInitRetryTimer = null
 let databaseUpgradeAlertShown = false
 let lastReportChartUpdateTime = 0
 
@@ -1026,6 +1034,8 @@ const initCharts = () => {
           },
           ticks: {
             maxTicksLimit: CHART.MAX_TICKS,
+            // Keep time labels apart on narrow charts instead of crowding them.
+            autoSkipPadding: 16,
             color: chartTheme.axis,
             font: { size: 9, family: "'JetBrains Mono', monospace" },
             maxRotation: 0,
@@ -1243,9 +1253,27 @@ const clearDiskIoChart = () => {
   chart.update('none')
 }
 
+const clearHistoryCharts = () => {
+  for (const chart of Object.values(charts)) {
+    if (!chart) continue
+    for (const dataset of chart.data.datasets || []) dataset.data = []
+    chart.data.labels = []
+    chart.update('none')
+  }
+  for (const average of [...Object.values(avgPingRefs), ...Object.values(avgLossRefs)]) average.value = null
+  hasDiskIoData.value = false
+  if (hasValidDiskIoPayload(server.value) && server.value.last_updated) {
+    appendDiskIoChart(server.value, getLiveChartTime(server.value))
+  }
+  syncProbeChartVisibility()
+}
+
 const loadAllHistory = async (hours) => {
+  const seq = ++historyLoadSeq
+  const isCurrentLoad = () => !disposed && seq === historyLoadSeq
   try {
     const allData = await fetchAllHistory(serverId, hours, apiIndex.value)
+    if (!isCurrentLoad()) return
     lastReportChartUpdateTime = 0
     lossHistoryFields.value = Object.fromEntries(PING_FIELD_DEFS.map(item => [
       item.lossField,
@@ -1333,12 +1361,16 @@ const loadAllHistory = async (hours) => {
       avgLossNode3.value = avg(allData, 'loss_node_3', false)
       avgLossNode4.value = avg(allData, 'loss_node_4', false)
       syncProbeChartVisibility()
+    } else {
+      // A range without rows must not keep showing the previous range.
+      clearHistoryCharts()
     }
 
     updateAllChartTimeUnits(hours)
     historyLoaded.value = true
 
     await nextTick()
+    if (!isCurrentLoad()) return
 
     requestAnimationFrame(() => {
       Object.values(charts).forEach(chart => {
@@ -1348,6 +1380,7 @@ const loadAllHistory = async (hours) => {
       })
     })
   } catch (e) {
+    if (!isCurrentLoad()) return
     if (e && e.status === 401) {
       showLoginModal.value = true
       currentHours.value = REALTIME_HISTORY_HOURS
@@ -1679,10 +1712,14 @@ let liveSocket = null
 let liveConnectionClosedByUser = false
 
 const initChartsOnMount = async () => {
-  if (isInitializingCharts || chartsReady.value) return
+  if (disposed || isInitializingCharts || chartsReady.value) return
   isInitializingCharts = true
 
   await nextTick()
+  if (disposed) {
+    isInitializingCharts = false
+    return
+  }
   
   const allRefsReady = cpuChartRef.value && gpuChartRef.value && ramChartRef.value && diskChartRef.value && diskIoChartRef.value &&
     netChartRef.value && procChartRef.value && connChartRef.value && pingChartRef.value && lossChartRef.value && loadChartRef.value
@@ -1696,7 +1733,8 @@ const initChartsOnMount = async () => {
     }
   } else {
     isInitializingCharts = false
-    setTimeout(initChartsOnMount, 30)
+    clearTimeout(chartInitRetryTimer)
+    chartInitRetryTimer = setTimeout(initChartsOnMount, 30)
   }
 }
 
@@ -1759,9 +1797,12 @@ const init = async () => {
     fetchCurrentStatus(),
     loadRuntimeConfig()
   ])
+  if (disposed) return
   await initChartsOnMount()
+  if (disposed) return
 
   await loadAllHistory(currentHours.value)
+  if (disposed) return
   replayLatestReportUpdates(initialData)
 
   liveSocket = createLiveSocket(String(serverId), {
@@ -1799,8 +1840,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
+  clearTimeout(chartInitRetryTimer)
   document.removeEventListener('visibilitychange', handleVisibility)
   if (liveSocket) liveSocket.close()
+  liveSocket = null
   clearLatestReportReplayTimers()
   lastGpuSignature = ''
   safeDestroyCharts()

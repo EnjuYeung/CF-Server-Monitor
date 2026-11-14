@@ -5,6 +5,7 @@ import {
   normalizeCurrency,
   normalizePrice
 } from './server.js'
+import { getExpireTimestamp } from '../../shared/billing.js'
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 const MONTH_DAYS = 30
@@ -208,7 +209,7 @@ export async function getDailyExchangeRates() {
   return { rates: DEFAULT_EXCHANGE_RATES, source: 'default' }
 }
 
-export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANGE_RATES, now = Date.now()) {
+export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANGE_RATES, now = Date.now(), timezone = 'UTC') {
   const summary = {
     totalValueCNY: 0,
     remainingValueCNY: 0,
@@ -234,7 +235,7 @@ export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANG
     }
 
     // 单价 ×（剩余时长 ÷ 计费周期）：预付多个周期不封顶，总价值与剩余价值同口径。
-    const remainingValue = calculateRemainingValueCNY(server, priceCNY, now)
+    const remainingValue = calculateRemainingValueCNY(server, priceCNY, now, timezone)
     summary.totalValueCNY += remainingValue
     if (remainingValue <= 0) summary.expiredCount++
     summary.remainingValueCNY += remainingValue
@@ -243,11 +244,11 @@ export function calculateFinanceSummary(servers, exchangeRates = DEFAULT_EXCHANG
   return summary
 }
 
-export function calculateRemainingValueCNY(server, priceCNY, now = Date.now()) {
+export function calculateRemainingValueCNY(server, priceCNY, now = Date.now(), timezone = 'UTC') {
   const expireDate = String(server?.expire_date || server?.expired_at || '').trim()
   if (!expireDate || priceCNY <= 0) return 0
 
-  const expiredAt = new Date(expireDate).getTime()
+  const expiredAt = getExpireTimestamp(expireDate, timezone)
   if (!Number.isFinite(expiredAt)) return 0
 
   const diffMs = expiredAt - Number(now)
@@ -263,19 +264,19 @@ export function calculateRemainingValueCNY(server, priceCNY, now = Date.now()) {
 }
 
 // The dashboard snapshot already follows the server order saved in admin.
-export function calculateServerFinanceRows(servers, exchangeRates = DEFAULT_EXCHANGE_RATES, now = Date.now()) {
+export function calculateServerFinanceRows(servers, exchangeRates = DEFAULT_EXCHANGE_RATES, now = Date.now(), timezone = 'UTC') {
   return (Array.isArray(servers) ? servers : []).flatMap(server => {
     const priceCNY = getPriceCNY(server, exchangeRates)
     if (priceCNY <= 0) return []
 
     const expireDate = String(server?.expire_date || server?.expired_at || '').trim()
-    const expiredAt = new Date(expireDate).getTime()
+    const expiredAt = getExpireTimestamp(expireDate, timezone)
     return [{
       id: server.id,
       source: server.source,
       name: server.name,
       remainingDays: Number.isFinite(expiredAt) ? Math.max(0, Math.ceil((expiredAt - now) / MS_PER_DAY)) : null,
-      remainingValueCNY: calculateRemainingValueCNY(server, priceCNY, now)
+      remainingValueCNY: calculateRemainingValueCNY(server, priceCNY, now, timezone)
     }]
   })
 }
