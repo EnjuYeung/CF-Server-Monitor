@@ -350,3 +350,5 @@ curl -fsSL https://monitor.example.com/agent/install.sh | sh -s -- install \
 全量回归：211 项 Node、Go Agent、19 项主控 + 9 项原生 Agent 验收、五组原有浏览器回归及本轮 10 项浏览器验收通过。原生 Agent 未改动。
 
 2026-11-14 按用户授权将功能提交 `382b7ec` 推送 codex，并于北京时间 19:59:09 部署 https://jm.zedy.cc（镜像 6f42273fa211）。断网生产副本与正式切换均验证数据库 v1→v2 补列、17/17 账单日初始化及原有数据不变；切换后 17/17 节点恢复上报，公网 HTTPS/WSS 与新行为实测通过。本次及 11-03 的备份、测试数据和回滚镜像已按要求删除，记录见 TEST_REPORT.md。
+
+2026-11-14 按用户决定修复上述两个 Issue（#1 改用账期累计、窗口保持报告间隔；#2 配置错误停止重试并保留原因），提交 `9c1cb7d` 推送 codex 并于北京时间 20:31:39 部署（镜像 21d0d9fc73d8），两个 Issue 已关闭；验收与发布记录见 TEST_REPORT.md。
